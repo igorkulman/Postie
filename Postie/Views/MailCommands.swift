@@ -41,7 +41,7 @@ struct MailCommands: Commands {
                     get: { actions?.currentMailbox == mailbox },
                     set: { _ in actions?.selectMailbox(mailbox) }
                 )) {
-                    Label(mailbox.rawValue, systemImage: mailbox.symbol)
+                    Label(mailbox.title, systemImage: mailbox.symbol)
                 }
                 .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
                 .disabled(actions == nil)
@@ -59,10 +59,10 @@ struct MailCommands: Commands {
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(actions?.forward == nil)
             Divider()
-            Button(actions?.selectionIsUnread == true ? "Mark as Read" : "Mark as Unread") { actions?.toggleRead?() }
+            Button(actions?.selectionIsUnread == true ? String(localized: "Mark as Read") : String(localized: "Mark as Unread")) { actions?.toggleRead?() }
                 .keyboardShortcut("u", modifiers: [.command, .shift])
                 .disabled(actions?.toggleRead == nil)
-            Button(actions?.selectionIsFlagged == true ? "Unflag" : "Flag") { actions?.toggleFlag?() }
+            Button(actions?.selectionIsFlagged == true ? String(localized: "Unflag") : String(localized: "Flag")) { actions?.toggleFlag?() }
                 .keyboardShortcut("l", modifiers: [.command, .shift])
                 .disabled(actions?.toggleFlag == nil)
             Divider()

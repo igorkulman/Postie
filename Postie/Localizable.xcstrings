@@ -1,0 +1,272 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%lld cached" : {
+      "comment" : "Conversation count in the list footer; the mail was loaded from the local cache",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cached"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld cached"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld loaded" : {
+      "comment" : "Conversation count in the list footer; the mail was loaded from Gmail",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld loaded"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld loaded"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "%lld messages" : {
+      "comment" : "Number of messages in a conversation, spoken by VoiceOver",
+      "localizations" : {
+        "en" : {
+          "variations" : {
+            "plural" : {
+              "one" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld message"
+                }
+              },
+              "other" : {
+                "stringUnit" : {
+                  "state" : "translated",
+                  "value" : "%lld messages"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "A good subject goes a long way" : {},
+    "Account" : {},
+    "Add to the sample Sent mailbox. Does not send real email." : {},
+    "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {},
+    "Archive" : {
+      "comment" : "Mailbox name"
+    },
+    "Archive (⌃⌘A)" : {},
+    "CC email addresses" : {},
+    "Cancel" : {},
+    "Cc" : {
+      "comment" : "Label of the carbon-copy field in the composer"
+    },
+    "Cc: %@" : {
+      "comment" : "Header line in an expanded message: the Cc recipients"
+    },
+    "Collapsed" : {
+      "comment" : "VoiceOver value of a message that is showing only a summary"
+    },
+    "Collapses the message" : {},
+    "Connect Gmail" : {},
+    "Connect Gmail from the main window." : {},
+    "Connecting…" : {},
+    "Continue Writing" : {},
+    "Could Not Load Conversation" : {},
+    "Delete" : {},
+    "Delete Draft" : {},
+    "Delete this draft?" : {},
+    "Demo mode" : {},
+    "Demo only. No email will be sent. Drafts disappear when you quit." : {},
+    "Discard Changes" : {},
+    "Discard these changes?" : {},
+    "Drafts" : {
+      "comment" : "Mailbox name"
+    },
+    "Expanded" : {
+      "comment" : "VoiceOver value of a message that is showing its full body"
+    },
+    "Expands the message" : {},
+    "Flag" : {
+      "comment" : "Menu item: flag (star) a conversation"
+    },
+    "Forward" : {
+      "comment" : "Composer title"
+    },
+    "Forward (⇧⌘F)" : {},
+    "From" : {
+      "comment" : "Label of the sender row in the composer"
+    },
+    "GOOGLE_REVERSED_CLIENT_ID must match the dot-reversed client ID. Update the local configuration and rebuild." : {},
+    "General" : {},
+    "Get New Mail" : {},
+    "Get New Mail (⇧⌘N)" : {},
+    "Gmail access was denied. Check that the Gmail API is enabled and mail access was granted." : {},
+    "Gmail could not complete the request (HTTP %lld). Try again." : {},
+    "Gmail is temporarily rate-limiting requests. Please try again shortly." : {},
+    "Gmail returned a response that could not be read." : {},
+    "HTML email body" : {
+      "comment" : "Accessibility label for the web view showing a formatted email"
+    },
+    "Images load automatically and may reveal your IP address and when you opened the message. Email scripts, forms, and external stylesheets remain blocked." : {},
+    "Inbox" : {
+      "comment" : "Mailbox name"
+    },
+    "Junk" : {
+      "comment" : "Mailbox name"
+    },
+    "Keep Writing" : {},
+    "Last updated: %@" : {},
+    "Load More" : {},
+    "Loading" : {
+      "comment" : "VoiceOver label of a progress spinner"
+    },
+    "Loading conversation…" : {},
+    "Loading mail…" : {},
+    "Mail changed while loading this page. Please try again." : {},
+    "Mail saved on this Mac for offline reading will be removed." : {},
+    "Mailbox" : {
+      "comment" : "Menu title"
+    },
+    "Mailboxes" : {},
+    "Mark as Read" : {},
+    "Mark as Unread" : {},
+    "Message" : {
+      "comment" : "Menu title"
+    },
+    "Message body" : {},
+    "Message from %@" : {
+      "comment" : "VoiceOver label of a message header; the sender follows"
+    },
+    "Messages are sent immediately, so nothing waits here." : {},
+    "Move to Trash" : {},
+    "Move to Trash (⌘⌫)" : {},
+    "New Message" : {},
+    "New Message (⌘N)" : {},
+    "New message" : {
+      "comment" : "Composer title"
+    },
+    "No Conversation Selected" : {},
+    "No conversations" : {},
+    "No folder refresh yet" : {},
+    "No matching mail" : {},
+    "No recipient" : {},
+    "No window is available to present Google sign-in." : {},
+    "Nothing here yet" : {},
+    "Opening mailbox…" : {},
+    "Opening saved mail…" : {},
+    "Optional · separate addresses with commas" : {},
+    "Outbox" : {
+      "comment" : "Mailbox name"
+    },
+    "Outbox is empty" : {},
+    "Postie" : {},
+    "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access." : {},
+    "Read" : {
+      "comment" : "Swipe action label: mark the conversation as read"
+    },
+    "Read your mail in a native Mac app.\nLoaded mail is saved on this Mac for offline reading." : {},
+    "Recipient email address" : {},
+    "Reconnect Gmail" : {},
+    "Refresh to check for new mail." : {},
+    "Remote images enabled" : {},
+    "Remove star" : {},
+    "Reply" : {
+      "comment" : "Composer title"
+    },
+    "Reply (⌘R)" : {},
+    "Reply All" : {
+      "comment" : "Composer title"
+    },
+    "Reply All (⇧⌘R)" : {},
+    "Sample mail only. Gmail is not connected and no real email is sent." : {},
+    "Save Draft" : {},
+    "Saved mail for %@. Google is unavailable; downloaded messages can still be read." : {},
+    "Search" : {},
+    "Search covers loaded conversations in this folder only. Load more or try another phrase." : {},
+    "Select a conversation to read it." : {},
+    "Send" : {},
+    "Send Demo" : {},
+    "Send with Gmail (⌘↩)" : {},
+    "Sending" : {
+      "comment" : "VoiceOver label of the progress spinner shown while sending"
+    },
+    "Sent" : {
+      "comment" : "Mailbox name"
+    },
+    "Show unread count on the Dock icon" : {},
+    "Showing saved mail for %@ while connecting to Google." : {},
+    "Sign Out" : {},
+    "Sign Out…" : {},
+    "Sign out of Gmail?" : {},
+    "Signed in as" : {},
+    "Star conversation" : {},
+    "Starred" : {},
+    "Stars cannot be changed yet." : {},
+    "Subject" : {},
+    "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message." : {},
+    "This draft is saved for the current demo session only." : {},
+    "This message body has not been downloaded. Connect to Gmail to read it." : {},
+    "This message has no readable text body." : {},
+    "This message has not been sent." : {},
+    "This removes the saved demo draft. It cannot be undone." : {},
+    "To" : {
+      "comment" : "Label of the recipient field in the composer"
+    },
+    "To %@" : {
+      "comment" : "VoiceOver: recipient of a sent conversation"
+    },
+    "To: %@" : {
+      "comment" : "Header line in an expanded message: the recipients"
+    },
+    "Trash" : {
+      "comment" : "Mailbox name"
+    },
+    "Try Again" : {},
+    "Try a different name, subject, or phrase." : {},
+    "Unable to display HTML. Showing plain text." : {},
+    "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally." : {},
+    "Unable to open the account cache. This session will use online mail only." : {},
+    "Unable to read the local mail cache. Online mail is still available." : {},
+    "Unable to read the locally saved message." : {},
+    "Unable to remove locally cached mail. Sign-out was not completed." : {},
+    "Unable to save mail locally. Newly fetched mail may not be available offline." : {},
+    "Unable to save the local unread count." : {},
+    "Unable to save this message for offline reading." : {},
+    "Unflag" : {},
+    "Unknown sender" : {},
+    "Unread" : {
+      "comment" : "Swipe action label (mark as unread) and VoiceOver state of an unread conversation"
+    },
+    "Untitled draft" : {},
+    "Use Save Draft to keep this message for the current demo session." : {},
+    "Write something thoughtful…" : {},
+    "Your Google session could not be restored. Sign in again to continue." : {},
+    "Your Google session has expired. Sign out and sign in again." : {},
+    "Your demo messages will appear here." : {},
+    "name@example.com" : {}
+  },
+  "version" : "1.0"
+}

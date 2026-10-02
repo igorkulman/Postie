@@ -115,8 +115,8 @@ struct MailRootView: View {
         if let storageError { return storageError }
         guard account.email == nil, let readerAccount else { return nil }
         return account.isBusy
-            ? "Showing saved mail for \(readerAccount.email) while connecting to Google."
-            : "Saved mail for \(readerAccount.email). Google is unavailable; downloaded messages can still be read."
+            ? String(localized: "Showing saved mail for \(readerAccount.email) while connecting to Google.")
+            : String(localized: "Saved mail for \(readerAccount.email). Google is unavailable; downloaded messages can still be read.")
     }
 
     private func prepareCache() async {
@@ -138,7 +138,7 @@ struct MailRootView: View {
         } catch is CancellationError {
             // Closing the window must not publish a partially prepared mailbox.
         } catch {
-            storageError = "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally."
+            storageError = String(localized: "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally.")
         }
     }
 
@@ -169,7 +169,7 @@ struct MailRootView: View {
             readerAccount = identity
         } catch {
             guard !Task.isCancelled, account.accountID == identity.id else { return }
-            storageError = "Unable to open the account cache. This session will use online mail only."
+            storageError = String(localized: "Unable to open the account cache. This session will use online mail only.")
             reader.reset()
             reader = GmailReaderStore(api: api(for: identity.id))
             readerAccount = identity
@@ -184,6 +184,7 @@ struct MailRootView: View {
                 .accessibilityHidden(true)
             Text("Connect Gmail")
                 .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
             Text("Read your mail in a native Mac app.\nLoaded mail is saved on this Mac for offline reading.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)

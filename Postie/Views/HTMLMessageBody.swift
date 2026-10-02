@@ -149,7 +149,7 @@ struct EmailHTMLWebView: NSViewRepresentable {
     func makeNSView(context: Context) -> EmailWebView {
         let view = EmailWebView(frame: .zero, configuration: EmailHTMLPolicy.configuration())
         view.navigationDelegate = context.coordinator
-        view.setAccessibilityLabel("HTML email body")
+        view.setAccessibilityLabel(String(localized: "HTML email body", comment: "Accessibility label for the web view showing a formatted email"))
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         view.configuration.userContentController.add(

@@ -19,9 +19,9 @@ final class MailStore {
             source = drafts.map { draft in
                 MailThread(
                     id: draft.id,
-                    subject: draft.subject.isEmpty ? "Untitled draft" : draft.subject,
+                    subject: draft.subject.isEmpty ? String(localized: "Untitled draft") : draft.subject,
                     messages: [MailMessage(
-                        senderName: draft.recipient.isEmpty ? "No recipient" : draft.recipient,
+                        senderName: draft.recipient.isEmpty ? String(localized: "No recipient") : draft.recipient,
                         senderEmail: Self.accountEmail,
                         recipient: draft.recipient,
                         cc: draft.cc,

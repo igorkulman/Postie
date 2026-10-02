@@ -123,12 +123,12 @@ nonisolated enum GmailError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .invalidResponse: "Gmail returned a response that could not be read."
-        case .http(401), .signInRequired: "Your Google session has expired. Sign out and sign in again."
-        case .http(403): "Gmail access was denied. Check that the Gmail API is enabled and mail access was granted."
-        case .http(429): "Gmail is temporarily rate-limiting requests. Please try again shortly."
-        case .http(let code): "Gmail could not complete the request (HTTP \(code)). Try again."
-        case .permissionRequired: "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access."
+        case .invalidResponse: String(localized: "Gmail returned a response that could not be read.")
+        case .http(401), .signInRequired: String(localized: "Your Google session has expired. Sign out and sign in again.")
+        case .http(403): String(localized: "Gmail access was denied. Check that the Gmail API is enabled and mail access was granted.")
+        case .http(429): String(localized: "Gmail is temporarily rate-limiting requests. Please try again shortly.")
+        case .http(let code): String(localized: "Gmail could not complete the request (HTTP \(code)). Try again.")
+        case .permissionRequired: String(localized: "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access.")
         }
     }
 }
@@ -161,7 +161,7 @@ nonisolated enum GmailText {
     }
 
     static func content(_ payload: GmailThreadResource.Part?) throws -> Content {
-        guard let payload else { return Content(plainText: "This message has no readable text body.", html: nil) }
+        guard let payload else { return Content(plainText: String(localized: "This message has no readable text body."), html: nil) }
         let plain = try decodedParts(payload, mimeType: "text/plain")
         // A broken optional HTML alternative must not hide an otherwise readable message.
         let html = plain.isEmpty
@@ -172,7 +172,7 @@ nonisolated enum GmailText {
         let readable = (plain.isEmpty ? fallback : plain).joined(separator: "\n\n")
         return Content(
             plainText: readable.isEmpty
-                ? "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message."
+                ? String(localized: "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message.")
                 : readable,
             html: html.isEmpty ? nil : html.joined(separator: "\n<hr>\n")
         )
@@ -255,6 +255,6 @@ nonisolated enum GmailText {
             let name = String(decoded[..<start]).trimmingCharacters(in: CharacterSet(charactersIn: " \""))
             return (name.isEmpty ? email : name, email)
         }
-        return (decoded.isEmpty ? "Unknown sender" : decoded, decoded)
+        return (decoded.isEmpty ? String(localized: "Unknown sender") : decoded, decoded)
     }
 }

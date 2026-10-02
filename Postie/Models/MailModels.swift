@@ -11,6 +11,19 @@ nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
 
     var id: Self { self }
 
+    /// The raw value is persisted and must stay stable; the title is what people read.
+    var title: String {
+        switch self {
+        case .inbox: String(localized: "Inbox", comment: "Mailbox name")
+        case .drafts: String(localized: "Drafts", comment: "Mailbox name")
+        case .outbox: String(localized: "Outbox", comment: "Mailbox name")
+        case .sent: String(localized: "Sent", comment: "Mailbox name")
+        case .archive: String(localized: "Archive", comment: "Mailbox name")
+        case .junk: String(localized: "Junk", comment: "Mailbox name")
+        case .trash: String(localized: "Trash", comment: "Mailbox name")
+        }
+    }
+
     var symbol: String {
         switch self {
         case .inbox: "tray"
@@ -58,6 +71,15 @@ enum ComposeKind: String {
     case reply = "Reply"
     case replyAll = "Reply All"
     case forward = "Forward"
+
+    var title: String {
+        switch self {
+        case .newMessage: String(localized: "New message", comment: "Composer title")
+        case .reply: String(localized: "Reply", comment: "Composer title")
+        case .replyAll: String(localized: "Reply All", comment: "Composer title")
+        case .forward: String(localized: "Forward", comment: "Composer title")
+        }
+    }
 }
 
 struct ComposeDraft: Identifiable, Equatable {

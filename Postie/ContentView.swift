@@ -28,7 +28,7 @@ struct ContentView: View {
             detail
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
         }
-        .navigationTitle(currentMailbox.rawValue)
+        .navigationTitle(currentMailbox.title)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar { MailToolbar(actions: mailActions) }
         .focusedSceneValue(\.mailActions, mailActions)
@@ -153,9 +153,9 @@ struct ContentView: View {
             }
             Button("Forward", systemImage: "arrowshape.turn.up.right") { composer = store.forward(thread) }
             Divider()
-            Button(thread.isUnread ? "Mark as Read" : "Mark as Unread",
+            Button(thread.isUnread ? String(localized: "Mark as Read") : String(localized: "Mark as Unread"),
                    systemImage: thread.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(thread) }
-            Button(thread.isStarred ? "Unflag" : "Flag", systemImage: thread.isStarred ? "star.slash" : "star") {
+            Button(thread.isStarred ? String(localized: "Unflag") : String(localized: "Flag"), systemImage: thread.isStarred ? "star.slash" : "star") {
                 store.toggleStar(thread.id)
             }
             Divider()
@@ -185,7 +185,7 @@ struct ContentView: View {
         List(selection: $mailbox) {
             Section("Mailboxes") {
                 ForEach(Mailbox.allCases) { item in
-                    Label(item.rawValue, systemImage: item.symbol)
+                    Label(item.title, systemImage: item.symbol)
                         .badge(sidebarBadge(for: item))
                         .tag(item)
                 }
@@ -198,9 +198,9 @@ struct ContentView: View {
         VStack(spacing: 0) {
             if conversations.isEmpty {
                 ContentUnavailableView {
-                    Label(searchText.isEmpty ? "Nothing here yet" : "No matching mail", systemImage: searchText.isEmpty ? currentMailbox.symbol : "magnifyingglass")
+                    Label(searchText.isEmpty ? String(localized: "Nothing here yet") : String(localized: "No matching mail"), systemImage: searchText.isEmpty ? currentMailbox.symbol : "magnifyingglass")
                 } description: {
-                    Text(searchText.isEmpty ? "Your demo messages will appear here." : "Try a different name, subject, or phrase.")
+                    Text(searchText.isEmpty ? String(localized: "Your demo messages will appear here.") : String(localized: "Try a different name, subject, or phrase."))
                 }
                 .frame(maxHeight: .infinity)
             } else {
@@ -212,7 +212,7 @@ struct ContentView: View {
                             .listRowSeparator(.hidden)
                             .swipeActions(edge: .leading) {
                                 Button { toggleRead(thread) } label: {
-                                    Label(thread.isUnread ? "Read" : "Unread",
+                                    Label(thread.isUnread ? String(localized: "Read") : String(localized: "Unread"),
                                           systemImage: thread.isUnread ? "envelope.open" : "envelope.badge")
                                 }
                             }

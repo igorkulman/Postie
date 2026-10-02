@@ -26,6 +26,7 @@ struct MailThreadRow: View {
                     .fill(thread.isUnread ? (prominence == .increased ? Color.white : Color.accentColor) : .clear)
                     .frame(width: 5, height: 5)
                     .padding(.top, 5)
+                    .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(thread.mailbox == .sent ? message.recipient : message.senderName)
@@ -43,7 +44,7 @@ struct MailThreadRow: View {
                             .font(.callout.weight(thread.isUnread ? .medium : .regular))
                             .lineLimit(1)
                         if thread.messages.count > 1 {
-                            Text("\(thread.messages.count)")
+                            Text(thread.messages.count, format: .number)
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -53,7 +54,6 @@ struct MailThreadRow: View {
                             Image(systemName: "star.fill")
                                 .font(.callout)
                                 .foregroundStyle(.orange)
-                                .accessibilityLabel("Starred")
                         }
                     }
                     Text(thread.preview)
@@ -64,8 +64,23 @@ struct MailThreadRow: View {
             }
             .padding(.vertical, 6)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(thread.isUnread ? "Unread. " : "")\(message.senderName). \(thread.subject). \(thread.preview)")
+            .accessibilityLabel(accessibilityDescription(of: message))
         }
+    }
+
+    /// One spoken summary per row: state first, then who, what and when, then the preview.
+    private func accessibilityDescription(of message: MailMessage) -> String {
+        var parts: [String] = []
+        if thread.isUnread { parts.append(String(localized: "Unread")) }
+        if thread.isStarred { parts.append(String(localized: "Starred")) }
+        parts.append(thread.mailbox == .sent ? String(localized: "To \(message.recipient)") : message.senderName)
+        parts.append(thread.subject)
+        if thread.messages.count > 1 {
+            parts.append(String(localized: "\(thread.messages.count) messages", comment: "Number of messages in a conversation, spoken by VoiceOver"))
+        }
+        parts.append(message.date.formatted(date: .abbreviated, time: .shortened))
+        parts.append(thread.preview)
+        return parts.joined(separator: ". ")
     }
 }
 

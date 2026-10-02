@@ -133,7 +133,7 @@ struct GmailInboxView: View {
             List(selection: mailboxSelection) {
                 Section("Mailboxes") {
                     ForEach(Mailbox.allCases) { mailbox in
-                        Label(mailbox.rawValue, systemImage: mailbox.symbol)
+                        Label(mailbox.title, systemImage: mailbox.symbol)
                             .badge(mailbox == .inbox ? (reader.unreadInboxCount ?? 0) : 0)
                             .tag(mailbox)
                     }
@@ -148,7 +148,7 @@ struct GmailInboxView: View {
             detail
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
         }
-        .navigationTitle(reader.mailbox.rawValue)
+        .navigationTitle(reader.mailbox.title)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar { MailToolbar(actions: mailActions) }
         .focusedSceneValue(\.mailActions, mailActions)
@@ -195,16 +195,18 @@ struct GmailInboxView: View {
                 Divider()
             }
             if (reader.isLoadingMailbox || reader.isRestoringCache) && reader.conversations.isEmpty {
-                ProgressView("Loading \(reader.mailbox.rawValue)…")
+                ProgressView("Loading mail…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if conversations.isEmpty {
                 ContentUnavailableView {
-                    Label(searchText.isEmpty ? (reader.mailbox == .outbox ? "Outbox is empty" : "No conversations") : "No matching mail",
+                    Label(searchText.isEmpty ? (reader.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
                           systemImage: searchText.isEmpty ? reader.mailbox.symbol : "magnifyingglass")
                 } description: {
                     Text(searchText.isEmpty
-                         ? (reader.mailbox == .outbox ? "Messages are sent immediately, so nothing waits here." : "Refresh to check your \(reader.mailbox.rawValue).")
-                         : "Search covers loaded conversations in this folder only. Load more or try another phrase.")
+                         ? (reader.mailbox == .outbox
+                            ? String(localized: "Messages are sent immediately, so nothing waits here.")
+                            : String(localized: "Refresh to check for new mail."))
+                         : String(localized: "Search covers loaded conversations in this folder only. Load more or try another phrase."))
                 }
                 .frame(maxHeight: .infinity)
             } else {
@@ -217,7 +219,7 @@ struct GmailInboxView: View {
                             .swipeActions(edge: .leading) {
                                 if reader.canModifyLabels {
                                     Button { toggleRead(conversation) } label: {
-                                        Label(conversation.isUnread ? "Read" : "Unread",
+                                        Label(conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
                                               systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge")
                                     }
                                 }
@@ -249,9 +251,9 @@ struct GmailInboxView: View {
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let id = ids.first {
                         if reader.canModifyLabels, let conversation = reader.conversations.first(where: { $0.id == id }) {
-                            Button(conversation.isUnread ? "Mark as Read" : "Mark as Unread",
+                            Button(conversation.isUnread ? String(localized: "Mark as Read") : String(localized: "Mark as Unread"),
                                    systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(conversation) }
-                            Button(conversation.isStarred ? "Unflag" : "Flag",
+                            Button(conversation.isStarred ? String(localized: "Unflag") : String(localized: "Flag"),
                                    systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(conversation) }
                             Divider()
                         }
@@ -274,10 +276,15 @@ struct GmailInboxView: View {
             }
             Divider()
             HStack {
-                if reader.isLoadingMailbox { ProgressView().controlSize(.small) }
-                Text("\(reader.conversations.count) \(reader.showingCachedMail ? "cached" : "loaded")")
+                if reader.isLoadingMailbox {
+                    ProgressView().controlSize(.small)
+                        .accessibilityLabel("Loading")
+                }
+                Text(reader.showingCachedMail
+                     ? String(localized: "\(reader.conversations.count) cached", comment: "Conversation count in the list footer; the mail was loaded from the local cache")
+                     : String(localized: "\(reader.conversations.count) loaded", comment: "Conversation count in the list footer; the mail was loaded from Gmail"))
                     .foregroundStyle(.secondary)
-                    .help(reader.lastRefreshed.map { "Last updated: " + $0.formatted() } ?? "No folder refresh yet")
+                    .help(reader.lastRefreshed.map { String(localized: "Last updated: \($0.formatted())") } ?? String(localized: "No folder refresh yet"))
                 Spacer()
                 if reader.nextPageToken != nil {
                     Button("Load More") { pageRequest += 1 }
@@ -374,7 +381,7 @@ extension GmailConversation {
                 MailMessage(senderName: $0.senderName, senderEmail: $0.senderEmail,
                             recipient: $0.recipient, cc: $0.cc, date: $0.date,
                             body: includingBodies
-                                ? ($0.bodyLoaded ? $0.body : $0.snippet + "\n\nThis message body has not been downloaded. Connect to Gmail to read it.")
+                                ? ($0.bodyLoaded ? $0.body : $0.snippet + "\n\n" + String(localized: "This message body has not been downloaded. Connect to Gmail to read it."))
                                 : $0.snippet,
                             htmlBody: includingBodies ? $0.htmlBody : nil)
             },

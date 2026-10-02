@@ -24,12 +24,12 @@ final class GoogleAccount {
     var configurationIssue: String? {
         let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? ""
         guard clientID.hasSuffix(".apps.googleusercontent.com"), !clientID.contains("YOUR_") else {
-            return "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup."
+            return String(localized: "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup.")
         }
         let expectedScheme = clientID.split(separator: ".").reversed().joined(separator: ".")
         let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
         guard types.contains(where: { ($0["CFBundleURLSchemes"] as? [String])?.contains(expectedScheme) == true }) else {
-            return "GOOGLE_REVERSED_CLIENT_ID must match the dot-reversed client ID. Update the local configuration and rebuild."
+            return String(localized: "GOOGLE_REVERSED_CLIENT_ID must match the dot-reversed client ID. Update the local configuration and rebuild.")
         }
         return nil
     }
@@ -45,14 +45,14 @@ final class GoogleAccount {
             try Task.checkCancellation()
             try accept(user)
         } catch {
-            if !(error is CancellationError) { self.error = "Your Google session could not be restored. Sign in again to continue." }
+            if !(error is CancellationError) { self.error = String(localized: "Your Google session could not be restored. Sign in again to continue.") }
         }
     }
 
     func signIn() {
         guard !isBusy, configurationIssue == nil else { return }
         guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow else {
-            error = "No window is available to present Google sign-in."
+            error = String(localized: "No window is available to present Google sign-in.")
             return
         }
         isBusy = true
@@ -95,7 +95,7 @@ final class GoogleAccount {
             error = nil
         } catch {
             // Do not claim a successful logout while leaving an offline account cache behind.
-            self.error = "Unable to remove locally cached mail. Sign-out was not completed."
+            self.error = String(localized: "Unable to remove locally cached mail. Sign-out was not completed.")
         }
     }
 

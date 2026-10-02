@@ -20,8 +20,9 @@ struct ComposerView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Text(draft.kind.rawValue)
+                Text(draft.kind.title)
                     .font(.title3.weight(.semibold))
+                    .accessibilityAddTraits(.isHeader)
                 Spacer()
                 if isDemo { DemoBadge() }
             }
@@ -35,10 +36,11 @@ struct ComposerView: View {
                     Text(fromAddress).foregroundStyle(.secondary)
                     Spacer()
                 }
+                .accessibilityElement(children: .combine)
                 .padding(.vertical, 13)
                 Divider()
                 HStack {
-                    Text("To").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                    Text("To").foregroundStyle(.secondary).frame(width: 52, alignment: .leading).accessibilityHidden(true)
                     TextField("name@example.com", text: $draft.recipient)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .recipient)
@@ -47,7 +49,7 @@ struct ComposerView: View {
                 .padding(.vertical, 13)
                 Divider()
                 HStack {
-                    Text("Cc").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                    Text("Cc").foregroundStyle(.secondary).frame(width: 52, alignment: .leading).accessibilityHidden(true)
                     TextField("Optional · separate addresses with commas", text: $draft.cc)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .cc)
@@ -56,7 +58,7 @@ struct ComposerView: View {
                 .padding(.vertical, 13)
                 Divider()
                 HStack {
-                    Text("Subject").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
+                    Text("Subject").foregroundStyle(.secondary).frame(width: 52, alignment: .leading).accessibilityHidden(true)
                     TextField("A good subject goes a long way", text: $draft.subject)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .subject)
@@ -75,6 +77,7 @@ struct ComposerView: View {
                         .padding(.top, 9)
                         .padding(.leading, 5)
                         .allowsHitTesting(false)
+                        .accessibilityHidden(true)
                 }
                 TextEditor(text: $draft.body)
                     .scrollContentBackground(.hidden)
@@ -92,6 +95,7 @@ struct ComposerView: View {
                     Label(sendError, systemImage: "exclamationmark.triangle")
                         .font(.subheadline)
                         .foregroundStyle(.red)
+                        .onAppear { AccessibilityNotification.Announcement(sendError).post() }
                 } else if isDemo {
                     Text("Demo only. No email will be sent. Drafts disappear when you quit.")
                         .font(.subheadline)
@@ -115,7 +119,7 @@ struct ComposerView: View {
                         .disabled(!draft.hasContent || isSending)
                     }
                     Spacer()
-                    if isSending { ProgressView().controlSize(.small) }
+                    if isSending { ProgressView().controlSize(.small).accessibilityLabel("Sending") }
                     Button {
                         Task {
                             isSending = true
@@ -129,12 +133,12 @@ struct ComposerView: View {
                             isSending = false
                         }
                     } label: {
-                        Label(isDemo ? "Send Demo" : "Send", systemImage: "paperplane.fill")
+                        Label(isDemo ? String(localized: "Send Demo") : String(localized: "Send"), systemImage: "paperplane.fill")
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!draft.canSend || isSending)
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .help(isDemo ? "Add to the sample Sent mailbox. Does not send real email." : "Send with Gmail (⌘↩)")
+                    .help(isDemo ? String(localized: "Add to the sample Sent mailbox. Does not send real email.") : String(localized: "Send with Gmail (⌘↩)"))
                 }
                 .controlSize(.large)
             }
@@ -147,7 +151,7 @@ struct ComposerView: View {
             Button("Keep Writing", role: .cancel) {}
             Button("Discard Changes", role: .destructive) { dismiss() }
         } message: {
-            Text(save == nil ? "This message has not been sent." : "Use Save Draft to keep this message for the current demo session.")
+            Text(save == nil ? String(localized: "This message has not been sent.") : String(localized: "Use Save Draft to keep this message for the current demo session."))
         }
     }
 }

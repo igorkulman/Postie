@@ -99,7 +99,7 @@ final class GmailReaderStore {
             restoredSession = currentSession
         } catch {
             guard session == currentSession, !Task.isCancelled else { return }
-            cacheError = "Unable to read the local mail cache. Online mail is still available."
+            cacheError = String(localized: "Unable to read the local mail cache. Online mail is still available.")
         }
     }
 
@@ -235,7 +235,7 @@ final class GmailReaderStore {
                 do { try await cache.saveUnreadCount(count) }
                 catch {
                     guard unreadCountSession == accountSession, !Task.isCancelled else { return }
-                    cacheError = "Unable to save the local unread count."
+                    cacheError = String(localized: "Unable to save the local unread count.")
                 }
             }
         } catch {
@@ -278,11 +278,11 @@ final class GmailReaderStore {
                     return
                 } catch GmailCacheError.checkpointChanged {
                     guard session == currentSession, !Task.isCancelled else { return }
-                    mailboxError = "Mail changed while loading this page. Please try again."
+                    mailboxError = String(localized: "Mail changed while loading this page. Please try again.")
                     return
                 } catch {
                     guard session == currentSession, !Task.isCancelled else { return }
-                    cacheError = "Unable to save mail locally. Newly fetched mail may not be available offline."
+                    cacheError = String(localized: "Unable to save mail locally. Newly fetched mail may not be available offline.")
                 }
             }
             if refreshing {
@@ -324,7 +324,7 @@ final class GmailReaderStore {
                 }
             } catch {
                 guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
-                cacheError = "Unable to read the locally saved message."
+                cacheError = String(localized: "Unable to read the locally saved message.")
             }
         } else if let cached = bodies[id] {
             selectedConversation = cached
@@ -347,7 +347,7 @@ final class GmailReaderStore {
                     return
                 } catch {
                     guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
-                    cacheError = "Unable to save this message for offline reading."
+                    cacheError = String(localized: "Unable to save this message for offline reading.")
                 }
                 guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
             }

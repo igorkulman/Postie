@@ -36,6 +36,7 @@ struct ThreadDetailView: View {
                         .font(.title3.weight(.semibold))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 0)
                     Button(action: toggleStar) {
                         Image(systemName: thread.isStarred ? "star.fill" : "star")
@@ -43,8 +44,10 @@ struct ThreadDetailView: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .disabled(!canToggleStar)
-                    .help(canToggleStar ? (thread.isStarred ? "Remove star" : "Star conversation") : "Stars cannot be changed yet.")
-                    .accessibilityLabel(thread.isStarred ? "Remove star" : "Star conversation")
+                    .help(canToggleStar
+                          ? (thread.isStarred ? String(localized: "Remove star") : String(localized: "Star conversation"))
+                          : String(localized: "Stars cannot be changed yet."))
+                    .accessibilityLabel(thread.isStarred ? String(localized: "Remove star") : String(localized: "Star conversation"))
                 }
 
                 ForEach(thread.messages) { message in
@@ -103,6 +106,12 @@ private struct MessageView: View {
         _isExpanded = State(initialValue: expandedInitially)
     }
 
+    private var recipientsSummary: String {
+        let to = String(localized: "To: \(message.recipient)")
+        guard !message.cc.isEmpty else { return to }
+        return to + " · " + String(localized: "Cc: \(message.cc)")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button {
@@ -117,13 +126,13 @@ private struct MessageView: View {
                                 .fontWeight(.semibold)
                                 .foregroundStyle(.primary)
                             if isExpanded {
-                                Text("<\(message.senderEmail)>")
+                                Text(verbatim: "<\(message.senderEmail)>")
                                     .foregroundStyle(.secondary)
                             }
                         }
                         .font(.callout)
                         .lineLimit(1)
-                        Text(isExpanded ? "To: \(message.recipient)\(message.cc.isEmpty ? "" : " · Cc: " + message.cc)" : String(message.body.prefix(100)).replacingOccurrences(of: "\n", with: " "))
+                        Text(isExpanded ? recipientsSummary : String(message.body.prefix(100)).replacingOccurrences(of: "\n", with: " "))
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
@@ -141,7 +150,9 @@ private struct MessageView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("\(isExpanded ? "Collapse" : "Expand") message from \(message.senderName)")
+            .accessibilityLabel("Message from \(message.senderName)")
+            .accessibilityValue(isExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
+            .accessibilityHint(isExpanded ? String(localized: "Collapses the message") : String(localized: "Expands the message"))
             .help(message.senderEmail)
 
             if isExpanded {
