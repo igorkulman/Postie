@@ -37,7 +37,9 @@ nonisolated enum AttachmentFiles {
         try fileManager.moveItem(at: partial, to: url)
     }
 
-    static func removeAll(accountID: String) {
+    /// Deleting an account's files can take a moment, so it happens off the main actor.
+    @concurrent
+    static func removeAll(accountID: String) async {
         try? FileManager.default.removeItem(at: root.appending(path: component(accountID), directoryHint: .isDirectory))
     }
 

@@ -42,7 +42,7 @@ struct MailRootView: View {
             } else if showingDemo {
                 ContentView(unreadCountChanged: { demoUnreadCount = $0 })
             } else {
-                connectionView
+                WelcomeView(accounts: accounts, storageError: hub.storageError) { sawWelcome = true }
             }
         }
         .task {
@@ -53,8 +53,9 @@ struct MailRootView: View {
         .task(id: AccountBinding(ids: accounts.accounts.map(\.id), ready: !hub.isPreparing)) {
             if !hub.isPreparing { await hub.reconcile() }
         }
-        .onChange(of: scenePhase) { _, phase in
-            if phase == .active { Task { await hub.refresh() } }
+        // Looks for new mail whenever the window comes back to the foreground.
+        .task(id: scenePhase) {
+            if scenePhase == .active { await hub.refresh() }
         }
         .onChange(of: unreadCount, initial: true) { _, _ in updateDockBadge() }
         .onChange(of: showsDockBadge) { _, _ in updateDockBadge() }
@@ -74,8 +75,15 @@ struct MailRootView: View {
         let ids: [String]
         let ready: Bool
     }
+}
 
-    private var connectionView: some View {
+/// Shown until the first account is connected.
+private struct WelcomeView: View {
+    let accounts: AccountStore
+    let storageError: String?
+    let appeared: () -> Void
+
+    var body: some View {
         VStack(spacing: 20) {
             Image(systemName: "envelope")
                 .font(.system(size: 40, weight: .light))
@@ -100,7 +108,7 @@ struct MailRootView: View {
                 .disabled(accounts.configurationIssue != nil)
             }
 
-            if let issue = accounts.configurationIssue ?? accounts.error ?? hub.storageError {
+            if let issue = accounts.configurationIssue ?? accounts.error ?? storageError {
                 Text(issue)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -112,7 +120,7 @@ struct MailRootView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Postie")
-        .onAppear { sawWelcome = true }
+        .onAppear(perform: appeared)
     }
 }
 

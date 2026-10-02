@@ -1,3 +1,4 @@
+#if DEBUG
 import Foundation
 import Observation
 
@@ -133,3 +134,4 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         ])
     }
 }
+#endif

@@ -1,19 +1,29 @@
 import SwiftUI
 
 struct ComposerView: View {
-    @State var draft: ComposeDraft
+    @State private var draft: ComposeDraft
     /// Nil for real accounts: Gmail drafts are not synced yet, so only the demo can keep drafts.
-    let save: ((ComposeDraft) -> Void)?
-    let send: (ComposeDraft) async throws -> Void
+    private let save: ((ComposeDraft) -> Void)?
+    private let send: (ComposeDraft) async throws -> Void
     /// Connected Gmail accounts. Empty in the demo, which sends from the sample address.
-    var accounts: [SendingAccount] = []
-    var fromAddress = MailStore.accountEmail
-    var isDemo = true
+    private let accounts: [SendingAccount]
+    private let fromAddress: String
+    private let isDemo: Bool
     @State private var isSending = false
     @State private var sendError: String?
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsDiscard = false
     @FocusState private var focusedField: Field?
+
+    init(draft: ComposeDraft, save: ((ComposeDraft) -> Void)?, send: @escaping (ComposeDraft) async throws -> Void,
+         accounts: [SendingAccount] = [], fromAddress: String = MailStore.accountEmail, isDemo: Bool = true) {
+        _draft = State(initialValue: draft)
+        self.save = save
+        self.send = send
+        self.accounts = accounts
+        self.fromAddress = fromAddress
+        self.isDemo = isDemo
+    }
 
     private var senderAddress: String {
         accounts.first { $0.id == draft.accountID }?.email ?? fromAddress
@@ -59,32 +69,26 @@ struct ComposerView: View {
                 .accessibilityElement(children: choosesSender ? .contain : .combine)
                 .padding(.vertical, 13)
                 Divider()
-                HStack {
-                    Text("To").foregroundStyle(.secondary).frame(width: 52, alignment: .leading).accessibilityHidden(true)
+                FieldRow("To") {
                     TextField("name@example.com", text: $draft.recipient)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .recipient)
                         .accessibilityLabel("Recipient email address")
                 }
-                .padding(.vertical, 13)
                 Divider()
-                HStack {
-                    Text("Cc").foregroundStyle(.secondary).frame(width: 52, alignment: .leading).accessibilityHidden(true)
+                FieldRow("Cc") {
                     TextField("Optional · separate addresses with commas", text: $draft.cc)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .cc)
                         .accessibilityLabel("CC email addresses")
                 }
-                .padding(.vertical, 13)
                 Divider()
-                HStack {
-                    Text("Subject").foregroundStyle(.secondary).frame(width: 52, alignment: .leading).accessibilityHidden(true)
+                FieldRow("Subject") {
                     TextField("A good subject goes a long way", text: $draft.subject)
                         .textFieldStyle(.plain)
                         .focused($focusedField, equals: .subject)
                         .accessibilityLabel("Subject")
                 }
-                .padding(.vertical, 13)
                 Divider()
             }
             .font(.body)
@@ -173,6 +177,28 @@ struct ComposerView: View {
         } message: {
             Text(save == nil ? String(localized: "This message has not been sent.") : String(localized: "Use Save Draft to keep this message for the current demo session."))
         }
+    }
+}
+
+/// One labelled line of the composer's header, like To or Subject.
+private struct FieldRow<Content: View>: View {
+    let title: LocalizedStringKey
+    @ViewBuilder let content: Content
+
+    init(_ title: LocalizedStringKey, @ViewBuilder content: () -> Content) {
+        self.title = title
+        self.content = content()
+    }
+
+    var body: some View {
+        HStack {
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 52, alignment: .leading)
+                .accessibilityHidden(true)
+            content
+        }
+        .padding(.vertical, 13)
     }
 }
 

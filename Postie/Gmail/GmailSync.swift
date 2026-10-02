@@ -53,6 +53,7 @@ nonisolated struct GmailSyncBatch: Sendable {
     var historyID: String
 }
 
+// The coordinator's bookkeeping stays on the main actor; the network work and merging it starts run off it.
 // One owned operation per account reader. Folder switches and overlapping refreshes
 // await the same operation; cancelling a view waiter doesn't cancel account sync.
 // Reset/sign-out explicitly cancels it. Network work is staged before one DB commit.
@@ -102,6 +103,7 @@ final class GmailSyncCoordinator {
         } while true
     }
 
+    @concurrent
     private func perform(mailbox: Mailbox) async throws {
         let checkpoint = try await cache.historyID()
         do {
@@ -131,6 +133,7 @@ final class GmailSyncCoordinator {
         }
     }
 
+    @concurrent
     private func rebuild(mailbox: Mailbox, expectedHistoryID: String?) async throws {
         let baseline = try await api.currentHistoryID()
         guard GmailHistoryPage.validID(baseline) else { throw GmailError.invalidResponse }
@@ -157,6 +160,7 @@ final class GmailSyncCoordinator {
         try await cache.applySync(batch)
     }
 
+    @concurrent
     private func history(since checkpoint: String) async throws -> (ids: Set<String>, checkpoint: String) {
         var ids: Set<String> = []
         var token: String?
@@ -178,6 +182,7 @@ final class GmailSyncCoordinator {
         } while true
     }
 
+    @concurrent
     private func metadata(ids: Set<String>) async throws -> (conversations: [GmailConversation], deleted: Set<String>) {
         let api = api
         return try await withThrowingTaskGroup(of: (String, GmailConversation?).self) { group in

@@ -24,6 +24,12 @@ extension FocusedValues {
 struct MailCommands: Commands {
     @FocusedValue(\.mailActions) private var actions
 
+    /// ⌘1…⌘9 pick the first nine folders; any further folder simply has no shortcut.
+    private static func shortcut(forMailboxAt index: Int) -> KeyboardShortcut? {
+        guard index < 9, let digit = String(index + 1).first else { return nil }
+        return KeyboardShortcut(KeyEquivalent(digit), modifiers: .command)
+    }
+
     var body: some Commands {
         CommandGroup(replacing: .newItem) {
             Button("New Message") { actions?.newMessage?() }
@@ -43,7 +49,7 @@ struct MailCommands: Commands {
                 )) {
                     Label(mailbox.title, systemImage: mailbox.symbol)
                 }
-                .keyboardShortcut(KeyEquivalent(Character(String(index + 1))), modifiers: .command)
+                .keyboardShortcut(Self.shortcut(forMailboxAt: index))
                 .disabled(actions == nil)
             }
         }

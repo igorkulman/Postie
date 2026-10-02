@@ -17,7 +17,7 @@ struct ThreadDetailViewTests {
         let thread = MailThread(subject: "Conversation", messages: (1...25).map(message), mailbox: .inbox)
         let latest = try #require(thread.latestMessage)
         let position = ThreadDetailView.openingScrollPosition(for: thread)
-        #expect(position.viewID(type: UUID.self) == latest.id)
+        #expect(position.viewID(type: String.self) == latest.id)
         #expect(position.edge == nil)
         #expect(!position.isPositionedByUser)
     }
@@ -27,7 +27,7 @@ struct ThreadDetailViewTests {
         let thread = MailThread(subject: "Single email", messages: [message(1)], mailbox: .inbox)
         let position = ThreadDetailView.openingScrollPosition(for: thread)
         #expect(position.edge == .top)
-        #expect(position.viewID(type: UUID.self) == nil)
+        #expect(position.viewID(type: String.self) == nil)
     }
 
     @Test("An empty conversation has no invalid message scroll target")
@@ -35,15 +35,15 @@ struct ThreadDetailViewTests {
         let thread = MailThread(subject: "Empty", messages: [], mailbox: .inbox)
         let position = ThreadDetailView.openingScrollPosition(for: thread)
         #expect(position.edge == .top)
-        #expect(position.viewID(type: UUID.self) == nil)
+        #expect(position.viewID(type: String.self) == nil)
     }
 
     @Test("Opening another conversation chooses that conversation's message")
     func switchingConversations() {
         let first = MailThread(subject: "First", messages: [message(1), message(2)], mailbox: .inbox)
         let second = MailThread(subject: "Second", messages: [message(3), message(4)], mailbox: .sent)
-        let firstID = ThreadDetailView.openingScrollPosition(for: first).viewID(type: UUID.self)
-        let secondID = ThreadDetailView.openingScrollPosition(for: second).viewID(type: UUID.self)
+        let firstID = ThreadDetailView.openingScrollPosition(for: first).viewID(type: String.self)
+        let secondID = ThreadDetailView.openingScrollPosition(for: second).viewID(type: String.self)
         #expect(firstID != secondID)
         #expect(secondID == second.latestMessage?.id)
     }
@@ -53,6 +53,6 @@ struct ThreadDetailViewTests {
         var latest = message(2)
         latest.htmlBody = "<div style='height:5000px'>Latest message</div>"
         let thread = MailThread(subject: "HTML conversation", messages: [message(1), latest], mailbox: .inbox)
-        #expect(ThreadDetailView.openingScrollPosition(for: thread).viewID(type: UUID.self) == latest.id)
+        #expect(ThreadDetailView.openingScrollPosition(for: thread).viewID(type: String.self) == latest.id)
     }
 }

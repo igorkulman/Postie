@@ -2,16 +2,40 @@ import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// Downloads an attachment, if needed, and returns the local file. Absent when mail isn't connected (demo mode).
-typealias AttachmentLoader = @MainActor @Sendable (MailAttachment) async throws -> URL
+/// Downloads an attachment, if needed, and returns the local file. It is a value, not a closure, so the
+/// environment can tell when it changed. Absent when mail isn't connected (demo mode).
+nonisolated struct AttachmentLoader: Equatable, Sendable {
+    let hub: MailHub
+    let accountID: String
+
+    func callAsFunction(_ attachment: MailAttachment) async throws -> URL {
+        try await hub.attachmentFile(attachment, accountID: accountID)
+    }
+
+    static func == (lhs: AttachmentLoader, rhs: AttachmentLoader) -> Bool {
+        lhs.hub === rhs.hub && lhs.accountID == rhs.accountID
+    }
+}
 
 extension EnvironmentValues {
     @Entry var attachmentLoader: AttachmentLoader? = nil
 }
 
+/// Icons are looked up per file type, not per file, and kept: a list can show hundreds of rows.
 private func fileIcon(for filename: String) -> NSImage {
     let type = UTType(filenameExtension: (filename as NSString).pathExtension) ?? .data
-    return NSWorkspace.shared.icon(for: type)
+    return FileIconCache.icon(for: type)
+}
+
+private enum FileIconCache {
+    private static var icons: [UTType: NSImage] = [:]
+
+    static func icon(for type: UTType) -> NSImage {
+        if let icon = icons[type] { return icon }
+        let icon = NSWorkspace.shared.icon(for: type)
+        icons[type] = icon
+        return icon
+    }
 }
 
 /// What the share sheet and drag and drop receive: the file itself, downloaded only when it's actually used.
@@ -105,7 +129,7 @@ private struct AttachmentRow: View {
         work { url in
             let panel = NSSavePanel()
             panel.nameFieldStringValue = attachment.filename
-            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            guard await panel.begin() == .OK, let destination = panel.url else { return }
             try? FileManager.default.removeItem(at: destination)
             try FileManager.default.copyItem(at: url, to: destination)
         }
@@ -118,10 +142,10 @@ private struct AttachmentRow: View {
         panel.canChooseFiles = false
         panel.canCreateDirectories = true
         panel.prompt = String(localized: "Save")
-        guard panel.runModal() == .OK, let folder = panel.url else { return }
         isWorking = true
         Task {
             defer { isWorking = false }
+            guard await panel.begin() == .OK, let folder = panel.url else { return }
             do {
                 for item in all {
                     let source = try await loader(item)
@@ -140,12 +164,12 @@ private struct AttachmentRow: View {
         }
     }
 
-    private func work(_ action: @escaping @MainActor (URL) throws -> Void) {
+    private func work(_ action: @escaping @MainActor (URL) async throws -> Void) {
         guard let loader, !isWorking else { return }
         isWorking = true
         Task {
             defer { isWorking = false }
-            do { try action(try await loader(attachment)) }
+            do { try await action(try await loader(attachment)) }
             catch { errorMessage = error.localizedDescription }
         }
     }

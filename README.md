@@ -90,7 +90,7 @@ Arguments) to start on built-in sample mail instead of a real account.
 
 ## Selection regression without a mailbox
 
-Launch with `-PostieSelectionRegression` to run the real Gmail list/detail UI
+In a Debug build, launch with `-PostieSelectionRegression` to run the real Gmail list/detail UI
 against deterministic mail and an in-memory SQLite cache. It uses no real
 credentials, network requests, or saved mailbox database.
 

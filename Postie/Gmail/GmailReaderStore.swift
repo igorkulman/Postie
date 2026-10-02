@@ -8,7 +8,11 @@ import os
 final class GmailReaderStore {
     private(set) var mailbox: Mailbox
     private(set) var unreadInboxCount: Int?
-    private(set) var conversations: [GmailConversation] = []
+    private(set) var conversations: [GmailConversation] = [] {
+        didSet { conversationsRevision &+= 1 }
+    }
+    /// Changes whenever `conversations` does, so a merged view of several readers can tell when to rebuild.
+    private(set) var conversationsRevision = 0
     private(set) var nextPageToken: String?
     private(set) var isLoadingMailbox = false
     private(set) var mailboxError: String?
@@ -22,6 +26,11 @@ final class GmailReaderStore {
     private(set) var lastRefreshed: Date?
 
     @ObservationIgnored private let api: any GmailReading
+    // What the account's API can do, worked out once instead of casting on every call.
+    @ObservationIgnored private let mutator: (any GmailMutating)?
+    @ObservationIgnored private let searcher: (any GmailSearching)?
+    @ObservationIgnored private let attachmentLoader: (any GmailAttachmentLoading)?
+    @ObservationIgnored private let sender: (any GmailSending)?
     @ObservationIgnored private let cache: GmailCacheSession?
     @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredSession: UUID?
@@ -33,11 +42,22 @@ final class GmailReaderStore {
 
     init(api: any GmailReading, mailbox: Mailbox = .inbox, cache: GmailCacheSession? = nil) {
         self.api = api
+        mutator = api as? any GmailMutating
+        searcher = api as? any GmailSearching
+        attachmentLoader = api as? any GmailAttachmentLoading
+        sender = api as? any GmailSending
         self.mailbox = mailbox
         self.cache = cache
         if let cache, let syncAPI = api as? any GmailSyncReading {
             synchronizer = GmailSyncCoordinator(api: syncAPI, cache: cache)
         } else { synchronizer = nil }
+    }
+
+    /// Whether work started under these tokens still matters: the folder, the account's reader and the open
+    /// conversation have not been reset since, and the task was not cancelled.
+    private func isCurrent(_ currentSession: UUID, selection currentSelection: UUID? = nil) -> Bool {
+        guard session == currentSession, !Task.isCancelled else { return false }
+        return currentSelection.map { selection == $0 } ?? true
     }
 
     func changeMailbox(_ mailbox: Mailbox) {
@@ -101,7 +121,7 @@ final class GmailReaderStore {
             restoredSession = currentSession
         } catch {
             Log.cache.error("Could not read the cached folder: \(error.localizedDescription)")
-            guard session == currentSession, !Task.isCancelled else { return }
+            guard isCurrent(currentSession) else { return }
             cacheError = String(localized: "Unable to read the local mail cache. Online mail is still available.")
         }
     }
@@ -109,7 +129,7 @@ final class GmailReaderStore {
     func refresh() async {
         let currentSession = session
         await restoreCachedMailbox()
-        guard session == currentSession, !Task.isCancelled else { return }
+        guard isCurrent(currentSession) else { return }
         let accountSession = unreadCountSession
         async let unreadCount: Void = refreshUnreadCount(for: accountSession)
         if let synchronizer { await synchronize(using: synchronizer) }
@@ -145,61 +165,61 @@ final class GmailReaderStore {
                 mailboxVersion += 1
             }
         } catch {
-            guard session == currentSession, !Task.isCancelled, !(error is CancellationError) else { return }
+            guard isCurrent(currentSession), !(error is CancellationError) else { return }
             Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
             mailboxError = error.localizedDescription
         }
     }
 
-    var canArchive: Bool { mailbox == .inbox && api is any GmailMutating }
-    var canTrash: Bool { ![.trash, .outbox].contains(mailbox) && api is any GmailMutating }
-    var canSearch: Bool { api is any GmailSearching }
+    var canArchive: Bool { mailbox == .inbox && mutator != nil }
+    var canTrash: Bool { ![.trash, .outbox].contains(mailbox) && mutator != nil }
+    var canSearch: Bool { searcher != nil }
 
     /// One page of Gmail search results. Nothing is cached or added to the folder list.
     func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage {
-        guard let api = api as? any GmailSearching else { throw GmailError.permissionRequired }
-        return try await api.search(query, in: mailbox, pageToken: pageToken)
+        guard let searcher else { throw GmailError.permissionRequired }
+        return try await searcher.search(query, in: mailbox, pageToken: pageToken)
     }
 
     /// Archives or trashes a conversation, then drops it from the loaded list right away.
     /// Returns false (with `mailboxError` set) when Gmail rejects the change.
     @discardableResult
     func archive(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
-        guard fromAnyFolder ? canModifyLabels : canArchive, let api = api as? any GmailMutating else { return false }
-        return await mutate(id, onRemoved: onRemoved) { try await api.archive(threadID: id) }
+        guard fromAnyFolder ? canModifyLabels : canArchive, let mutator else { return false }
+        return await mutate(id, onRemoved: onRemoved) { try await mutator.archive(threadID: id) }
     }
 
     @discardableResult
     func trash(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
-        guard fromAnyFolder ? canModifyLabels : canTrash, let api = api as? any GmailMutating else { return false }
-        return await mutate(id, onRemoved: onRemoved) { try await api.trash(threadID: id) }
+        guard fromAnyFolder ? canModifyLabels : canTrash, let mutator else { return false }
+        return await mutate(id, onRemoved: onRemoved) { try await mutator.trash(threadID: id) }
     }
 
-    var canLoadAttachments: Bool { api is any GmailAttachmentLoading }
+    var canLoadAttachments: Bool { attachmentLoader != nil }
 
     func attachmentData(_ attachment: MailAttachment) async throws -> Data {
-        guard let api = api as? any GmailAttachmentLoading else { throw GmailError.permissionRequired }
-        return try await api.attachmentData(attachment)
+        guard let attachmentLoader else { throw GmailError.permissionRequired }
+        return try await attachmentLoader.attachmentData(attachment)
     }
 
-    var canSend: Bool { api is any GmailSending }
+    var canSend: Bool { sender != nil }
 
     /// Sends through Gmail. Sent mail and reply threads are picked up by a background refresh.
     func send(_ message: OutgoingMessage) async throws {
-        guard let api = api as? any GmailSending else { throw GmailError.permissionRequired }
-        try await api.send(message)
+        guard let sender else { throw GmailError.permissionRequired }
+        try await sender.send(message)
         Task { await refresh() }
     }
 
-    var canModifyLabels: Bool { api is any GmailMutating }
+    var canModifyLabels: Bool { mutator != nil }
 
     func setStarred(_ id: String, _ starred: Bool) async { await setLabel("STARRED", starred, id) }
     func setUnread(_ id: String, _ unread: Bool) async { await setLabel("UNREAD", unread, id) }
 
     private func setLabel(_ label: String, _ on: Bool, _ id: String) async {
-        guard let api = api as? any GmailMutating else { return }
+        guard let mutator else { return }
         let currentSession = session
-        do { try await api.setLabel(label, on: on, threadID: id) }
+        do { try await mutator.setLabel(label, on: on, threadID: id) }
         catch {
             guard session == currentSession else { return }
             Log.api.error("Changing a label failed: \(error.localizedDescription)")
@@ -295,7 +315,7 @@ final class GmailReaderStore {
                         GmailPage(conversations: page.conversations, nextPageToken: next),
                         mailbox: currentMailbox, refreshing: refreshing, checkpoint: checkpoint
                     )
-                    guard session == currentSession, !Task.isCancelled else { return }
+                    guard isCurrent(currentSession) else { return }
                     conversations = saved.conversations
                     nextPageToken = saved.nextPageToken
                     lastRefreshed = saved.fetchedAt
@@ -304,12 +324,12 @@ final class GmailReaderStore {
                     if refreshing { mailboxVersion += 1 }
                     return
                 } catch GmailCacheError.checkpointChanged {
-                    guard session == currentSession, !Task.isCancelled else { return }
+                    guard isCurrent(currentSession) else { return }
                     mailboxError = String(localized: "Mail changed while loading this page. Please try again.")
                     return
                 } catch {
                     Log.cache.error("Could not save the fetched page: \(error.localizedDescription)")
-                    guard session == currentSession, !Task.isCancelled else { return }
+                    guard isCurrent(currentSession) else { return }
                     cacheError = String(localized: "Unable to save mail locally. Newly fetched mail may not be available offline.")
                 }
             }
@@ -325,7 +345,7 @@ final class GmailReaderStore {
             lastRefreshed = Date()
             showingCachedMail = false
         } catch {
-            guard session == currentSession, !Task.isCancelled, !(error is CancellationError) else { return }
+            guard isCurrent(currentSession), !(error is CancellationError) else { return }
             Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
             mailboxError = error.localizedDescription
         }
@@ -346,14 +366,14 @@ final class GmailReaderStore {
         if let cache {
             do {
                 let saved = try await cache.conversation(id: id)
-                guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                guard isCurrent(currentSession, selection: currentSelection) else { return }
                 if let saved {
                     selectedConversation = saved
                     if saved.messages.allSatisfy(\.bodyLoaded) { return }
                 }
             } catch {
                 Log.cache.error("Could not read the saved message: \(error.localizedDescription)")
-                guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                guard isCurrent(currentSession, selection: currentSelection) else { return }
                 cacheError = String(localized: "Unable to read the locally saved message.")
             }
         } else if let cached = bodies[id] {
@@ -370,16 +390,16 @@ final class GmailReaderStore {
             if let cache {
                 do { try await cache.saveConversation(conversation, checkpoint: checkpoint) }
                 catch GmailCacheError.checkpointChanged {
-                    guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                    guard isCurrent(currentSession, selection: currentSelection) else { return }
                     let saved = try? await cache.conversation(id: id)
-                    guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                    guard isCurrent(currentSession, selection: currentSelection) else { return }
                     selectedConversation = saved
                     return
                 } catch {
-                    guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                    guard isCurrent(currentSession, selection: currentSelection) else { return }
                     cacheError = String(localized: "Unable to save this message for offline reading.")
                 }
-                guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                guard isCurrent(currentSession, selection: currentSelection) else { return }
             }
             bodies[id] = conversation
             if let index = conversations.firstIndex(where: { $0.id == id }) {
@@ -387,7 +407,7 @@ final class GmailReaderStore {
             }
             selectedConversation = conversation
         } catch {
-            guard session == currentSession, selection == currentSelection, !Task.isCancelled, !(error is CancellationError) else { return }
+            guard isCurrent(currentSession, selection: currentSelection), !(error is CancellationError) else { return }
             Log.api.error("Loading the conversation failed: \(error.localizedDescription)")
             // Keep cached bodies visible even when a newly added reply cannot be downloaded.
             conversationError = error.localizedDescription

@@ -1,6 +1,8 @@
 import Foundation
 import Observation
 
+/// The in-memory sample mailbox behind demo mode.
+@MainActor
 @Observable
 final class MailStore {
     static let accountName = "Alex Morgan"
@@ -52,80 +54,36 @@ final class MailStore {
         threads.filter { $0.mailbox == .inbox && $0.isUnread }.count
     }
 
-    func markRead(_ id: UUID) {
+    func markRead(_ id: String) {
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         threads[index].isUnread = false
     }
 
-    func markUnread(_ id: UUID) {
+    func markUnread(_ id: String) {
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         threads[index].isUnread = true
     }
 
-    func toggleStar(_ id: UUID) {
+    func toggleStar(_ id: String) {
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         threads[index].isStarred.toggle()
     }
 
-    func archive(_ id: UUID) {
+    func archive(_ id: String) {
         guard let index = threads.firstIndex(where: { $0.id == id && $0.mailbox == .inbox }) else { return }
         threads[index].mailbox = .archive
     }
 
-    func moveToTrash(_ id: UUID) {
+    func moveToTrash(_ id: String) {
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         threads[index].mailbox = .trash
     }
 
     func reply(to thread: MailThread, allRecipients: Bool = false) -> ComposeDraft {
-        Self.replyDraft(to: thread, accountEmail: Self.accountEmail, allRecipients: allRecipients)
+        ComposeDraft.reply(to: thread, accountEmail: Self.accountEmail, allRecipients: allRecipients)
     }
 
-    func forward(_ thread: MailThread) -> ComposeDraft { Self.forwardDraft(thread) }
-
-    static func replyDraft(to thread: MailThread, accountEmail: String, allRecipients: Bool = false) -> ComposeDraft {
-        let message = thread.messages.last(where: {
-            $0.senderEmail.caseInsensitiveCompare(accountEmail) != .orderedSame
-        }) ?? thread.latestMessage
-        var seen: Set<String> = [accountEmail.lowercased()]
-        func uniqueExternal(_ addresses: [String]) -> [String] {
-            addresses.filter { address in
-                !address.isEmpty && seen.insert(address.lowercased()).inserted
-            }
-        }
-        let isOwnMessage = message?.senderEmail.caseInsensitiveCompare(accountEmail) == .orderedSame
-        let primary = isOwnMessage ? EmailAddresses.split(message?.recipient ?? "") : [message?.senderEmail ?? ""]
-        let to = uniqueExternal(primary)
-        let cc = allRecipients ? uniqueExternal(
-            EmailAddresses.split(message?.recipient ?? "") + EmailAddresses.split(message?.cc ?? "")
-        ) : []
-        let subject = thread.subject.lowercased().hasPrefix("re:") ? thread.subject : "Re: " + thread.subject
-        return ComposeDraft(
-            recipient: to.joined(separator: ", "), cc: cc.joined(separator: ", "),
-            subject: subject, replyingTo: thread.id, kind: allRecipients ? .replyAll : .reply
-        )
-    }
-
-    static func forwardDraft(_ thread: MailThread) -> ComposeDraft {
-        let hasPrefix = thread.subject.lowercased().hasPrefix("fwd:") || thread.subject.lowercased().hasPrefix("fw:")
-        let subject = hasPrefix ? thread.subject : "Fwd: " + thread.subject
-        var body = ""
-        if let message = thread.latestMessage {
-            let ccHeader = message.cc.isEmpty ? "" : "\nCc: \(message.cc)"
-            body = """
-
-
-            ---------- Forwarded message ----------
-            From: \(message.senderName) <\(message.senderEmail)>
-            Date: \(message.date.formatted(date: .abbreviated, time: .shortened))
-            Subject: \(thread.subject)
-            To: \(message.recipient)\(ccHeader)
-
-            \(message.body)
-            """
-        }
-        return ComposeDraft(subject: subject, body: body, kind: .forward)
-    }
+    func forward(_ thread: MailThread) -> ComposeDraft { ComposeDraft.forward(thread) }
 
     func saveDraft(_ draft: ComposeDraft) {
         guard draft.hasContent else { return }
@@ -138,13 +96,13 @@ final class MailStore {
         }
     }
 
-    func deleteDraft(_ id: UUID) {
+    func deleteDraft(_ id: String) {
         drafts.removeAll { $0.id == id }
     }
 
     // No network call: this only adds a message to the in-memory demo mailbox.
     @discardableResult
-    func sendDemo(_ draft: ComposeDraft) -> UUID? {
+    func sendDemo(_ draft: ComposeDraft) -> String? {
         guard draft.canSend else { return nil }
         let message = MailMessage(
             senderName: Self.accountName,

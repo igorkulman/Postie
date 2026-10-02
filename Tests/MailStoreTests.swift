@@ -135,8 +135,8 @@ struct MailStoreTests {
     @Test("Actions with unknown IDs leave the mailbox unchanged")
     func unknownActionIDs() {
         let store = makeStore()
-        store.archive(UUID())
-        store.moveToTrash(UUID())
+        store.archive(UUID().uuidString)
+        store.moveToTrash(UUID().uuidString)
         #expect(store.threads.count == 7)
     }
 

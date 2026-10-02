@@ -31,14 +31,14 @@ nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
         case .drafts: "doc"
         case .outbox: "tray.and.arrow.up"
         case .archive: "archivebox"
-        case .junk: "exclamationmark.shield"
+        case .junk: "xmark.bin"
         case .trash: "trash"
         }
     }
 }
 
 struct MailMessage: Identifiable, Equatable {
-    var id = UUID()
+    var id = UUID().uuidString
     var senderName: String
     var senderEmail: String
     var recipient: String
@@ -54,7 +54,7 @@ struct MailMessage: Identifiable, Equatable {
 }
 
 struct MailThread: Identifiable, Equatable {
-    var id = UUID()
+    var id = UUID().uuidString
     var subject: String
     var messages: [MailMessage]
     var mailbox: Mailbox
@@ -84,12 +84,12 @@ enum ComposeKind: String {
 }
 
 struct ComposeDraft: Identifiable, Equatable {
-    var id = UUID()
+    var id = UUID().uuidString
     var recipient = ""
     var cc = ""
     var subject = ""
     var body = ""
-    var replyingTo: UUID?
+    var replyingTo: String?
     var gmailThreadID: String?
     /// The Gmail account the message is sent from; nil in the demo.
     var accountID: String?
@@ -105,6 +105,53 @@ struct ComposeDraft: Identifiable, Equatable {
             && (cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || EmailAddresses.isValidList(cc))
             && !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             && !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+}
+
+extension ComposeDraft {
+    /// A reply that goes to whoever wrote last, other than the account itself.
+    static func reply(to thread: MailThread, accountEmail: String, allRecipients: Bool = false) -> ComposeDraft {
+        let message = thread.messages.last(where: {
+            $0.senderEmail.caseInsensitiveCompare(accountEmail) != .orderedSame
+        }) ?? thread.latestMessage
+        var seen: Set<String> = [accountEmail.lowercased()]
+        func uniqueExternal(_ addresses: [String]) -> [String] {
+            addresses.filter { address in
+                !address.isEmpty && seen.insert(address.lowercased()).inserted
+            }
+        }
+        let isOwnMessage = message?.senderEmail.caseInsensitiveCompare(accountEmail) == .orderedSame
+        let primary = isOwnMessage ? EmailAddresses.split(message?.recipient ?? "") : [message?.senderEmail ?? ""]
+        let to = uniqueExternal(primary)
+        let cc = allRecipients ? uniqueExternal(
+            EmailAddresses.split(message?.recipient ?? "") + EmailAddresses.split(message?.cc ?? "")
+        ) : []
+        let subject = thread.subject.lowercased().hasPrefix("re:") ? thread.subject : "Re: " + thread.subject
+        return ComposeDraft(
+            recipient: to.joined(separator: ", "), cc: cc.joined(separator: ", "),
+            subject: subject, replyingTo: thread.id, kind: allRecipients ? .replyAll : .reply
+        )
+    }
+
+    static func forward(_ thread: MailThread) -> ComposeDraft {
+        let hasPrefix = thread.subject.lowercased().hasPrefix("fwd:") || thread.subject.lowercased().hasPrefix("fw:")
+        let subject = hasPrefix ? thread.subject : "Fwd: " + thread.subject
+        var body = ""
+        if let message = thread.latestMessage {
+            let ccHeader = message.cc.isEmpty ? "" : "\nCc: \(message.cc)"
+            body = """
+
+
+            ---------- Forwarded message ----------
+            From: \(message.senderName) <\(message.senderEmail)>
+            Date: \(message.date.formatted(date: .abbreviated, time: .shortened))
+            Subject: \(thread.subject)
+            To: \(message.recipient)\(ccHeader)
+
+            \(message.body)
+            """
+        }
+        return ComposeDraft(subject: subject, body: body, kind: .forward)
     }
 }
 

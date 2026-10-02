@@ -1,5 +1,6 @@
 import Foundation
 import Security
+import Synchronization
 
 nonisolated struct StoredAccount: Codable, Equatable, Sendable, Identifiable {
     let identity: GoogleIdentity
@@ -69,15 +70,14 @@ nonisolated struct KeychainAccountVault: AccountVault {
 }
 
 /// For previews and tests, which must never touch the real Keychain.
-nonisolated final class MemoryAccountVault: AccountVault, @unchecked Sendable {
-    private let lock = NSLock()
-    private var accounts: [String: StoredAccount]
+nonisolated final class MemoryAccountVault: AccountVault {
+    private let accounts: Mutex<[String: StoredAccount]>
 
     init(_ accounts: [StoredAccount] = []) {
-        self.accounts = Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) })
+        self.accounts = Mutex(Dictionary(uniqueKeysWithValues: accounts.map { ($0.id, $0) }))
     }
 
-    func loadAll() throws -> [StoredAccount] { lock.withLock { Array(accounts.values) } }
-    func save(_ account: StoredAccount) throws { lock.withLock { accounts[account.id] = account } }
-    func delete(id: String) throws { lock.withLock { accounts[id] = nil } }
+    func loadAll() throws -> [StoredAccount] { accounts.withLock { Array($0.values) } }
+    func save(_ account: StoredAccount) throws { accounts.withLock { $0[account.id] = account } }
+    func delete(id: String) throws { accounts.withLock { $0[id] = nil } }
 }

@@ -4,7 +4,7 @@ struct ContentView: View {
     var unreadCountChanged: (Int) -> Void = { _ in }
     @State private var store = MailStore()
     @State private var mailbox: Mailbox? = .inbox
-    @State private var selection = ConversationSelection<UUID>()
+    @State private var selection = ConversationSelection<String>()
     @FocusState private var listIsFocused: Bool
     @FocusState private var searchIsFocused: Bool
     @State private var searchText = ""
@@ -15,12 +15,12 @@ struct ContentView: View {
     private var conversations: [MailThread] {
         store.conversations(in: currentMailbox, matching: searchText)
     }
-    private var conversationIDs: [UUID] { conversations.map(\.id) }
-    private var selectedID: UUID? {
+    private var conversationIDs: [String] { conversations.map(\.id) }
+    private var selectedID: String? {
         get { selection.selectedID }
         nonmutating set { selection.select(newValue) }
     }
-    private var listSelection: Binding<UUID?> {
+    private var listSelection: Binding<String?> {
         Binding(get: { selectedID }, set: { selection.updateFromList($0, visibleIDs: conversationIDs) })
     }
     private var selectedThread: MailThread? {
@@ -29,7 +29,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            sidebar
+            MailboxSidebar(selection: $mailbox, badges: [.inbox: store.unreadCount, .drafts: store.drafts.count])
                 .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
         } content: {
             messageList
@@ -118,7 +118,7 @@ struct ContentView: View {
         if let thread = selectedThread { archive(thread.id) }
     }
 
-    private func archive(_ id: UUID) {
+    private func archive(_ id: String) {
         guard let token = selection.beginRemoval(of: id, visibleIDs: conversationIDs) else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
             store.archive(id)
@@ -139,7 +139,7 @@ struct ContentView: View {
         if let thread = selectedThread { remove(thread.id) }
     }
 
-    private func remove(_ id: UUID) {
+    private func remove(_ id: String) {
         guard let token = selection.beginRemoval(of: id, visibleIDs: conversationIDs) else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
             if currentMailbox == .drafts {
@@ -191,27 +191,6 @@ struct ContentView: View {
         }
     }
 
-    private func sidebarBadge(for item: Mailbox) -> Int {
-        switch item {
-        case .inbox: store.unreadCount
-        case .drafts: store.drafts.count
-        default: 0
-        }
-    }
-
-    private var sidebar: some View {
-        List(selection: $mailbox) {
-            Section("Mailboxes") {
-                ForEach(Mailbox.allCases) { item in
-                    Label(item.title, systemImage: item.symbol)
-                        .badge(sidebarBadge(for: item))
-                        .tag(item)
-                }
-            }
-        }
-        .listStyle(.sidebar)
-    }
-
     private var messageList: some View {
         VStack(spacing: 0) {
             List(selection: listSelection) {
@@ -244,7 +223,7 @@ struct ContentView: View {
             .listStyle(.inset)
             .focused($listIsFocused)
             .onDeleteCommand(perform: mailActions.trash)
-            .contextMenu(forSelectionType: UUID.self) { ids in
+            .contextMenu(forSelectionType: String.self) { ids in
                 if let id = ids.first, let thread = conversations.first(where: { $0.id == id }) {
                     rowMenu(for: thread)
                 }

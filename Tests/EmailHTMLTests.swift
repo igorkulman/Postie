@@ -162,7 +162,7 @@ private final class BrowserFixture {
     }
 
     func load(_ html: String) async throws -> CGFloat {
-        coordinator.load(EmailHTMLPolicy.document(html, dark: false), in: view)
+        coordinator.load(html: html, dark: false, in: view)
         var iterator = heights.makeAsyncIterator()
         guard let height = try await iterator.next() else { throw CancellationError() }
         // Wait for resources and page load, not an arbitrary sleep.

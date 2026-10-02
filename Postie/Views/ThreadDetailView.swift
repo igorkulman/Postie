@@ -19,16 +19,12 @@ struct ThreadDetailView: View {
         // Keep the subject visible for a single email. Conversations open at the newest header,
         // not at the bottom of its body, which may be many screens long.
         guard thread.messages.count > 1, let latest = thread.latestMessage else {
-            return ScrollPosition(idType: UUID.self, edge: .top)
+            return ScrollPosition(idType: String.self, edge: .top)
         }
         return ScrollPosition(id: latest.id, anchor: .top)
     }
 
     var body: some View {
-        scrollingBody
-    }
-
-    private var scrollingBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -178,6 +174,7 @@ private struct MessageView: View {
     }
 }
 
+#if DEBUG
 #Preview("Conversation") {
     let thread = SampleMail.threads()[0]
     ThreadDetailView(thread: thread, toggleStar: {})
@@ -216,3 +213,4 @@ private func longConversationPreview(html: Bool = false) -> MailThread {
         .frame(width: 420, height: 640)
         .preferredColorScheme(.dark)
 }
+#endif

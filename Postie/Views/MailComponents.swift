@@ -103,3 +103,23 @@ struct DemoBadge: View {
             .help("Sample mail only. Gmail is not connected and no real email is sent.")
     }
 }
+
+/// The folder list shared by the demo and the Gmail reader.
+struct MailboxSidebar: View {
+    @Binding var selection: Mailbox?
+    /// Unread or draft counts to show next to a folder.
+    let badges: [Mailbox: Int]
+
+    var body: some View {
+        List(selection: $selection) {
+            Section("Mailboxes") {
+                ForEach(Mailbox.allCases) { mailbox in
+                    Label(mailbox.title, systemImage: mailbox.symbol)
+                        .badge(badges[mailbox] ?? 0)
+                        .tag(mailbox)
+                }
+            }
+        }
+        .listStyle(.sidebar)
+    }
+}

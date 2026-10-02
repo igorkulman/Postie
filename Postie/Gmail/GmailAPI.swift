@@ -67,7 +67,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     // Gmail also limits concurrent requests per user, so only a few run at once.
     private let maximumInFlight = 4
     private var inFlight = 0
-    private var waiting: [CheckedContinuation<Void, Never>] = []
+    private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
 
     init(transport: any GmailTransport = GmailURLTransport(), retryDelays: [TimeInterval] = [1, 3, 9],
          accessToken: @escaping @MainActor @Sendable () async throws -> String) {
@@ -82,10 +82,9 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         var retries = retryDelays.makeIterator()
         while true {
             try Task.checkCancellation()
-            if inFlight >= maximumInFlight { await withCheckedContinuation { waiting.append($0) } }
-            else { inFlight += 1 }
+            try await acquireSlot()
             let result = await Result { try await transport.send(request) }
-            if waiting.isEmpty { inFlight -= 1 } else { waiting.removeFirst().resume() }
+            releaseSlot()
             let response = try result.get()
             let endpoint = request.url?.path ?? ""
             guard response.isRateLimited else {
@@ -104,6 +103,33 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             Log.api.warning("Rate limited (HTTP \(response.statusCode, privacy: .public)) on \(endpoint), retrying in \(wait, privacy: .public)s")
             try await Task.sleep(for: .seconds(wait))
         }
+    }
+
+    /// Waits for one of the few request slots. A cancelled wait leaves the queue instead of holding its place.
+    private func acquireSlot() async throws {
+        try Task.checkCancellation()
+        guard inFlight >= maximumInFlight else {
+            inFlight += 1
+            return
+        }
+        let id = UUID()
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                waiting.append((id, continuation))
+            }
+        } onCancel: {
+            Task { await self.cancelWaiter(id) }
+        }
+    }
+
+    /// Hands the slot straight to the next waiter, or frees it.
+    private func releaseSlot() {
+        if waiting.isEmpty { inFlight -= 1 } else { waiting.removeFirst().continuation.resume() }
+    }
+
+    private func cancelWaiter(_ id: UUID) {
+        guard let index = waiting.firstIndex(where: { $0.id == id }) else { return }
+        waiting.remove(at: index).continuation.resume(throwing: CancellationError())
     }
 
     func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage {

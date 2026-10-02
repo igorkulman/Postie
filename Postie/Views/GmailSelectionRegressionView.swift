@@ -1,3 +1,4 @@
+#if DEBUG
 import SwiftUI
 
 /// Launch with -PostieSelectionRegression to exercise the actual Gmail UI without a mailbox.
@@ -96,3 +97,4 @@ private struct RegressionPreviewData: PreviewModifier {
 #Preview("Empty Inbox", traits: .modifier(RegressionPreviewData(empty: true))) {
     Color.clear
 }
+#endif

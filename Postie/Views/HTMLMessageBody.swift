@@ -163,11 +163,11 @@ struct EmailHTMLWebView: NSViewRepresentable {
         coordinator.heightChanged = heightChanged
         coordinator.failed = failed
         coordinator.openLink = openLink
-        let document = EmailHTMLPolicy.document(html, dark: dark)
-        guard document != coordinator.document else { return }
+        // Compare the inputs: building the document string for a large email on every update just to compare it is wasteful.
+        guard html != coordinator.html || dark != coordinator.dark else { return }
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         view.underPageBackgroundColor = .textBackgroundColor
-        coordinator.load(document, in: view)
+        coordinator.load(html: html, dark: dark, in: view)
     }
 
     static func dismantleNSView(_ view: EmailWebView, coordinator: Coordinator) {
@@ -181,22 +181,25 @@ struct EmailHTMLWebView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, WKNavigationDelegate, WKScriptMessageHandler {
-        var document: String?
+        private(set) var html: String?
+        private(set) var dark: Bool?
         var loadTask: Task<Void, Never>?
         var heightChanged: ((CGFloat) -> Void)?
         var failed: (() -> Void)?
         var openLink: ((URL) -> Void)?
         private var awaitingInitialDocument = false
 
-        func load(_ document: String, in view: EmailWebView) {
-            self.document = document
+        func load(html: String, dark: Bool, in view: EmailWebView) {
+            self.html = html
+            self.dark = dark
+            let document = EmailHTMLPolicy.document(html, dark: dark)
             loadTask?.cancel()
             view.stopLoading()
             loadTask = Task { @MainActor [weak self, weak view] in
                 do {
                     let rules = try await EmailHTMLPolicy.rules()
                     try Task.checkCancellation()
-                    guard let self, let view, self.document == document else { return }
+                    guard let self, let view, self.html == html, self.dark == dark else { return }
                     view.configuration.userContentController.removeAllContentRuleLists()
                     view.configuration.userContentController.add(rules)
                     self.awaitingInitialDocument = true
@@ -263,6 +266,7 @@ final class EmailWebView: WKWebView {
     }
 }
 
+#if DEBUG
 private let reservationPreviewHTML = """
 <html><head><style>
     .reservation { max-width: 560px; margin: 0 auto; font: 14px -apple-system, sans-serif; }
@@ -296,3 +300,4 @@ private func reservationPreview() -> ThreadDetailView {
 #Preview("HTML reservation · Compact dark") {
     reservationPreview().frame(width: 380, height: 640).preferredColorScheme(.dark)
 }
+#endif
