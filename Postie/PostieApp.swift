@@ -1,6 +1,6 @@
 //
-//  iMailApp.swift
-//  iMail
+//  PostieApp.swift
+//  Postie
 //
 //  Created by Igor Kulman on 02.10.2026.
 //
@@ -10,17 +10,17 @@ import SwiftUI
 import GoogleSignIn
 
 @main
-struct iMailApp: App {
+struct PostieApp: App {
     @State private var account = GoogleAccount()
 
     var body: some Scene {
-        Window("iMail", id: "main") {
+        Window("Postie", id: "main") {
             // Hosted unit tests must not restore a real account or make Gmail requests.
             MailRootView(
                 account: account,
-                restoresSession: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1",
-                updatesDockBadge: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1",
-                persistsMail: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1"
+                restoresSession: ProcessInfo.processInfo.environment["POSTIE_UNIT_TESTS"] != "1",
+                updatesDockBadge: ProcessInfo.processInfo.environment["POSTIE_UNIT_TESTS"] != "1",
+                persistsMail: ProcessInfo.processInfo.environment["POSTIE_UNIT_TESTS"] != "1"
             )
                 .frame(minWidth: 960, minHeight: 640)
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }

@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import iMail
+@testable import Postie
 
 @Suite("Gmail history REST contract", .timeLimit(.minutes(1)))
 struct GmailHistoryAPITests {

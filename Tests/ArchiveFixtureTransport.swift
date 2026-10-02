@@ -1,5 +1,5 @@
 import Foundation
-@testable import iMail
+@testable import Postie
 
 actor ArchiveFixtureTransport: GmailTransport {
     let labels: [String]

@@ -9,23 +9,23 @@
   "defaultOptions" : {
     "environmentVariableEntries" : [
       {
-        "key" : "IMAIL_UNIT_TESTS",
+        "key" : "POSTIE_UNIT_TESTS",
         "value" : "1"
       }
     ],
     "targetForVariableExpansion" : {
-      "containerPath" : "container:iMail.xcodeproj",
+      "containerPath" : "container:Postie.xcodeproj",
       "identifier" : "F3DE2CF5306F998200EBD6E5",
-      "name" : "iMail"
+      "name" : "Postie"
     }
   },
   "testTargets" : [
     {
       "parallelizable" : true,
       "target" : {
-        "containerPath" : "container:iMail.xcodeproj",
+        "containerPath" : "container:Postie.xcodeproj",
         "identifier" : "B10000000000000000000003",
-        "name" : "iMailTests"
+        "name" : "PostieTests"
       }
     }
   ],

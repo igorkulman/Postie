@@ -6,8 +6,8 @@
     {
       "layers" : [
         {
-          "image-name" : "imail-icon-composite-v2.svg",
-          "name" : "imail-icon-composite-v2"
+          "image-name" : "postie-icon-composite-v2.svg",
+          "name" : "postie-icon-composite-v2"
         }
       ],
       "shadow" : {

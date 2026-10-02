@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import iMail
+@testable import Postie
 
 @Suite("Cache-backed Gmail reader", .timeLimit(.minutes(1)))
 @MainActor

@@ -7,7 +7,8 @@ struct MailRootView: View {
     @State private var activationRefresh = 0
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
     @State private var reader: GmailReaderStore
-    @State private var showingDemo = false
+    // Launch with `-PostieDemoData` to start on sample mail (e.g. for screenshots).
+    @State private var showingDemo = ProcessInfo.processInfo.arguments.contains("-PostieDemoData")
     @State private var demoUnreadCount: Int?
     @State private var cache: GmailCache?
     @State private var readerAccount: CachedGmailAccount?
@@ -56,7 +57,7 @@ struct MailRootView: View {
         }
         .task {
             await prepareCache()
-            if restoresSession { await account.restore() }
+            if restoresSession, !showingDemo { await account.restore() }
         }
         .task(id: AccountBinding(id: account.accountID, ready: !preparingCache)) {
             if !preparingCache, let id = account.accountID, let email = account.email {
@@ -119,7 +120,7 @@ struct MailRootView: View {
     }
 
     private func prepareCache() async {
-        guard persistsMail else { preparingCache = false; return }
+        guard persistsMail, !showingDemo else { preparingCache = false; return }
         defer { preparingCache = false }
         do {
             let database = try await GmailCache.open()
@@ -203,14 +204,10 @@ struct MailRootView: View {
                     .textSelection(.enabled)
                     .frame(maxWidth: 420)
             }
-
-            Button("Explore the Demo") { showingDemo = true }
-                .buttonStyle(.link)
-                .disabled(account.isBusy)
         }
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("iMail")
+        .navigationTitle("Postie")
     }
 }
 

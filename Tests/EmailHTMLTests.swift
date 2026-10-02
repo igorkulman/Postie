@@ -1,7 +1,7 @@
 import AppKit
 import Testing
 import WebKit
-@testable import iMail
+@testable import Postie
 
 @Suite("HTML email security", .serialized, .timeLimit(.minutes(1)))
 @MainActor
@@ -9,7 +9,7 @@ struct EmailHTMLTests {
     @Test("Privacy rules compile in WebKit, including every blocked scheme")
     func contentBlockerCompiles() async throws {
         let rules = try await EmailHTMLPolicy.rules()
-        #expect(rules.identifier == "iMail.EmailPrivacy.v2")
+        #expect(rules.identifier == "Postie.EmailPrivacy.v2")
     }
 
     @Test("Image exceptions are restricted to HTTP(S) image requests")
@@ -39,7 +39,7 @@ struct EmailHTMLTests {
         ("https://example.com/booking", true), ("http://example.com/booking", true),
         ("mailto:friend@example.com", true), ("javascript:alert(1)", false),
         ("file:///etc/passwd", false), ("data:text/html,hello", false),
-        ("imail://account", false), ("tel:1234", false), ("https:relative", false),
+        ("postie://account", false), ("tel:1234", false), ("https:relative", false),
         ("about:blank", false)
     ])
     func links(input: (String, Bool)) {

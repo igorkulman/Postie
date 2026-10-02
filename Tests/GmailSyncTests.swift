@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import iMail
+@testable import Postie
 
 @Suite("Incremental Gmail synchronization", .timeLimit(.minutes(1)))
 @MainActor

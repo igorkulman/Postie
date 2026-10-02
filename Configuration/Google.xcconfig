@@ -1,6 +1,6 @@
-GOOGLE_CLIENT_ID = 148043301582-ls9sjncn3ljodcu9i2k4kboj4d8liqt6.apps.googleusercontent.com
-GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.148043301582-ls9sjncn3ljodcu9i2k4kboj4d8liqt6
+GOOGLE_CLIENT_ID = 143365580349-hlt5vffik63hj13enolev6vm90222lfp.apps.googleusercontent.com
+GOOGLE_REVERSED_CLIENT_ID = com.googleusercontent.apps.143365580349-hlt5vffik63hj13enolev6vm90222lfp
 
 INFOPLIST_FILE = Configuration/Info.plist
-CODE_SIGN_ENTITLEMENTS = Configuration/iMail.entitlements
+CODE_SIGN_ENTITLEMENTS = Configuration/Postie.entitlements
 ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES

@@ -1,5 +1,5 @@
 import Testing
-@testable import iMail
+@testable import Postie
 
 @Suite("Dock unread badge")
 @MainActor

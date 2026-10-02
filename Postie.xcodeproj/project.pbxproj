@@ -18,17 +18,17 @@
 			containerPortal = F3DE2CEE306F998200EBD6E5 /* Project object */;
 			proxyType = 1;
 			remoteGlobalIDString = F3DE2CF5306F998200EBD6E5;
-			remoteInfo = iMail;
+			remoteInfo = Postie;
 		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A10000000000000000000003 /* Google.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Google.xcconfig; sourceTree = "<group>"; };
 		A10000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
-		A10000000000000000000005 /* iMail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iMail.entitlements; sourceTree = "<group>"; };
-		B10000000000000000000001 /* iMailTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iMailTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		B10000000000000000000012 /* iMail.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = iMail.xctestplan; sourceTree = "<group>"; };
-		F3DE2CF6306F998200EBD6E5 /* iMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000005 /* Postie.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Postie.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000001 /* PostieTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = PostieTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000012 /* Postie.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = Postie.xctestplan; sourceTree = "<group>"; };
+		F3DE2CF6306F998200EBD6E5 /* Postie.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Postie.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -37,9 +37,9 @@
 			path = Tests;
 			sourceTree = "<group>";
 		};
-		F3DE2CF8306F998200EBD6E5 /* iMail */ = {
+		F3DE2CF8306F998200EBD6E5 /* Postie */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			path = iMail;
+			path = Postie;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -66,7 +66,7 @@
 			children = (
 				A10000000000000000000003 /* Google.xcconfig */,
 				A10000000000000000000004 /* Info.plist */,
-				A10000000000000000000005 /* iMail.entitlements */,
+				A10000000000000000000005 /* Postie.entitlements */,
 			);
 			path = Configuration;
 			sourceTree = "<group>";
@@ -74,9 +74,9 @@
 		F3DE2CED306F998200EBD6E5 = {
 			isa = PBXGroup;
 			children = (
-				F3DE2CF8306F998200EBD6E5 /* iMail */,
+				F3DE2CF8306F998200EBD6E5 /* Postie */,
 				B10000000000000000000002 /* Tests */,
-				B10000000000000000000012 /* iMail.xctestplan */,
+				B10000000000000000000012 /* Postie.xctestplan */,
 				A10000000000000000000006 /* Configuration */,
 				F3DE2CF7306F998200EBD6E5 /* Products */,
 			);
@@ -85,8 +85,8 @@
 		F3DE2CF7306F998200EBD6E5 /* Products */ = {
 			isa = PBXGroup;
 			children = (
-				F3DE2CF6306F998200EBD6E5 /* iMail.app */,
-				B10000000000000000000001 /* iMailTests.xctest */,
+				F3DE2CF6306F998200EBD6E5 /* Postie.app */,
+				B10000000000000000000001 /* PostieTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -94,9 +94,9 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
-		B10000000000000000000003 /* iMailTests */ = {
+		B10000000000000000000003 /* PostieTests */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = B10000000000000000000009 /* Build configuration list for PBXNativeTarget "iMailTests" */;
+			buildConfigurationList = B10000000000000000000009 /* Build configuration list for PBXNativeTarget "PostieTests" */;
 			buildPhases = (
 				B10000000000000000000004 /* Sources */,
 				B10000000000000000000005 /* Frameworks */,
@@ -110,14 +110,14 @@
 			fileSystemSynchronizedGroups = (
 				B10000000000000000000002 /* Tests */,
 			);
-			name = iMailTests;
-			productName = iMailTests;
-			productReference = B10000000000000000000001 /* iMailTests.xctest */;
+			name = PostieTests;
+			productName = PostieTests;
+			productReference = B10000000000000000000001 /* PostieTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
-		F3DE2CF5306F998200EBD6E5 /* iMail */ = {
+		F3DE2CF5306F998200EBD6E5 /* Postie */ = {
 			isa = PBXNativeTarget;
-			buildConfigurationList = F3DE2D01306F998300EBD6E5 /* Build configuration list for PBXNativeTarget "iMail" */;
+			buildConfigurationList = F3DE2D01306F998300EBD6E5 /* Build configuration list for PBXNativeTarget "Postie" */;
 			buildPhases = (
 				F3DE2CF2306F998200EBD6E5 /* Sources */,
 				F3DE2CF3306F998200EBD6E5 /* Frameworks */,
@@ -126,16 +126,16 @@
 			buildRules = (
 			);
 			fileSystemSynchronizedGroups = (
-				F3DE2CF8306F998200EBD6E5 /* iMail */,
+				F3DE2CF8306F998200EBD6E5 /* Postie */,
 			);
-			name = iMail;
+			name = Postie;
 			packageProductDependencies = (
 				A10000000000000000000011 /* GoogleSignIn */,
 				A10000000000000000000012 /* GoogleSignInSwift */,
 				C10000000000000000000003 /* GRDB */,
 			);
-			productName = iMail;
-			productReference = F3DE2CF6306F998200EBD6E5 /* iMail.app */;
+			productName = Postie;
+			productReference = F3DE2CF6306F998200EBD6E5 /* Postie.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -157,7 +157,7 @@
 					};
 				};
 			};
-			buildConfigurationList = F3DE2CF1306F998200EBD6E5 /* Build configuration list for PBXProject "iMail" */;
+			buildConfigurationList = F3DE2CF1306F998200EBD6E5 /* Build configuration list for PBXProject "Postie" */;
 			developmentRegion = en;
 			hasScannedForEncodings = 0;
 			knownRegions = (
@@ -175,8 +175,8 @@
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
-				F3DE2CF5306F998200EBD6E5 /* iMail */,
-				B10000000000000000000003 /* iMailTests */,
+				F3DE2CF5306F998200EBD6E5 /* Postie */,
+				B10000000000000000000003 /* PostieTests */,
 			);
 		};
 /* End PBXProject section */
@@ -210,13 +210,13 @@
 /* Begin PBXTargetDependency section */
 		B10000000000000000000008 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
-			target = F3DE2CF5306F998200EBD6E5 /* iMail */;
+			target = F3DE2CF5306F998200EBD6E5 /* Postie */;
 			targetProxy = B10000000000000000000007 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
-		B10000000000000000000010 /* Debug configuration for PBXNativeTarget "iMailTests" */ = {
+		B10000000000000000000010 /* Debug configuration for PBXNativeTarget "PostieTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -230,14 +230,14 @@
 					"@loader_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMailTests;
+				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.PostieTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iMail.app/Contents/MacOS/iMail";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Postie.app/Contents/MacOS/Postie";
 			};
 			name = Debug;
 		};
-		B10000000000000000000011 /* Release configuration for PBXNativeTarget "iMailTests" */ = {
+		B10000000000000000000011 /* Release configuration for PBXNativeTarget "PostieTests" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
@@ -251,14 +251,14 @@
 					"@loader_path/../Frameworks",
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMailTests;
+				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.PostieTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 6.0;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iMail.app/Contents/MacOS/iMail";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Postie.app/Contents/MacOS/Postie";
 			};
 			name = Release;
 		};
-		F3DE2CFF306F998300EBD6E5 /* Debug configuration for PBXProject "iMail" */ = {
+		F3DE2CFF306F998300EBD6E5 /* Debug configuration for PBXProject "Postie" */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A10000000000000000000003 /* Google.xcconfig */;
 			buildSettings = {
@@ -323,7 +323,7 @@
 			};
 			name = Debug;
 		};
-		F3DE2D00306F998300EBD6E5 /* Release configuration for PBXProject "iMail" */ = {
+		F3DE2D00306F998300EBD6E5 /* Release configuration for PBXProject "Postie" */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = A10000000000000000000003 /* Google.xcconfig */;
 			buildSettings = {
@@ -380,7 +380,7 @@
 			};
 			name = Release;
 		};
-		F3DE2D02306F998300EBD6E5 /* Debug configuration for PBXNativeTarget "iMail" */ = {
+		F3DE2D02306F998300EBD6E5 /* Debug configuration for PBXNativeTarget "Postie" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -401,7 +401,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMail;
+				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.Postie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -413,7 +413,7 @@
 			};
 			name = Debug;
 		};
-		F3DE2D03306F998300EBD6E5 /* Release configuration for PBXNativeTarget "iMail" */ = {
+		F3DE2D03306F998300EBD6E5 /* Release configuration for PBXNativeTarget "Postie" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
@@ -434,7 +434,7 @@
 				);
 				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMail;
+				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.Postie;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = YES;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
@@ -449,27 +449,27 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		B10000000000000000000009 /* Build configuration list for PBXNativeTarget "iMailTests" */ = {
+		B10000000000000000000009 /* Build configuration list for PBXNativeTarget "PostieTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				B10000000000000000000010 /* Debug configuration for PBXNativeTarget "iMailTests" */,
-				B10000000000000000000011 /* Release configuration for PBXNativeTarget "iMailTests" */,
+				B10000000000000000000010 /* Debug configuration for PBXNativeTarget "PostieTests" */,
+				B10000000000000000000011 /* Release configuration for PBXNativeTarget "PostieTests" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		F3DE2CF1306F998200EBD6E5 /* Build configuration list for PBXProject "iMail" */ = {
+		F3DE2CF1306F998200EBD6E5 /* Build configuration list for PBXProject "Postie" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				F3DE2CFF306F998300EBD6E5 /* Debug configuration for PBXProject "iMail" */,
-				F3DE2D00306F998300EBD6E5 /* Release configuration for PBXProject "iMail" */,
+				F3DE2CFF306F998300EBD6E5 /* Debug configuration for PBXProject "Postie" */,
+				F3DE2D00306F998300EBD6E5 /* Release configuration for PBXProject "Postie" */,
 			);
 			defaultConfigurationName = Release;
 		};
-		F3DE2D01306F998300EBD6E5 /* Build configuration list for PBXNativeTarget "iMail" */ = {
+		F3DE2D01306F998300EBD6E5 /* Build configuration list for PBXNativeTarget "Postie" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
-				F3DE2D02306F998300EBD6E5 /* Debug configuration for PBXNativeTarget "iMail" */,
-				F3DE2D03306F998300EBD6E5 /* Release configuration for PBXNativeTarget "iMail" */,
+				F3DE2D02306F998300EBD6E5 /* Debug configuration for PBXNativeTarget "Postie" */,
+				F3DE2D03306F998300EBD6E5 /* Release configuration for PBXNativeTarget "Postie" */,
 			);
 			defaultConfigurationName = Release;
 		};

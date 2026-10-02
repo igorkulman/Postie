@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
-@testable import iMail
+@testable import Postie
 
 @Suite("Conversation opening position")
 @MainActor

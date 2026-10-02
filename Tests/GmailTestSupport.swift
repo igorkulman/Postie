@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import iMail
+@testable import Postie
 
 nonisolated enum GmailFixtures {
     static func thread(_ id: String = "a1", htmlOnly: Bool = false) -> Data {

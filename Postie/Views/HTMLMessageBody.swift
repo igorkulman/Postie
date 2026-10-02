@@ -42,7 +42,7 @@ struct HTMLMessageBody: View {
 // ephemeral storage, and a navigation delegate. Only HTTP(S) image resources are exempted;
 // no email is loaded before the blocker is installed.
 enum EmailHTMLPolicy {
-    static let world = WKContentWorld.world(name: "iMail.EmailLayout")
+    static let world = WKContentWorld.world(name: "Postie.EmailLayout")
     static let heightHandler = "emailHeight"
     static let maximumHeight: CGFloat = 30_000
     // WebKit's content-blocker regex dialect does not support alternation (|).
@@ -66,7 +66,7 @@ enum EmailHTMLPolicy {
         if let ruleTask { return try await ruleTask.value }
         let task = Task { @MainActor in
             guard let rules = try await WKContentRuleListStore.default().compileContentRuleList(
-                forIdentifier: "iMail.EmailPrivacy.v2", encodedContentRuleList: contentRules
+                forIdentifier: "Postie.EmailPrivacy.v2", encodedContentRuleList: contentRules
             ) else { throw Failure.blockerUnavailable }
             return rules
         }

@@ -62,7 +62,7 @@ actor GmailCache {
         let fileManager = FileManager.default
         let path = try url ?? fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                               appropriateFor: nil, create: true)
-            .appendingPathComponent("iMail", isDirectory: true).appendingPathComponent("mail.sqlite")
+            .appendingPathComponent("Postie", isDirectory: true).appendingPathComponent("mail.sqlite")
         try fileManager.createDirectory(at: path.deletingLastPathComponent(), withIntermediateDirectories: true,
                                         attributes: [.posixPermissions: 0o700])
         var configuration = Configuration()

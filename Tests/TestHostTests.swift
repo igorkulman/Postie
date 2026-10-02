@@ -5,6 +5,6 @@ import Testing
 struct TestHostTests {
     @Test("The test plan disables live Google session restoration")
     func isolatedFromLiveAccounts() {
-        #expect(ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] == "1")
+        #expect(ProcessInfo.processInfo.environment["POSTIE_UNIT_TESTS"] == "1")
     }
 }
