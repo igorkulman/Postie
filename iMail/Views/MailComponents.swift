@@ -16,12 +16,14 @@ struct SenderAvatar: View {
 
 struct MailThreadRow: View {
     let thread: MailThread
+    // .increased while the row sits on the accent-colored selection background.
+    @Environment(\.backgroundProminence) private var prominence
 
     var body: some View {
         if let message = thread.latestMessage {
             HStack(alignment: .top, spacing: 7) {
                 Circle()
-                    .fill(thread.isUnread ? Color.accentColor : .clear)
+                    .fill(thread.isUnread ? (prominence == .increased ? Color.white : Color.accentColor) : .clear)
                     .frame(width: 5, height: 5)
                     .padding(.top, 5)
                 VStack(alignment: .leading, spacing: 2) {

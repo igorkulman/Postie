@@ -11,10 +11,13 @@ import GoogleSignIn
 
 @main
 struct iMailApp: App {
+    @State private var account = GoogleAccount()
+
     var body: some Scene {
         Window("iMail", id: "main") {
             // Hosted unit tests must not restore a real account or make Gmail requests.
             MailRootView(
+                account: account,
                 restoresSession: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1",
                 updatesDockBadge: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1",
                 persistsMail: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1"
@@ -25,5 +28,9 @@ struct iMailApp: App {
         .commands { MailCommands() }
         .defaultSize(width: 1200, height: 820)
         .windowResizability(.contentMinSize)
+
+        Settings {
+            SettingsView(account: account)
+        }
     }
 }

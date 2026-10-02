@@ -12,7 +12,7 @@ A small native macOS email-client prototype, built with SwiftUI.
 - Browse Inbox, Drafts, Sent, Archive, Junk, and Trash in pages of 25, with bounded metadata requests
 - Show an empty local Outbox until sending is implemented
 - Load full conversations when selected; open multi-message threads at the expanded newest message's header
-- Refresh the current folder manually with Command-R
+- Refresh the current folder manually with Get New Mail (Shift-Command-N); the next page loads automatically at the end of the list
 - Show the total unread Inbox message count on the Dock icon; update on initial load and folder refresh, hide at zero, and retain the last known count if its request fails
 - Render HTML formatting with restricted WebKit; keep plain text for search and fallback
 - Load remote HTTP(S) images automatically; block email scripts, external stylesheets/fonts, forms, and automatic navigation
@@ -20,7 +20,7 @@ A small native macOS email-client prototype, built with SwiftUI.
 - Preserve Gmail IDs, custom/system labels, and read/star state without modifying the mailbox
 - Search loaded conversation headers and snippets, plus bodies already fetched in this session
 - Show loading, retry, and pagination states; switching folders clears the previous folder's selection and pagination
-- No account toolbar icon or logout menu; proper account settings will be added later
+- Account and Dock-badge preferences, including sign out, live in Settings (Command-,)
 
 Only `gmail.readonly` is requested in addition to Google's basic sign-in scopes. All Gmail API requests are GETs. Compose, archive, trash, reply, forward, and changing stars are disabled in Gmail mode. Opening a conversation does **not** mark it read in Gmail.
 

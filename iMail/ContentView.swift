@@ -85,6 +85,10 @@ struct ContentView: View {
         if currentMailbox != .trash {
             actions.trash = { requestDeleteSelection() }
         }
+        actions.toggleRead = { toggleRead(thread) }
+        actions.toggleFlag = { store.toggleStar(thread.id) }
+        actions.selectionIsUnread = thread.isUnread
+        actions.selectionIsFlagged = thread.isStarred
         if thread.latestMessage != nil && currentMailbox != .drafts {
             actions.reply = { composeResponse(allRecipients: false) }
             actions.replyAll = { composeResponse(allRecipients: true) }
@@ -99,10 +103,13 @@ struct ContentView: View {
     }
 
     private func archiveSelection() {
-        guard let thread = selectedThread else { return }
-        let index = conversations.firstIndex { $0.id == thread.id } ?? 0
-        store.archive(thread.id)
-        selectNeighbor(at: index)
+        if let thread = selectedThread { archive(thread.id) }
+    }
+
+    private func archive(_ id: UUID) {
+        let index = conversations.firstIndex { $0.id == id } ?? 0
+        store.archive(id)
+        if selectedID == id { selectNeighbor(at: index) }
     }
 
     private func requestDeleteSelection() {
@@ -115,19 +122,55 @@ struct ContentView: View {
     }
 
     private func deleteSelection() {
-        guard let thread = selectedThread else { return }
-        let index = conversations.firstIndex { $0.id == thread.id } ?? 0
+        if let thread = selectedThread { remove(thread.id) }
+    }
+
+    private func remove(_ id: UUID) {
+        let index = conversations.firstIndex { $0.id == id } ?? 0
         if currentMailbox == .drafts {
-            store.deleteDraft(thread.id)
+            store.deleteDraft(id)
         } else {
-            store.moveToTrash(thread.id)
+            store.moveToTrash(id)
         }
-        selectNeighbor(at: index)
+        if selectedID == id { selectNeighbor(at: index) }
+    }
+
+    private func toggleRead(_ thread: MailThread) {
+        if thread.isUnread { store.markRead(thread.id) } else { store.markUnread(thread.id) }
     }
 
     private func selectNeighbor(at index: Int) {
         let remaining = conversations
         selectedID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)].id
+    }
+
+    @ViewBuilder
+    private func rowMenu(for thread: MailThread) -> some View {
+        if currentMailbox != .drafts {
+            Button("Reply", systemImage: "arrowshape.turn.up.left") { composer = store.reply(to: thread) }
+            Button("Reply All", systemImage: "arrowshape.turn.up.left.2") {
+                composer = store.reply(to: thread, allRecipients: true)
+            }
+            Button("Forward", systemImage: "arrowshape.turn.up.right") { composer = store.forward(thread) }
+            Divider()
+            Button(thread.isUnread ? "Mark as Read" : "Mark as Unread",
+                   systemImage: thread.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(thread) }
+            Button(thread.isStarred ? "Unflag" : "Flag", systemImage: thread.isStarred ? "star.slash" : "star") {
+                store.toggleStar(thread.id)
+            }
+            Divider()
+        }
+        if thread.mailbox == .inbox {
+            Button("Archive", systemImage: "archivebox") { archive(thread.id) }
+        }
+        if currentMailbox == .drafts {
+            Button("Delete Draft", systemImage: "trash", role: .destructive) {
+                selectedID = thread.id
+                confirmsDraftDeletion = true
+            }
+        } else if currentMailbox != .trash {
+            Button("Move to Trash", systemImage: "trash", role: .destructive) { remove(thread.id) }
+        }
     }
 
     private func sidebarBadge(for item: Mailbox) -> Int {
@@ -167,9 +210,34 @@ struct ContentView: View {
                             .tag(thread.id)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
+                            .swipeActions(edge: .leading) {
+                                Button { toggleRead(thread) } label: {
+                                    Label(thread.isUnread ? "Read" : "Unread",
+                                          systemImage: thread.isUnread ? "envelope.open" : "envelope.badge")
+                                }
+                            }
+                            .swipeActions(edge: .trailing) {
+                                if currentMailbox != .trash {
+                                    Button(role: .destructive) { remove(thread.id) } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                if thread.mailbox == .inbox {
+                                    Button { archive(thread.id) } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                    .tint(.indigo)
+                                }
+                            }
                     }
                 }
                 .listStyle(.inset)
+                .onDeleteCommand(perform: mailActions.trash)
+                .contextMenu(forSelectionType: UUID.self) { ids in
+                    if let id = ids.first, let thread = conversations.first(where: { $0.id == id }) {
+                        rowMenu(for: thread)
+                    }
+                }
             }
         }
     }

@@ -3,6 +3,7 @@ import GoogleSignInSwift
 
 struct MailRootView: View {
     @State private var account: GoogleAccount
+    @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
     @State private var reader: GmailReaderStore
     @State private var showingDemo = false
     @State private var demoUnreadCount: Int?
@@ -14,12 +15,12 @@ struct MailRootView: View {
     private let updatesDockBadge: Bool
     private let persistsMail: Bool
 
-    init(restoresSession: Bool = true, updatesDockBadge: Bool = true, persistsMail: Bool = true) {
+    init(account providedAccount: GoogleAccount? = nil, restoresSession: Bool = true, updatesDockBadge: Bool = true, persistsMail: Bool = true) {
         self.restoresSession = restoresSession
         self.updatesDockBadge = updatesDockBadge
         self.persistsMail = persistsMail
         _preparingCache = State(initialValue: persistsMail)
-        let account = GoogleAccount()
+        let account = providedAccount ?? GoogleAccount()
         _account = State(initialValue: account)
         _reader = State(initialValue: GmailReaderStore(api: GmailAPI { try await account.accessToken() }))
     }
@@ -60,9 +61,8 @@ struct MailRootView: View {
                 await bindReader(to: CachedGmailAccount(id: id, email: email))
             }
         }
-        .onChange(of: unreadCount, initial: true) { _, count in
-            if updatesDockBadge { DockBadge.update(unreadCount: count) }
-        }
+        .onChange(of: unreadCount, initial: true) { _, _ in updateDockBadge() }
+        .onChange(of: showsDockBadge) { _, _ in updateDockBadge() }
         .onChange(of: account.accountID) { previous, id in
             showingDemo = false
             if previous != nil && id == nil {
@@ -70,6 +70,10 @@ struct MailRootView: View {
                 readerAccount = nil
             }
         }
+    }
+
+    private func updateDockBadge() {
+        if updatesDockBadge { DockBadge.update(unreadCount: showsDockBadge ? unreadCount : nil) }
     }
 
     private struct AccountBinding: Hashable {
@@ -168,8 +172,7 @@ struct MailRootView: View {
             }
 
             Button("Explore the Demo") { showingDemo = true }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
+                .buttonStyle(.link)
                 .disabled(account.isBusy)
         }
         .padding(32)

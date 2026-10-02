@@ -11,6 +11,10 @@ struct MailActions {
     var reply: (() -> Void)?
     var replyAll: (() -> Void)?
     var forward: (() -> Void)?
+    var toggleRead: (() -> Void)?
+    var toggleFlag: (() -> Void)?
+    var selectionIsUnread = false
+    var selectionIsFlagged = false
 }
 
 extension FocusedValues {
@@ -54,6 +58,13 @@ struct MailCommands: Commands {
             Button("Forward") { actions?.forward?() }
                 .keyboardShortcut("f", modifiers: [.command, .shift])
                 .disabled(actions?.forward == nil)
+            Divider()
+            Button(actions?.selectionIsUnread == true ? "Mark as Read" : "Mark as Unread") { actions?.toggleRead?() }
+                .keyboardShortcut("u", modifiers: [.command, .shift])
+                .disabled(actions?.toggleRead == nil)
+            Button(actions?.selectionIsFlagged == true ? "Unflag" : "Flag") { actions?.toggleFlag?() }
+                .keyboardShortcut("l", modifiers: [.command, .shift])
+                .disabled(actions?.toggleFlag == nil)
             Divider()
             Button("Archive") { actions?.archive?() }
                 .keyboardShortcut("a", modifiers: [.command, .control])

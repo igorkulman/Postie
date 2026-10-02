@@ -127,6 +127,13 @@ struct GmailInboxView: View {
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
+                            .onAppear {
+                                // Load the next page as the end of the list scrolls into view.
+                                if conversation.id == conversations.last?.id, searchText.isEmpty,
+                                   reader.nextPageToken != nil, !reader.isLoadingMailbox {
+                                    pageRequest += 1
+                                }
+                            }
                     }
                 }
                 .listStyle(.inset)

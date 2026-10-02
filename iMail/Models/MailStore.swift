@@ -57,6 +57,11 @@ final class MailStore {
         threads[index].isUnread = false
     }
 
+    func markUnread(_ id: UUID) {
+        guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
+        threads[index].isUnread = true
+    }
+
     func toggleStar(_ id: UUID) {
         guard let index = threads.firstIndex(where: { $0.id == id }) else { return }
         threads[index].isStarred.toggle()
