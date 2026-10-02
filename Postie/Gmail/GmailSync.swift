@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 // Separate from basic reading so offline/demo/test readers need not simulate history.
 nonisolated protocol GmailSyncReading: GmailReading {
@@ -111,6 +112,7 @@ final class GmailSyncCoordinator {
                 if mailbox != .outbox, try await cache.loadMailbox(mailbox) == nil {
                     batch.snapshots[mailbox] = try await api.mailbox(mailbox, pageToken: nil)
                 }
+                Log.sync.info("Incremental sync: \(changes.ids.count, privacy: .public) changed threads")
                 let fetched = try await metadata(ids: changes.ids)
                 batch.conversations = fetched.conversations
                 batch.deletedThreadIDs = fetched.deleted
@@ -118,9 +120,11 @@ final class GmailSyncCoordinator {
                 try Task.checkCancellation()
                 try await cache.applySync(batch)
             } else {
+                Log.sync.info("First sync, taking a full snapshot")
                 try await rebuild(mailbox: mailbox, expectedHistoryID: nil)
             }
         } catch GmailSyncError.historyExpired {
+            Log.sync.notice("The sync checkpoint expired, rebuilding from a fresh snapshot")
             // Only a history 404 expires the checkpoint; other endpoint errors propagate.
             // A fresh baseline + snapshot + replay replaces an expired checkpoint.
             try await rebuild(mailbox: mailbox, expectedHistoryID: checkpoint)

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import os
 
 /// The connected Google accounts and their credentials. Knows nothing about mail.
 @MainActor
@@ -73,6 +74,7 @@ final class AccountStore {
             accounts = stored.sorted { ($0.addedAt, $0.id) < ($1.addedAt, $1.id) }
                 .map { Entry(identity: $0.identity, addedAt: $0.addedAt, needsReconnect: !$0.credentials.grants(GoogleOAuthClient.requiredScopes)) }
         } catch {
+            Log.accounts.error("Could not read the saved accounts: \(error.localizedDescription)")
             self.error = error.localizedDescription
         }
     }
@@ -98,6 +100,7 @@ final class AccountStore {
             } catch is CancellationError {
             } catch GoogleAuthError.cancelled {
             } catch {
+                Log.accounts.error("Signing in failed: \(error.localizedDescription)")
                 self.error = error.localizedDescription
             }
         }
@@ -148,6 +151,7 @@ final class AccountStore {
             return refreshed.accessToken
         } catch {
             refreshes[id] = nil
+            Log.accounts.error("Refreshing the access token failed: \(error.localizedDescription)")
             if case GmailError.signInRequired = error { markNeedsReconnect(id) }
             throw error
         }

@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 nonisolated protocol GmailReading: Sendable {
     func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage
@@ -86,9 +87,21 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             let result = await Result { try await transport.send(request) }
             if waiting.isEmpty { inFlight -= 1 } else { waiting.removeFirst().resume() }
             let response = try result.get()
-            guard response.isRateLimited else { return response }
-            guard let delay = retries.next() else { return GmailHTTPResponse(data: response.data, statusCode: 429) }
+            let endpoint = request.url?.path ?? ""
+            guard response.isRateLimited else {
+                if (200..<300).contains(response.statusCode) {
+                    Log.api.debug("\(request.httpMethod ?? "GET", privacy: .public) \(endpoint) -> \(response.statusCode, privacy: .public)")
+                } else {
+                    Log.api.error("\(request.httpMethod ?? "GET", privacy: .public) \(endpoint) failed with HTTP \(response.statusCode, privacy: .public)")
+                }
+                return response
+            }
+            guard let delay = retries.next() else {
+                Log.api.error("Still rate limited on \(endpoint) after \(self.retryDelays.count, privacy: .public) retries, giving up")
+                return GmailHTTPResponse(data: response.data, statusCode: 429)
+            }
             let wait = min(max(delay, response.retryAfter ?? 0), 60)
+            Log.api.warning("Rate limited (HTTP \(response.statusCode, privacy: .public)) on \(endpoint), retrying in \(wait, privacy: .public)s")
             try await Task.sleep(for: .seconds(wait))
         }
     }
@@ -217,6 +230,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         do { return try await download(messageID: attachment.messageID, attachmentID: attachment.attachmentID) }
         catch GmailError.http(let code) where code == 404 || code == 400 {
             // Gmail may reissue attachment IDs, so look the file up again by its place in the message.
+            Log.attachments.notice("Attachment ID was rejected (HTTP \(code, privacy: .public)), looking it up again")
             let message: GmailThreadResource.Message = try await get(path: try messagePath(attachment.messageID),
                                                                      query: [URLQueryItem(name: "format", value: "full")])
             guard let fresh = message.payload?.attachments(messageID: attachment.messageID)

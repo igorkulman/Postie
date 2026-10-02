@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import os
 
 /// A Gmail thread ID is only unique within one account, so merged lists identify conversations by both.
 nonisolated struct ConversationKey: Hashable, Sendable {
@@ -113,6 +114,7 @@ final class MailHub {
         do {
             cache = try await GmailCache.open()
         } catch {
+            Log.cache.error("Could not open the mail cache: \(error.localizedDescription)")
             storageError = String(localized: "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally.")
         }
     }
@@ -145,6 +147,7 @@ final class MailHub {
             do { savedSession = try await cache.session(for: CachedGmailAccount(id: id, email: identity.email)) }
             catch is CancellationError { return nil }
             catch {
+                Log.cache.error("Could not open the account cache: \(error.localizedDescription)")
                 storageError = String(localized: "Unable to open the account cache. This session will use online mail only.")
             }
         }
@@ -157,10 +160,12 @@ final class MailHub {
     func removeAccount(_ id: String) async {
         do { try await cache?.removeAccount(id: id) }
         catch {
+            Log.cache.error("Could not delete the account's cached mail: \(error.localizedDescription)")
             // Do not claim a successful removal while leaving an offline copy of the mail behind.
             accounts.error = String(localized: "Unable to remove locally cached mail. The account was not removed.")
             return
         }
+        Log.accounts.info("Removed an account and its cached mail")
         AttachmentFiles.removeAll(accountID: id)
         sessions.first { $0.id == id }?.stop()
         sessions.removeAll { $0.id == id }
@@ -322,7 +327,13 @@ final class MailHub {
         guard let reader = session(for: accountID)?.reader, reader.canLoadAttachments else { throw GmailError.permissionRequired }
         let url = AttachmentFiles.url(for: attachment, accountID: accountID)
         if AttachmentFiles.exists(at: url) { return url }
-        try await AttachmentFiles.store(try await reader.attachmentData(attachment), at: url)
+        Log.attachments.info("Downloading attachment of \(attachment.size, privacy: .public) bytes, \(attachment.mimeType, privacy: .public)")
+        do {
+            try await AttachmentFiles.store(try await reader.attachmentData(attachment), at: url)
+        } catch {
+            Log.attachments.error("Attachment download failed: \(error.localizedDescription, privacy: .public)")
+            throw error
+        }
         return url
     }
 

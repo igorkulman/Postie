@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftUI
+import os
 
 @MainActor
 @Observable
@@ -99,6 +100,7 @@ final class GmailReaderStore {
             }
             restoredSession = currentSession
         } catch {
+            Log.cache.error("Could not read the cached folder: \(error.localizedDescription)")
             guard session == currentSession, !Task.isCancelled else { return }
             cacheError = String(localized: "Unable to read the local mail cache. Online mail is still available.")
         }
@@ -144,6 +146,7 @@ final class GmailReaderStore {
             }
         } catch {
             guard session == currentSession, !Task.isCancelled, !(error is CancellationError) else { return }
+            Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
             mailboxError = error.localizedDescription
         }
     }
@@ -199,6 +202,7 @@ final class GmailReaderStore {
         do { try await api.setLabel(label, on: on, threadID: id) }
         catch {
             guard session == currentSession else { return }
+            Log.api.error("Changing a label failed: \(error.localizedDescription)")
             mailboxError = error.localizedDescription
             return
         }
@@ -219,6 +223,7 @@ final class GmailReaderStore {
             try await change()
         } catch {
             guard session == currentSession else { return false }
+            Log.api.error("Archiving or trashing failed: \(error.localizedDescription)")
             mailboxError = error.localizedDescription
             return false
         }
@@ -254,12 +259,14 @@ final class GmailReaderStore {
             if let cache {
                 do { try await cache.saveUnreadCount(count) }
                 catch {
+                    Log.cache.error("Could not save the unread count: \(error.localizedDescription)")
                     guard unreadCountSession == accountSession, !Task.isCancelled else { return }
                     cacheError = String(localized: "Unable to save the local unread count.")
                 }
             }
         } catch {
             // Preserve the last known (possibly persisted) count on failure.
+            if !(error is CancellationError) { Log.api.error("Could not refresh the unread count: \(error.localizedDescription, privacy: .public)") }
         }
     }
 
@@ -301,6 +308,7 @@ final class GmailReaderStore {
                     mailboxError = String(localized: "Mail changed while loading this page. Please try again.")
                     return
                 } catch {
+                    Log.cache.error("Could not save the fetched page: \(error.localizedDescription)")
                     guard session == currentSession, !Task.isCancelled else { return }
                     cacheError = String(localized: "Unable to save mail locally. Newly fetched mail may not be available offline.")
                 }
@@ -318,6 +326,7 @@ final class GmailReaderStore {
             showingCachedMail = false
         } catch {
             guard session == currentSession, !Task.isCancelled, !(error is CancellationError) else { return }
+            Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
             mailboxError = error.localizedDescription
         }
     }
@@ -343,6 +352,7 @@ final class GmailReaderStore {
                     if saved.messages.allSatisfy(\.bodyLoaded) { return }
                 }
             } catch {
+                Log.cache.error("Could not read the saved message: \(error.localizedDescription)")
                 guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
                 cacheError = String(localized: "Unable to read the locally saved message.")
             }
@@ -378,6 +388,7 @@ final class GmailReaderStore {
             selectedConversation = conversation
         } catch {
             guard session == currentSession, selection == currentSelection, !Task.isCancelled, !(error is CancellationError) else { return }
+            Log.api.error("Loading the conversation failed: \(error.localizedDescription)")
             // Keep cached bodies visible even when a newly added reply cannot be downloaded.
             conversationError = error.localizedDescription
         }
