@@ -62,7 +62,7 @@ final class GmailSyncCoordinator {
     private let api: any GmailSyncReading
     private let cache: GmailCacheSession
     private var running: Task<Void, Error>?
-    private var operation = UUID()
+    private var operation = Generation()
 
     init(api: any GmailSyncReading, cache: GmailCacheSession) {
         self.api = api
@@ -72,20 +72,20 @@ final class GmailSyncCoordinator {
     func cancel() {
         running?.cancel()
         running = nil
-        operation = UUID()
+        operation.advance()
     }
 
     func synchronize(mailbox: Mailbox) async throws {
         repeat {
             try Task.checkCancellation()
-            let request: UUID
+            let request: Generation
             let task: Task<Void, Error>
             if let running {
                 request = operation
                 task = running
             } else {
-                request = UUID()
-                operation = request
+                operation.advance()
+                request = operation
                 task = Task { try await self.perform(mailbox: mailbox) }
                 running = task
             }

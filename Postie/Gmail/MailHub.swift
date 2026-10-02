@@ -104,7 +104,7 @@ final class MailHub {
     private var searchVersion = 0
     @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
-    @ObservationIgnored private var searchGeneration = UUID()
+    @ObservationIgnored private var searchGeneration = Generation()
 
     @ObservationIgnored private var cache: GmailCache?
     @ObservationIgnored private let persistsMail: Bool
@@ -262,7 +262,7 @@ final class MailHub {
     func setSearch(_ text: String, scope: SearchScope) {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query != searchQuery || scope != searchScope else { return }
-        searchGeneration = UUID()
+        searchGeneration.advance()
         searchQuery = query
         searchScope = scope
         searchError = nil
