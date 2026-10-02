@@ -1,10 +1,12 @@
 import Foundation
 
-enum Mailbox: String, CaseIterable, Identifiable {
+nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
     case inbox = "Inbox"
-    case sent = "Sent"
     case drafts = "Drafts"
+    case outbox = "Outbox"
+    case sent = "Sent"
     case archive = "Archive"
+    case junk = "Junk"
     case trash = "Trash"
 
     var id: Self { self }
@@ -14,7 +16,9 @@ enum Mailbox: String, CaseIterable, Identifiable {
         case .inbox: "tray"
         case .sent: "paperplane"
         case .drafts: "doc"
+        case .outbox: "tray.and.arrow.up"
         case .archive: "archivebox"
+        case .junk: "exclamationmark.shield"
         case .trash: "trash"
         }
     }
@@ -28,6 +32,7 @@ struct MailMessage: Identifiable, Equatable {
     var cc = ""
     var date: Date
     var body: String
+    var htmlBody: String? = nil
 
     var initials: String {
         senderName.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined()

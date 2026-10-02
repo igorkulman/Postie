@@ -1,0 +1,9 @@
+// OAuth identifiers are public configuration, not secrets.
+// Override these in Google.local.xcconfig; never put tokens or client secrets here.
+GOOGLE_CLIENT_ID =
+GOOGLE_REVERSED_CLIENT_ID = sk.kulman.iMail.unconfigured
+#include? "Google.local.xcconfig"
+
+INFOPLIST_FILE = Configuration/Info.plist
+CODE_SIGN_ENTITLEMENTS = Configuration/iMail.entitlements
+ENABLE_OUTGOING_NETWORK_CONNECTIONS = YES

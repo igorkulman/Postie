@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ThreadDetailView: View {
     let thread: MailThread
+    var canToggleStar = true
     let toggleStar: () -> Void
 
     var body: some View {
@@ -18,7 +19,8 @@ struct ThreadDetailView: View {
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
-                    .help(thread.isStarred ? "Remove star" : "Star conversation")
+                    .disabled(!canToggleStar)
+                    .help(canToggleStar ? (thread.isStarred ? "Remove star" : "Star conversation") : "Stars cannot be changed in read-only Gmail mode.")
                     .accessibilityLabel(thread.isStarred ? "Remove star" : "Star conversation")
                 }
 

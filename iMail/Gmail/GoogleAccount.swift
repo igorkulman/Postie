@@ -1,0 +1,93 @@
+import AppKit
+import GoogleSignIn
+import Observation
+
+@MainActor
+@Observable
+final class GoogleAccount {
+    static let gmailReadOnlyScope = "https://www.googleapis.com/auth/gmail.readonly"
+
+    private(set) var email: String?
+    private(set) var isBusy = false
+    private(set) var error: String?
+    @ObservationIgnored private var didRestore = false
+    @ObservationIgnored private var signInTask: Task<Void, Never>?
+
+    var configurationIssue: String? {
+        let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? ""
+        guard clientID.hasSuffix(".apps.googleusercontent.com"), !clientID.contains("YOUR_") else {
+            return "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup."
+        }
+        let expectedScheme = clientID.split(separator: ".").reversed().joined(separator: ".")
+        let types = Bundle.main.object(forInfoDictionaryKey: "CFBundleURLTypes") as? [[String: Any]] ?? []
+        guard types.contains(where: { ($0["CFBundleURLSchemes"] as? [String])?.contains(expectedScheme) == true }) else {
+            return "GOOGLE_REVERSED_CLIENT_ID must match the dot-reversed client ID. Update the local configuration and rebuild."
+        }
+        return nil
+    }
+
+    func restore() async {
+        guard !didRestore else { return }
+        didRestore = true
+        guard configurationIssue == nil, GIDSignIn.sharedInstance.hasPreviousSignIn() else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            let user = try await GIDSignIn.sharedInstance.restorePreviousSignIn()
+            try Task.checkCancellation()
+            try accept(user)
+        } catch {
+            if !(error is CancellationError) { self.error = "Your Google session could not be restored. Sign in again to continue." }
+        }
+    }
+
+    func signIn() {
+        guard !isBusy, configurationIssue == nil else { return }
+        guard let window = NSApplication.shared.keyWindow ?? NSApplication.shared.mainWindow else {
+            error = "No window is available to present Google sign-in."
+            return
+        }
+        isBusy = true
+        error = nil
+        // The account owns this finite task. Signing out cancels it.
+        signInTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.isBusy = false; self.signInTask = nil }
+            do {
+                let result = try await GIDSignIn.sharedInstance.signIn(
+                    withPresenting: window, hint: nil, additionalScopes: [Self.gmailReadOnlyScope]
+                )
+                try Task.checkCancellation()
+                try self.accept(result.user)
+            } catch {
+                let sdkError = error as NSError
+                if !(error is CancellationError), !(sdkError.domain == kGIDSignInErrorDomain && sdkError.code == GIDSignInError.Code.canceled.rawValue) {
+                    self.error = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func accessToken() async throws -> String {
+        guard email != nil, let user = GIDSignIn.sharedInstance.currentUser else { throw GmailError.signInRequired }
+        let refreshed = try await user.refreshTokensIfNeeded()
+        try Task.checkCancellation()
+        guard email != nil, refreshed.userID == GIDSignIn.sharedInstance.currentUser?.userID else { throw GmailError.signInRequired }
+        guard refreshed.grantedScopes?.contains(Self.gmailReadOnlyScope) == true else { throw GmailError.permissionRequired }
+        return refreshed.accessToken.tokenString
+    }
+
+    func signOut() {
+        signInTask?.cancel()
+        GIDSignIn.sharedInstance.signOut()
+        email = nil
+        error = nil
+    }
+
+    private func accept(_ user: GIDGoogleUser) throws {
+        guard user.grantedScopes?.contains(Self.gmailReadOnlyScope) == true else { throw GmailError.permissionRequired }
+        guard let email = user.profile?.email, !email.isEmpty else { throw GmailError.invalidResponse }
+        self.email = email
+        error = nil
+    }
+}

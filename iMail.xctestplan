@@ -1,0 +1,33 @@
+{
+  "configurations" : [
+    {
+      "id" : "FCB37F4A-7C42-4CF8-9751-A0DD97876FAA",
+      "name" : "Default",
+      "options" : {}
+    }
+  ],
+  "defaultOptions" : {
+    "environmentVariableEntries" : [
+      {
+        "key" : "IMAIL_UNIT_TESTS",
+        "value" : "1"
+      }
+    ],
+    "targetForVariableExpansion" : {
+      "containerPath" : "container:iMail.xcodeproj",
+      "identifier" : "F3DE2CF5306F998200EBD6E5",
+      "name" : "iMail"
+    }
+  },
+  "testTargets" : [
+    {
+      "parallelizable" : true,
+      "target" : {
+        "containerPath" : "container:iMail.xcodeproj",
+        "identifier" : "B10000000000000000000003",
+        "name" : "iMailTests"
+      }
+    }
+  ],
+  "version" : 1
+}

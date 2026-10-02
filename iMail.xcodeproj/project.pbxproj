@@ -6,11 +6,37 @@
 	objectVersion = 110;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		A10000000000000000000001 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GoogleSignIn */; };
+		A10000000000000000000002 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* GoogleSignInSwift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		B10000000000000000000007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F3DE2CEE306F998200EBD6E5 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F3DE2CF5306F998200EBD6E5;
+			remoteInfo = iMail;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		A10000000000000000000003 /* Google.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Google.xcconfig; sourceTree = "<group>"; };
+		A10000000000000000000004 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		A10000000000000000000005 /* iMail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iMail.entitlements; sourceTree = "<group>"; };
+		B10000000000000000000001 /* iMailTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iMailTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000012 /* iMail.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = iMail.xctestplan; sourceTree = "<group>"; };
+		F3A64D2C306FAC0100B0FECC /* Google.local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Google.local.xcconfig; sourceTree = "<group>"; };
 		F3DE2CF6306F998200EBD6E5 /* iMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
+		B10000000000000000000002 /* Tests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Tests;
+			sourceTree = "<group>";
+		};
 		F3DE2CF8306F998200EBD6E5 /* iMail */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = iMail;
@@ -19,18 +45,39 @@
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		B10000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			files = (
+			);
+		};
 		F3DE2CF3306F998200EBD6E5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
+				A10000000000000000000001 /* GoogleSignIn in Frameworks */,
+				A10000000000000000000002 /* GoogleSignInSwift in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		A10000000000000000000006 /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000003 /* Google.xcconfig */,
+				A10000000000000000000004 /* Info.plist */,
+				A10000000000000000000005 /* iMail.entitlements */,
+				F3A64D2C306FAC0100B0FECC /* Google.local.xcconfig */,
+			);
+			path = Configuration;
+			sourceTree = "<group>";
+		};
 		F3DE2CED306F998200EBD6E5 = {
 			isa = PBXGroup;
 			children = (
 				F3DE2CF8306F998200EBD6E5 /* iMail */,
+				B10000000000000000000002 /* Tests */,
+				B10000000000000000000012 /* iMail.xctestplan */,
+				A10000000000000000000006 /* Configuration */,
 				F3DE2CF7306F998200EBD6E5 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -39,6 +86,7 @@
 			isa = PBXGroup;
 			children = (
 				F3DE2CF6306F998200EBD6E5 /* iMail.app */,
+				B10000000000000000000001 /* iMailTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -46,6 +94,27 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		B10000000000000000000003 /* iMailTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = B10000000000000000000009 /* Build configuration list for PBXNativeTarget "iMailTests" */;
+			buildPhases = (
+				B10000000000000000000004 /* Sources */,
+				B10000000000000000000005 /* Frameworks */,
+				B10000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				B10000000000000000000008 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				B10000000000000000000002 /* Tests */,
+			);
+			name = iMailTests;
+			productName = iMailTests;
+			productReference = B10000000000000000000001 /* iMailTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		F3DE2CF5306F998200EBD6E5 /* iMail */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F3DE2D01306F998300EBD6E5 /* Build configuration list for PBXNativeTarget "iMail" */;
@@ -60,6 +129,10 @@
 				F3DE2CF8306F998200EBD6E5 /* iMail */,
 			);
 			name = iMail;
+			packageProductDependencies = (
+				A10000000000000000000011 /* GoogleSignIn */,
+				A10000000000000000000012 /* GoogleSignInSwift */,
+			);
 			productName = iMail;
 			productReference = F3DE2CF6306F998200EBD6E5 /* iMail.app */;
 			productType = "com.apple.product-type.application";
@@ -74,6 +147,10 @@
 				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					B10000000000000000000003 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = F3DE2CF5306F998200EBD6E5;
+					};
 					F3DE2CF5306F998200EBD6E5 = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -88,17 +165,26 @@
 			);
 			mainGroup = F3DE2CED306F998200EBD6E5;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = F3DE2CF7306F998200EBD6E5 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				F3DE2CF5306F998200EBD6E5 /* iMail */,
+				B10000000000000000000003 /* iMailTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		B10000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			files = (
+			);
+		};
 		F3DE2CF4306F998200EBD6E5 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			files = (
@@ -107,6 +193,11 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		B10000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			files = (
+			);
+		};
 		F3DE2CF2306F998200EBD6E5 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
@@ -114,9 +205,60 @@
 		};
 /* End PBXSourcesBuildPhase section */
 
+/* Begin PBXTargetDependency section */
+		B10000000000000000000008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F3DE2CF5306F998200EBD6E5 /* iMail */;
+			targetProxy = B10000000000000000000007 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin XCBuildConfiguration section */
+		B10000000000000000000010 /* Debug configuration for PBXNativeTarget "iMailTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMailTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iMail.app/Contents/MacOS/iMail";
+			};
+			name = Debug;
+		};
+		B10000000000000000000011 /* Release configuration for PBXNativeTarget "iMailTests" */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_ENTITLEMENTS = "";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
+				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMailTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/iMail.app/Contents/MacOS/iMail";
+			};
+			name = Release;
+		};
 		F3DE2CFF306F998300EBD6E5 /* Debug configuration for PBXProject "iMail" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000003 /* Google.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -181,6 +323,7 @@
 		};
 		F3DE2D00306F998300EBD6E5 /* Release configuration for PBXProject "iMail" */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A10000000000000000000003 /* Google.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS = YES;
@@ -254,6 +397,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMail;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -286,6 +430,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				MACOSX_DEPLOYMENT_TARGET = 26.0;
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = sk.kulman.iMail;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -302,6 +447,14 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		B10000000000000000000009 /* Build configuration list for PBXNativeTarget "iMailTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B10000000000000000000010 /* Debug configuration for PBXNativeTarget "iMailTests" */,
+				B10000000000000000000011 /* Release configuration for PBXNativeTarget "iMailTests" */,
+			);
+			defaultConfigurationName = Release;
+		};
 		F3DE2CF1306F998200EBD6E5 /* Build configuration list for PBXProject "iMail" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -319,6 +472,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
+			requirement = {
+				kind = exactVersion;
+				version = 10.0.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		A10000000000000000000011 /* GoogleSignIn */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignIn;
+		};
+		A10000000000000000000012 /* GoogleSignInSwift */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
+			productName = GoogleSignInSwift;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F3DE2CEE306F998200EBD6E5 /* Project object */;
 	validationLevel = 1;

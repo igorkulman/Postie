@@ -4,3 +4,4 @@ build/
 *.xcuserstate
 xcuserdata/
 .pi/
+Configuration/Google.local.xcconfig
