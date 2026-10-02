@@ -37,7 +37,7 @@ struct ThreadDetailView: View {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text(thread.subject)
-                        .font(.system(size: 18, weight: .semibold))
+                        .font(.title3.weight(.semibold))
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
@@ -125,20 +125,20 @@ private struct MessageView: View {
                                     .foregroundStyle(.secondary)
                             }
                         }
-                        .font(.system(size: 12))
+                        .font(.callout)
                         .lineLimit(1)
                         Text(isExpanded ? "To: \(message.recipient)\(message.cc.isEmpty ? "" : " · Cc: " + message.cc)" : String(message.body.prefix(100)).replacingOccurrences(of: "\n", with: " "))
-                            .font(.system(size: 11))
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 3) {
                         Text(message.date, format: .dateTime.month(.abbreviated).day().hour().minute())
-                            .font(.system(size: 11))
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                         Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.system(size: 9, weight: .medium))
+                            .font(.caption2.weight(.medium))
                             .foregroundStyle(.tertiary)
                     }
                 }
@@ -154,7 +154,7 @@ private struct MessageView: View {
                         .id(message.id)
                 } else {
                     Text(message.body)
-                        .font(.system(size: 13))
+                        .font(.body)
                         .lineSpacing(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)

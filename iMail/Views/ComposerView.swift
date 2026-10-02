@@ -16,7 +16,7 @@ struct ComposerView: View {
         VStack(spacing: 0) {
             HStack {
                 Text(draft.kind.rawValue)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.title3.weight(.semibold))
                 Spacer()
                 DemoBadge()
             }
@@ -60,7 +60,7 @@ struct ComposerView: View {
                 .padding(.vertical, 13)
                 Divider()
             }
-            .font(.system(size: 13))
+            .font(.body)
             .padding(.horizontal, 24)
 
             ZStack(alignment: .topLeading) {
@@ -84,7 +84,7 @@ struct ComposerView: View {
 
             VStack(alignment: .leading, spacing: 14) {
                 Text("Demo only. No email will be sent. Drafts disappear when you quit.")
-                    .font(.system(size: 11))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                 HStack {
                     Button("Cancel") {

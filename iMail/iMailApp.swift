@@ -22,6 +22,7 @@ struct iMailApp: App {
                 .frame(minWidth: 960, minHeight: 640)
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }
+        .commands { MailCommands() }
         .defaultSize(width: 1200, height: 820)
         .windowResizability(.contentMinSize)
     }

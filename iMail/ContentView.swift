@@ -8,7 +8,6 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var composer: ComposeDraft?
     @State private var confirmsDraftDeletion = false
-    @State private var readerWidth: CGFloat = 620
 
     private var currentMailbox: Mailbox { mailbox ?? .inbox }
     private var conversations: [MailThread] {
@@ -22,51 +21,17 @@ struct ContentView: View {
         NavigationSplitView {
             sidebar
                 .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
-                .toolbar(removing: .sidebarToggle)
         } content: {
             messageList
                 .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
         } detail: {
             detail
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
-                // Keep the window-toolbar actions aligned with the reader as dividers move.
-                .onGeometryChange(for: CGFloat.self) { proxy in
-                    proxy.size.width
-                } action: { width in
-                    readerWidth = width
-                }
         }
         .navigationTitle(currentMailbox.rawValue)
-        .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {
-                    composer = ComposeDraft()
-                } label: {
-                    Label("New Message", systemImage: "square.and.pencil")
-                }
-                .help("New message (⌘N)")
-                .keyboardShortcut("n", modifiers: .command)
-            }
-            ToolbarItem(placement: .primaryAction) {
-                MailActionToolbar(
-                    searchText: $searchText,
-                    canArchive: selectedThread?.mailbox == .inbox,
-                    canDelete: selectedThread != nil && currentMailbox != .trash,
-                    canRespond: selectedThread?.latestMessage != nil && currentMailbox != .drafts,
-                    deletingDraft: currentMailbox == .drafts,
-                    archive: archiveSelection,
-                    delete: requestDeleteSelection,
-                    reply: { composeResponse(allRecipients: false) },
-                    replyAll: { composeResponse(allRecipients: true) },
-                    forward: {
-                        if let thread = selectedThread { composer = store.forward(thread) }
-                    }
-                )
-                .frame(width: max(360, readerWidth - 24))
-            }
-            .sharedBackgroundVisibility(.hidden)
-        }
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+        .toolbar { MailToolbar(actions: mailActions) }
+        .focusedSceneValue(\.mailActions, mailActions)
         .alert("Delete this draft?", isPresented: $confirmsDraftDeletion) {
             Button("Cancel", role: .cancel) {}
             Button("Delete Draft", role: .destructive) { deleteSelection() }
@@ -107,6 +72,27 @@ struct ContentView: View {
         }
     }
 
+    private var mailActions: MailActions {
+        var actions = MailActions(
+            currentMailbox: currentMailbox,
+            selectMailbox: { mailbox = $0 },
+            newMessage: { composer = ComposeDraft() }
+        )
+        guard let thread = selectedThread else { return actions }
+        if thread.mailbox == .inbox {
+            actions.archive = { archiveSelection() }
+        }
+        if currentMailbox != .trash {
+            actions.trash = { requestDeleteSelection() }
+        }
+        if thread.latestMessage != nil && currentMailbox != .drafts {
+            actions.reply = { composeResponse(allRecipients: false) }
+            actions.replyAll = { composeResponse(allRecipients: true) }
+            actions.forward = { composer = store.forward(thread) }
+        }
+        return actions
+    }
+
     private func composeResponse(allRecipients: Bool) {
         guard let thread = selectedThread else { return }
         composer = store.reply(to: thread, allRecipients: allRecipients)
@@ -144,25 +130,21 @@ struct ContentView: View {
         selectedID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)].id
     }
 
+    private func sidebarBadge(for item: Mailbox) -> Int {
+        switch item {
+        case .inbox: store.unreadCount
+        case .drafts: store.drafts.count
+        default: 0
+        }
+    }
+
     private var sidebar: some View {
         List(selection: $mailbox) {
             Section("Mailboxes") {
                 ForEach(Mailbox.allCases) { item in
-                    HStack {
-                        Label(item.rawValue, systemImage: item.symbol)
-                        Spacer()
-                        if item == .inbox && store.unreadCount > 0 {
-                            Text("\(store.unreadCount)")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        } else if item == .drafts && !store.drafts.isEmpty {
-                            Text("\(store.drafts.count)")
-                                .font(.system(size: 11, weight: .medium))
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .tag(item)
+                    Label(item.rawValue, systemImage: item.symbol)
+                        .badge(sidebarBadge(for: item))
+                        .tag(item)
                 }
             }
         }

@@ -13,11 +13,11 @@ struct HTMLMessageBody: View {
         VStack(alignment: .leading, spacing: 8) {
             if failed {
                 Text(plainText)
-                    .font(.system(size: 13))
+                    .font(.body)
                     .lineSpacing(3)
                     .textSelection(.enabled)
                 Text("Unable to display HTML. Showing plain text.")
-                    .font(.system(size: 11))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
             } else {
                 EmailHTMLWebView(
@@ -28,7 +28,7 @@ struct HTMLMessageBody: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: height)
                 Text("Remote images enabled")
-                    .font(.system(size: 11))
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .help("Images load automatically and may reveal your IP address and when you opened the message. Email scripts, forms, and external stylesheets remain blocked.")
             }

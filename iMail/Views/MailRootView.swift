@@ -145,8 +145,8 @@ struct MailRootView: View {
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Text("Connect Gmail")
-                .font(.system(size: 24, weight: .semibold))
-            Text("Read your mail in a native Mac app.\nNo sending, mailbox changes, or email stored on disk.")
+                .font(.title2.weight(.semibold))
+            Text("Read your mail in a native Mac app.\nLoaded mail is saved on this Mac for offline reading.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
@@ -160,7 +160,7 @@ struct MailRootView: View {
 
             if let issue = account.configurationIssue ?? account.error ?? storageError {
                 Text(issue)
-                    .font(.system(size: 12))
+                    .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .textSelection(.enabled)

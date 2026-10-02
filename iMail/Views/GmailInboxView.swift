@@ -6,7 +6,6 @@ struct GmailInboxView: View {
     var reconnect: (() -> Void)? = nil
     @State private var selectedID: String?
     @State private var searchText = ""
-    @State private var readerWidth: CGFloat = 620
     @State private var refreshRequest = 0
     @State private var pageRequest = 0
     @State private var retryRequest = 0
@@ -28,6 +27,15 @@ struct GmailInboxView: View {
         )
     }
 
+    // Gmail access is read-only, so only navigation and refresh are available.
+    private var mailActions: MailActions {
+        MailActions(
+            currentMailbox: reader.mailbox,
+            selectMailbox: { mailboxSelection.wrappedValue = $0 },
+            refresh: reader.isLoadingMailbox || reader.mailbox == .outbox ? nil : { refreshRequest += 1 }
+        )
+    }
+
     private struct MailboxRequest: Hashable {
         let mailbox: Mailbox
         let refresh: Int
@@ -45,45 +53,28 @@ struct GmailInboxView: View {
                 Section("Mailboxes") {
                     ForEach(Mailbox.allCases) { mailbox in
                         Label(mailbox.rawValue, systemImage: mailbox.symbol)
-                            .padding(.vertical, 4)
+                            .badge(mailbox == .inbox ? (reader.unreadInboxCount ?? 0) : 0)
                             .tag(mailbox)
                     }
                 }
             }
             .listStyle(.sidebar)
             .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
-            .toolbar(removing: .sidebarToggle)
         } content: {
             messageList
                 .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
         } detail: {
             detail
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { readerWidth = $0 }
         }
         .navigationTitle(reader.mailbox.rawValue)
-        .toolbar(removing: .sidebarToggle)
-        .toolbar {
-            ToolbarItem(placement: .navigation) {
-                Button {} label: { Label("New Message", systemImage: "square.and.pencil") }
-                    .disabled(true)
-                    .help("Sending is not available in the read-only Gmail client.")
-            }
-            ToolbarItem(placement: .navigation) {
-                Button { refreshRequest += 1 } label: { Label("Refresh \(reader.mailbox.rawValue)", systemImage: "arrow.clockwise") }
-                    .disabled(reader.isLoadingMailbox || reader.mailbox == .outbox)
-                    .keyboardShortcut("r", modifiers: .command)
-                    .help("Refresh \(reader.mailbox.rawValue) (⌘R)")
-            }
-            ToolbarItem(placement: .primaryAction) {
-                MailActionToolbar(
-                    searchText: $searchText, canArchive: false, canDelete: false, canRespond: false,
-                    deletingDraft: false, archive: {}, delete: {}, reply: {}, replyAll: {}, forward: {}
-                )
-                .frame(width: max(360, readerWidth - 64))
-                .help("Read-only Gmail. Search only covers loaded conversations.")
-            }
-            .sharedBackgroundVisibility(.hidden)
+        .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+        .toolbar { MailToolbar(actions: mailActions) }
+        .focusedSceneValue(\.mailActions, mailActions)
+        .task(id: MailboxRequest(mailbox: reader.mailbox, refresh: refreshRequest)) {
+            await reader.restoreCachedMailbox()
+            if selectedID == nil { selectedID = conversations.first?.id }
+            await reader.refresh()
         }
         .task(id: pageRequest) {
             if pageRequest > 0 { await reader.loadMore() }
@@ -152,7 +143,7 @@ struct GmailInboxView: View {
                         .disabled(reader.isLoadingMailbox)
                 }
             }
-            .font(.system(size: 11))
+            .font(.subheadline)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
@@ -197,7 +188,7 @@ private struct GmailErrorBanner: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Label(message, systemImage: "exclamationmark.triangle")
-                .font(.system(size: 12))
+                .font(.callout)
                 .foregroundStyle(.secondary)
             Button("Try Again", action: retry)
         }

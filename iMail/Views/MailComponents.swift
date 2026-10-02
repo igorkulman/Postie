@@ -27,32 +27,32 @@ struct MailThreadRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline) {
                         Text(thread.mailbox == .sent ? message.recipient : message.senderName)
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(.callout.weight(.semibold))
                             .lineLimit(1)
                         Spacer(minLength: 8)
                         Text(message.date, format: Calendar.current.isDateInToday(message.date)
                              ? .dateTime.hour().minute()
                              : .dateTime.month(.abbreviated).day())
-                            .font(.system(size: 11))
+                            .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
                     HStack(spacing: 5) {
                         Text(thread.subject)
-                            .font(.system(size: 12, weight: thread.isUnread ? .medium : .regular))
+                            .font(.callout.weight(thread.isUnread ? .medium : .regular))
                             .lineLimit(1)
                         if thread.messages.count > 1 {
                             Text("\(thread.messages.count)")
-                                .font(.system(size: 10))
+                                .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
                         if thread.isStarred {
                             Image(systemName: "star.fill")
-                                .font(.system(size: 9))
+                                .font(.caption2)
                                 .foregroundStyle(.secondary)
                         }
                     }
                     Text(thread.preview)
-                        .font(.system(size: 12))
+                        .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                 }
@@ -67,7 +67,7 @@ struct MailThreadRow: View {
 struct DemoBadge: View {
     var body: some View {
         Label("Demo mode", systemImage: "sparkle")
-            .font(.system(size: 10, weight: .medium))
+            .font(.caption.weight(.medium))
             .foregroundStyle(.secondary)
             .padding(.horizontal, 9)
             .padding(.vertical, 5)
