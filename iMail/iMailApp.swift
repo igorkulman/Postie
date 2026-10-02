@@ -14,7 +14,11 @@ struct iMailApp: App {
     var body: some Scene {
         Window("iMail", id: "main") {
             // Hosted unit tests must not restore a real account or make Gmail requests.
-            MailRootView(restoresSession: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1")
+            MailRootView(
+                restoresSession: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1",
+                updatesDockBadge: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1",
+                persistsMail: ProcessInfo.processInfo.environment["IMAIL_UNIT_TESTS"] != "1"
+            )
                 .frame(minWidth: 960, minHeight: 640)
                 .onOpenURL { GIDSignIn.sharedInstance.handle($0) }
         }

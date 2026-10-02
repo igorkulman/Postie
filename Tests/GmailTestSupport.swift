@@ -22,9 +22,9 @@ nonisolated enum GmailFixtures {
             ]])
         }
         let object: [String: Any] = ["id": id, "messages": [
-            ["id": "b2", "labelIds": ["SENT", "STARRED"], "snippet": "Coffee &amp; plans", "internalDate": "2000000",
+            ["id": id == "a1" ? "b2" : id + "-b2", "labelIds": ["SENT", "STARRED"], "snippet": "Coffee &amp; plans", "internalDate": "2000000",
              "payload": ["mimeType": "multipart/mixed", "headers": headers, "parts": parts]],
-            ["id": "b1", "labelIds": ["INBOX", "UNREAD", "Label_42"], "snippet": "Earlier message", "internalDate": "1000000",
+            ["id": id == "a1" ? "b1" : id + "-b1", "labelIds": ["INBOX", "UNREAD", "Label_42"], "snippet": "Earlier message", "internalDate": "1000000",
              "payload": ["mimeType": "text/plain", "headers": headers, "body": ["data": Data("Earlier message".utf8).base64EncodedString()]]]
         ]]
         return try! JSONSerialization.data(withJSONObject: object)
@@ -52,6 +52,9 @@ actor FixtureTransport: GmailTransport {
         case .normal: break
         }
         let url = request.url!
+        if url.path.hasSuffix("/labels/INBOX") {
+            return GmailHTTPResponse(data: Data(#"{"id":"INBOX","messagesUnread":1234}"#.utf8), statusCode: 200)
+        }
         if url.path.hasSuffix("/threads") {
             return GmailHTTPResponse(data: Data(#"{"threads":[{"id":"a1","snippet":"List &amp; snippet"},{"id":"a1"},{"id":"deleted"}],"nextPageToken":"next +/="}"#.utf8), statusCode: 200)
         }
@@ -133,6 +136,14 @@ final class StubAPI: GmailReading {
     var mailboxes: [Mailbox] = []
     var selected: [String] = []
     var failsSelection = false
+    var unreadCount: Result<Int, Error> = .success(0)
+    var unreadCountCalls = 0
+
+    @MainActor
+    func unreadInboxCount() async throws -> Int {
+        unreadCountCalls += 1
+        return try unreadCount.get()
+    }
 
     init(_ pages: [Result<GmailPage, Error>]) { self.pages = pages }
 
@@ -166,6 +177,8 @@ final class ControlledAPI: GmailReading {
         (pageEvents, pageStarted) = AsyncStream.makeStream(of: Void.self)
         (selectionEvents, selectionStarted) = AsyncStream.makeStream(of: Int.self)
     }
+
+    func unreadInboxCount() async throws -> Int { 0 }
 
     func waitForPage() async throws {
         if page != nil { return }

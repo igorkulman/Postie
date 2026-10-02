@@ -8,10 +8,14 @@ final class GoogleAccount {
     static let gmailReadOnlyScope = "https://www.googleapis.com/auth/gmail.readonly"
 
     private(set) var email: String?
+    private(set) var accountID: String?
     private(set) var isBusy = false
     private(set) var error: String?
     @ObservationIgnored private var didRestore = false
     @ObservationIgnored private var signInTask: Task<Void, Never>?
+    @ObservationIgnored private var cache: GmailCache?
+
+    func useCache(_ cache: GmailCache) { self.cache = cache }
 
     var configurationIssue: String? {
         let clientID = Bundle.main.object(forInfoDictionaryKey: "GIDClientID") as? String ?? ""
@@ -77,16 +81,25 @@ final class GoogleAccount {
         return refreshed.accessToken.tokenString
     }
 
-    func signOut() {
+    func signOut() async {
         signInTask?.cancel()
-        GIDSignIn.sharedInstance.signOut()
-        email = nil
-        error = nil
+        do {
+            if let cache, let accountID { try await cache.removeAccount(id: accountID) }
+            GIDSignIn.sharedInstance.signOut()
+            accountID = nil
+            email = nil
+            error = nil
+        } catch {
+            // Do not claim a successful logout while leaving an offline account cache behind.
+            self.error = "Unable to remove locally cached mail. Sign-out was not completed."
+        }
     }
 
     private func accept(_ user: GIDGoogleUser) throws {
         guard user.grantedScopes?.contains(Self.gmailReadOnlyScope) == true else { throw GmailError.permissionRequired }
-        guard let email = user.profile?.email, !email.isEmpty else { throw GmailError.invalidResponse }
+        guard let id = user.userID, !id.isEmpty,
+              let email = user.profile?.email, !email.isEmpty else { throw GmailError.invalidResponse }
+        accountID = id
         self.email = email
         error = nil
     }

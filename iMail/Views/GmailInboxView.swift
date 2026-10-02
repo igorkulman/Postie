@@ -2,6 +2,8 @@ import SwiftUI
 
 struct GmailInboxView: View {
     @Bindable var reader: GmailReaderStore
+    var accountNotice: String? = nil
+    var reconnect: (() -> Void)? = nil
     @State private var selectedID: String?
     @State private var searchText = ""
     @State private var readerWidth: CGFloat = 620
@@ -83,7 +85,6 @@ struct GmailInboxView: View {
             }
             .sharedBackgroundVisibility(.hidden)
         }
-        .task(id: MailboxRequest(mailbox: reader.mailbox, refresh: refreshRequest)) { await reader.refresh() }
         .task(id: pageRequest) {
             if pageRequest > 0 { await reader.loadMore() }
         }
@@ -100,11 +101,22 @@ struct GmailInboxView: View {
 
     private var messageList: some View {
         VStack(spacing: 0) {
+            if let notice = reader.cacheError ?? accountNotice {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(notice)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    if let reconnect { Button("Reconnect Gmail", action: reconnect) }
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Divider()
+            }
             if let error = reader.mailboxError {
                 GmailErrorBanner(message: error) { refreshRequest += 1 }
                 Divider()
             }
-            if reader.isLoadingMailbox && reader.conversations.isEmpty {
+            if (reader.isLoadingMailbox || reader.isRestoringCache) && reader.conversations.isEmpty {
                 ProgressView("Loading \(reader.mailbox.rawValue)…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if conversations.isEmpty {
@@ -131,8 +143,9 @@ struct GmailInboxView: View {
             Divider()
             HStack {
                 if reader.isLoadingMailbox { ProgressView().controlSize(.small) }
-                Text("\(reader.conversations.count) loaded")
+                Text("\(reader.conversations.count) \(reader.showingCachedMail ? "cached" : "loaded")")
                     .foregroundStyle(.secondary)
+                    .help(reader.lastRefreshed.map { "Last updated: " + $0.formatted() } ?? "No folder refresh yet")
                 Spacer()
                 if reader.nextPageToken != nil {
                     Button("Load More") { pageRequest += 1 }
@@ -147,7 +160,16 @@ struct GmailInboxView: View {
 
     @ViewBuilder
     private var detail: some View {
-        if reader.isLoadingConversation {
+        if let conversation = reader.selectedConversation, conversation.id == selectedID {
+            VStack(spacing: 0) {
+                if let error = reader.conversationError {
+                    GmailErrorBanner(message: error) { retryRequest += 1 }
+                    Divider()
+                }
+                GmailConversationView(conversation: conversation, mailbox: reader.mailbox)
+                    .id(conversation.id)
+            }
+        } else if reader.isLoadingConversation {
             ProgressView("Loading conversation…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let error = reader.conversationError {
@@ -158,9 +180,6 @@ struct GmailInboxView: View {
             } actions: {
                 Button("Try Again") { retryRequest += 1 }
             }
-        } else if let conversation = reader.selectedConversation, conversation.id == selectedID {
-            GmailConversationView(conversation: conversation, mailbox: reader.mailbox)
-                .id(conversation.id)
         } else {
             ContentUnavailableView {
                 Label("No Conversation Selected", systemImage: "envelope.open")
@@ -215,7 +234,9 @@ extension GmailConversation {
             messages: messages.map {
                 MailMessage(senderName: $0.senderName, senderEmail: $0.senderEmail,
                             recipient: $0.recipient, cc: $0.cc, date: $0.date,
-                            body: includingBodies ? $0.body : $0.snippet,
+                            body: includingBodies
+                                ? ($0.bodyLoaded ? $0.body : $0.snippet + "\n\nThis message body has not been downloaded. Connect to Gmail to read it.")
+                                : $0.snippet,
                             htmlBody: includingBodies ? $0.htmlBody : nil)
             },
             mailbox: mailbox, isUnread: isUnread, isStarred: isStarred
@@ -226,6 +247,11 @@ extension GmailConversation {
 private struct PreviewGmailAPI: GmailReading {
     let conversations: [Mailbox: [GmailConversation]]
     let failsBody: Bool
+    nonisolated func unreadInboxCount() async throws -> Int {
+        (conversations[.inbox] ?? []).reduce(0) { total, conversation in
+            total + conversation.messages.filter { $0.labelIDs.contains("UNREAD") }.count
+        }
+    }
     nonisolated func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage {
         let mail = conversations[mailbox] ?? []
         return GmailPage(conversations: mail, nextPageToken: !mail.isEmpty && pageToken == nil ? "preview-next" : nil)

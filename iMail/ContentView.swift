@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct ContentView: View {
+    var unreadCountChanged: (Int) -> Void = { _ in }
     @State private var store = MailStore()
     @State private var mailbox: Mailbox? = .inbox
     @State private var selectedID: UUID?
@@ -88,6 +89,9 @@ struct ContentView: View {
         }
         .onAppear {
             if selectedID == nil { selectedID = conversations.first?.id }
+        }
+        .onChange(of: store.unreadCount, initial: true) { _, count in
+            unreadCountChanged(count)
         }
         .onChange(of: mailbox) { _, _ in
             searchText = ""

@@ -3,6 +3,7 @@ import Foundation
 nonisolated protocol GmailReading: Sendable {
     func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage
     func conversation(id: String) async throws -> GmailConversation
+    func unreadInboxCount() async throws -> Int
 }
 
 nonisolated struct GmailHTTPResponse: Sendable {
@@ -89,6 +90,15 @@ actor GmailAPI: GmailReading {
         }
         try Task.checkCancellation()
         return GmailPage(conversations: conversations, nextPageToken: page.nextPageToken?.isEmpty == false ? page.nextPageToken : nil)
+    }
+
+    func unreadInboxCount() async throws -> Int {
+        // The label's total is independent of pagination and the currently selected folder.
+        let label: GmailInboxLabel = try await get(path: "labels/INBOX", query: [
+            URLQueryItem(name: "fields", value: "id,messagesUnread")
+        ])
+        guard label.id == "INBOX", label.messagesUnread >= 0 else { throw GmailError.invalidResponse }
+        return label.messagesUnread
     }
 
     func conversation(id: String) async throws -> GmailConversation {

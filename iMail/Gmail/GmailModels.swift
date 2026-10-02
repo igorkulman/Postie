@@ -10,6 +10,7 @@ nonisolated struct GmailMessage: Identifiable, Equatable, Sendable {
     let date: Date
     let snippet: String
     let body: String
+    var bodyLoaded: Bool = true
     var htmlBody: String? = nil
     let labelIDs: Set<String>
 }
@@ -40,6 +41,11 @@ nonisolated struct GmailPage: Sendable {
 }
 
 // REST wire types, isolated from SwiftUI and authentication.
+nonisolated struct GmailInboxLabel: Decodable, Sendable {
+    let id: String
+    let messagesUnread: Int
+}
+
 nonisolated struct GmailThreadList: Decodable, Sendable {
     struct Reference: Decodable, Sendable { let id: String; let snippet: String? }
     let threads: [Reference]?
@@ -93,7 +99,7 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
                 cc: GmailText.decodeHeader(message.payload?.header("Cc") ?? ""),
                 date: Date(timeIntervalSince1970: (Double(message.internalDate ?? "") ?? 0) / 1000),
                 snippet: GmailText.decodeEntities(message.snippet ?? (message.id == sorted.last?.id ? fallbackSnippet : nil) ?? ""),
-                body: content?.plainText ?? "", htmlBody: content?.html,
+                body: content?.plainText ?? "", bodyLoaded: includeBody, htmlBody: content?.html,
                 labelIDs: Set(message.labelIds ?? [])
             )
         })
