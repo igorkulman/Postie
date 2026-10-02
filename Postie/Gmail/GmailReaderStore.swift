@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 @MainActor
 @Observable
@@ -209,10 +210,13 @@ final class GmailReaderStore {
         }
         guard session == currentSession else { return true }
         mailboxError = nil
-        conversations.removeAll { $0.id == id }
-        if selectedConversation?.id == id { selectedConversation = nil }
-        bodies[id] = nil
-        mailboxVersion += 1
+        // Animate so the row slides out and its neighbors close the gap, like Mail.
+        withAnimation(.easeInOut(duration: 0.25)) {
+            conversations.removeAll { $0.id == id }
+            if selectedConversation?.id == id { selectedConversation = nil }
+            bodies[id] = nil
+            mailboxVersion += 1
+        }
         // Reconcile the cache and unread badge with Gmail's history.
         await refresh()
         return true

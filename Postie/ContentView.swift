@@ -108,8 +108,10 @@ struct ContentView: View {
 
     private func archive(_ id: UUID) {
         let index = conversations.firstIndex { $0.id == id } ?? 0
-        store.archive(id)
-        if selectedID == id { selectNeighbor(at: index) }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            store.archive(id)
+            if selectedID == id { selectNeighbor(at: index) }
+        }
     }
 
     private func requestDeleteSelection() {
@@ -127,12 +129,14 @@ struct ContentView: View {
 
     private func remove(_ id: UUID) {
         let index = conversations.firstIndex { $0.id == id } ?? 0
-        if currentMailbox == .drafts {
-            store.deleteDraft(id)
-        } else {
-            store.moveToTrash(id)
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if currentMailbox == .drafts {
+                store.deleteDraft(id)
+            } else {
+                store.moveToTrash(id)
+            }
+            if selectedID == id { selectNeighbor(at: index) }
         }
-        if selectedID == id { selectNeighbor(at: index) }
     }
 
     private func toggleRead(_ thread: MailThread) {
