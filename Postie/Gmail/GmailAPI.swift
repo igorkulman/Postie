@@ -24,6 +24,13 @@ nonisolated protocol GmailMutating: Sendable {
 nonisolated struct GmailHTTPResponse: Sendable {
     let data: Data
     let statusCode: Int
+    /// Seconds Gmail asked us to wait, from a Retry-After header.
+    var retryAfter: TimeInterval? = nil
+
+    /// Gmail reports rate limits as 429, or as 403 with a "rate limit" reason.
+    var isRateLimited: Bool {
+        statusCode == 429 || (statusCode == 403 && String(decoding: data, as: UTF8.self).contains("ateLimitExceeded"))
+    }
 }
 
 nonisolated protocol GmailTransport: Sendable {
@@ -45,7 +52,8 @@ nonisolated struct GmailURLTransport: GmailTransport {
     func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw GmailError.invalidResponse }
-        return GmailHTTPResponse(data: data, statusCode: response.statusCode)
+        return GmailHTTPResponse(data: data, statusCode: response.statusCode,
+                                 retryAfter: response.value(forHTTPHeaderField: "Retry-After").flatMap(TimeInterval.init))
     }
 }
 
@@ -53,11 +61,36 @@ nonisolated struct GmailURLTransport: GmailTransport {
 actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailAttachmentLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
+    /// Waits between retries of a rate-limited request.
+    private let retryDelays: [TimeInterval]
+    // Gmail also limits concurrent requests per user, so only a few run at once.
+    private let maximumInFlight = 4
+    private var inFlight = 0
+    private var waiting: [CheckedContinuation<Void, Never>] = []
 
-    init(transport: any GmailTransport = GmailURLTransport(),
+    init(transport: any GmailTransport = GmailURLTransport(), retryDelays: [TimeInterval] = [1, 3, 9],
          accessToken: @escaping @MainActor @Sendable () async throws -> String) {
         self.transport = transport
+        self.retryDelays = retryDelays
         self.accessToken = accessToken
+    }
+
+    /// Sends the request, waiting and retrying when Gmail says to slow down. A request that stays
+    /// rate-limited comes back as 429 so callers show one clear message.
+    private func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
+        var retries = retryDelays.makeIterator()
+        while true {
+            try Task.checkCancellation()
+            if inFlight >= maximumInFlight { await withCheckedContinuation { waiting.append($0) } }
+            else { inFlight += 1 }
+            let result = await Result { try await transport.send(request) }
+            if waiting.isEmpty { inFlight -= 1 } else { waiting.removeFirst().resume() }
+            let response = try result.get()
+            guard response.isRateLimited else { return response }
+            guard let delay = retries.next() else { return GmailHTTPResponse(data: response.data, statusCode: 429) }
+            let wait = min(max(delay, response.retryAfter ?? 0), 60)
+            try await Task.sleep(for: .seconds(wait))
+        }
     }
 
     func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage {
@@ -246,7 +279,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
-        let response = try await transport.send(request)
+        let response = try await send(request)
         guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
     }
 
@@ -281,7 +314,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         request.httpMethod = "GET"
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let response = try await transport.send(request)
+        let response = try await send(request)
         try Task.checkCancellation()
         guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
         do { return try JSONDecoder().decode(Value.self, from: response.data) }

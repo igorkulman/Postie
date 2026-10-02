@@ -96,3 +96,43 @@ struct AttachmentTests {
         #expect(await transport.paths.isEmpty)
     }
 }
+
+@Suite("Rate limiting")
+struct RateLimitTests {
+    private actor Transport: GmailTransport {
+        var responses: [GmailHTTPResponse]
+        private(set) var calls = 0
+        init(_ responses: [GmailHTTPResponse]) { self.responses = responses }
+        func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
+            calls += 1
+            return responses.count > 1 ? responses.removeFirst() : responses[0]
+        }
+    }
+
+    private let limited = GmailHTTPResponse(data: Data(#"{"error":{"errors":[{"reason":"userRateLimitExceeded"}]}}"#.utf8), statusCode: 403)
+    private let ok = GmailHTTPResponse(data: Data(#"{"id":"INBOX","messagesUnread":3}"#.utf8), statusCode: 200)
+
+    @Test("A rate-limited request is retried and then succeeds")
+    func retries() async throws {
+        let transport = Transport([limited, GmailHTTPResponse(data: Data(), statusCode: 429), ok])
+        let api = GmailAPI(transport: transport, retryDelays: [0, 0, 0]) { "token" }
+        #expect(try await api.unreadInboxCount() == 3)
+        #expect(await transport.calls == 3)
+    }
+
+    @Test("Staying rate-limited reports one clear error after the retries run out")
+    func givesUp() async {
+        let transport = Transport([limited])
+        let api = GmailAPI(transport: transport, retryDelays: [0, 0]) { "token" }
+        await #expect(throws: GmailError.http(429)) { try await api.unreadInboxCount() }
+        #expect(await transport.calls == 3)
+    }
+
+    @Test("A real permission error is not retried")
+    func deniedIsNotRetried() async {
+        let transport = Transport([GmailHTTPResponse(data: Data(#"{"error":{"errors":[{"reason":"forbidden"}]}}"#.utf8), statusCode: 403)])
+        let api = GmailAPI(transport: transport, retryDelays: [0, 0]) { "token" }
+        await #expect(throws: GmailError.http(403)) { try await api.unreadInboxCount() }
+        #expect(await transport.calls == 1)
+    }
+}

@@ -56,7 +56,8 @@ final class AccountSession: Identifiable {
         syncTask = Task {
             await reader.refresh()
             while !Task.isCancelled {
-                do { try await Task.sleep(for: interval) } catch { return }
+                // After a failure (often Gmail rate limiting) give it room instead of asking again at once.
+                do { try await Task.sleep(for: reader.mailboxError == nil ? interval : interval * 5) } catch { return }
                 await reader.refresh()
             }
         }

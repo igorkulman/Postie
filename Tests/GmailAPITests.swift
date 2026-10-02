@@ -145,17 +145,17 @@ struct GmailAPITests {
         #expect(requests.isEmpty)
     }
 
-    @Test("Metadata fan-out is limited to six concurrent requests")
+    @Test("Metadata fan-out is capped at four concurrent requests")
     func concurrencyBound() async throws {
         let transport = ConcurrencyTransport()
         let api = GmailAPI(transport: transport) { "fixture-token" }
         let task = Task { try await api.mailbox(.inbox, pageToken: nil) }
         do {
-            try await transport.waitForSix()
+            try await transport.waitForFour()
             await transport.release()
             let page = try await task.value
             let maximum = await transport.maximum
-            #expect(maximum == 6)
+            #expect(maximum == 4)
             #expect(page.conversations.count == 9)
         } catch {
             task.cancel()

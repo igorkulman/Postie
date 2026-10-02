@@ -104,8 +104,8 @@ actor ConcurrencyTransport: GmailTransport {
         (ready, readyEvents) = AsyncStream.makeStream(of: Void.self)
     }
 
-    func waitForSix() async throws {
-        if maximum >= 6 { return }
+    func waitForFour() async throws {
+        if maximum >= 4 { return }
         var iterator = ready.makeAsyncIterator()
         guard await iterator.next() != nil else { throw CancellationError() }
     }
@@ -125,7 +125,7 @@ actor ConcurrencyTransport: GmailTransport {
         }
         active += 1
         maximum = max(maximum, active)
-        if maximum >= 6 { readyEvents.yield(); readyEvents.finish() }
+        if maximum >= 4 { readyEvents.yield(); readyEvents.finish() }
         if !released {
             await withTaskCancellationHandler {
                 await withCheckedContinuation { continuation in
