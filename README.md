@@ -29,17 +29,20 @@ to use myself.
 It currently supports a single Gmail account and is not intended to replace
 every feature of Gmail or become a generic IMAP client.
 
-Not currently supported:
+Planned:
 
-- Multiple accounts
-- Generic IMAP / Exchange
-- Push notifications while Postie is closed
-- Full offline mailbox downloads
 - Attachments and CID images
+- Saving and syncing drafts (the Drafts folder is view-only for now)
 - Gmail labels
-- Saving or syncing drafts (the Drafts folder is view-only)
+- Rich-text composing (messages are plain text for now)
 - An offline send queue (mail is sent immediately, so the Outbox is always empty)
-- Rich-text or HTML composing
+- Full offline mailbox downloads
+- Multiple accounts
+
+Not planned:
+
+- Generic IMAP / Exchange support
+- Push notifications while Postie is closed
 
 ## Privacy and permissions
 
