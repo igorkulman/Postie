@@ -90,6 +90,8 @@ struct ComposeDraft: Identifiable, Equatable {
     var body = ""
     var replyingTo: UUID?
     var gmailThreadID: String?
+    /// The Gmail account the message is sent from; nil in the demo.
+    var accountID: String?
     var kind: ComposeKind = .newMessage
     var updatedAt = Date()
 

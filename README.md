@@ -10,7 +10,10 @@ subscriptions, AI features, or workspace bloat.
 ## Features
 
 - Native SwiftUI macOS app
-- Gmail integration using Google Sign-In and the Gmail API
+- Gmail integration using Google sign-in and the Gmail API
+- Multiple Gmail accounts, merged into one set of folders. Replies, forwards and
+  archive/trash actions always go through the account the conversation belongs to
+  and the default account for new messages can be chosen in Settings
 - Inbox, Sent, Archive, Junk, and Trash, plus a read-only view of Drafts
 - Conversation view with HTML email rendering
 - Compose, reply, reply all, and forward (plain text)
@@ -26,7 +29,7 @@ subscriptions, AI features, or workspace bloat.
 Postie is an early project that I built primarily as the Gmail client I wanted
 to use myself.
 
-It currently supports a single Gmail account and is not intended to replace
+It supports Gmail accounts only and is not intended to replace
 every feature of Gmail or become a generic IMAP client.
 
 Planned:
@@ -37,7 +40,6 @@ Planned:
 - Rich-text composing (messages are plain text for now)
 - An offline send queue (mail is sent immediately, so the Outbox is always empty)
 - Full offline mailbox downloads
-- Multiple accounts
 
 Not planned:
 
@@ -55,7 +57,7 @@ It asks for two Gmail permissions:
 - `gmail.send` to send mail
 
 Postie never permanently deletes mail. Trash is Gmail's normal, recoverable
-Trash. Sign-in credentials stay in the Google Sign-In SDK's Keychain storage,
+Trash. Sign-in credentials stay in your Mac's Keychain,
 and loaded mail is cached in a local SQLite database on your Mac.
 
 Both permissions are restricted Gmail scopes and Postie has not been verified

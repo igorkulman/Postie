@@ -5,6 +5,8 @@ struct ComposerView: View {
     /// Nil for real accounts: Gmail drafts are not synced yet, so only the demo can keep drafts.
     let save: ((ComposeDraft) -> Void)?
     let send: (ComposeDraft) async throws -> Void
+    /// Connected Gmail accounts. Empty in the demo, which sends from the sample address.
+    var accounts: [SendingAccount] = []
     var fromAddress = MailStore.accountEmail
     var isDemo = true
     @State private var isSending = false
@@ -12,6 +14,13 @@ struct ComposerView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsDiscard = false
     @FocusState private var focusedField: Field?
+
+    private var senderAddress: String {
+        accounts.first { $0.id == draft.accountID }?.email ?? fromAddress
+    }
+
+    /// A reply goes out from the account that received the mail, so only new messages can change it.
+    private var choosesSender: Bool { accounts.count > 1 && draft.kind == .newMessage }
 
     private enum Field: Hashable {
         case recipient, cc, subject, body
@@ -33,10 +42,21 @@ struct ComposerView: View {
             VStack(spacing: 0) {
                 HStack {
                     Text("From").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
-                    Text(fromAddress).foregroundStyle(.secondary)
+                        .accessibilityHidden(choosesSender)
+                    if choosesSender {
+                        Picker("From", selection: $draft.accountID) {
+                            ForEach(accounts) { account in
+                                Text(account.email).tag(Optional(account.id))
+                            }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    } else {
+                        Text(senderAddress).foregroundStyle(.secondary)
+                    }
                     Spacer()
                 }
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: choosesSender ? .contain : .combine)
                 .padding(.vertical, 13)
                 Divider()
                 HStack {

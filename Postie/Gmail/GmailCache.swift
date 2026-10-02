@@ -120,13 +120,6 @@ actor GmailCache {
         try migrator.migrate(database)
     }
 
-    func latestAccount() async throws -> CachedGmailAccount? {
-        try await database.read { db in
-            guard let row = try Row.fetchOne(db, sql: "SELECT id, email FROM accounts ORDER BY lastUsed DESC LIMIT 1") else { return nil }
-            return CachedGmailAccount(id: row["id"], email: row["email"])
-        }
-    }
-
     func session(for account: CachedGmailAccount) async throws -> GmailCacheSession {
         try Task.checkCancellation()
         let lease = UUID()

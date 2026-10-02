@@ -71,7 +71,12 @@
       }
     },
     "A good subject goes a long way" : {},
-    "Account" : {},
+    "Accounts" : {
+      "comment" : "Settings tab and list name"
+    },
+    "Add Account…" : {},
+    "Add Another Account…" : {},
+    "Add a Gmail account to read and send mail." : {},
     "Add to the sample Sent mailbox. Does not send real email." : {},
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {},
     "Archive" : {
@@ -90,11 +95,13 @@
       "comment" : "VoiceOver value of a message that is showing only a summary"
     },
     "Collapses the message" : {},
-    "Connect Gmail" : {},
-    "Connect Gmail from the main window." : {},
+    "Connected accounts" : {},
     "Connecting…" : {},
     "Continue Writing" : {},
     "Could Not Load Conversation" : {},
+    "Default" : {
+      "comment" : "Badge on the account that new messages are sent from"
+    },
     "Delete" : {},
     "Delete Draft" : {},
     "Delete this draft?" : {},
@@ -119,7 +126,6 @@
     "From" : {
       "comment" : "Label of the sender row in the composer"
     },
-    "GOOGLE_REVERSED_CLIENT_ID must match the dot-reversed client ID. Update the local configuration and rebuild." : {},
     "General" : {},
     "Get New Mail" : {},
     "Get New Mail (⇧⌘N)" : {},
@@ -127,6 +133,8 @@
     "Gmail could not complete the request (HTTP %lld). Try again." : {},
     "Gmail is temporarily rate-limiting requests. Please try again shortly." : {},
     "Gmail returned a response that could not be read." : {},
+    "Google sign-in returned an unexpected response. Please try again." : {},
+    "Google sign-in was not completed (%@)." : {},
     "HTML email body" : {
       "comment" : "Accessibility label for the web view showing a formatted email"
     },
@@ -146,11 +154,15 @@
     "Loading conversation…" : {},
     "Loading mail…" : {},
     "Mail changed while loading this page. Please try again." : {},
-    "Mail saved on this Mac for offline reading will be removed." : {},
+    "Mail from all your accounts appears together. You can add or remove accounts later in Settings." : {},
+    "Mail saved on this Mac for offline reading will be removed. Nothing is deleted from Gmail." : {},
     "Mailbox" : {
       "comment" : "Menu title"
     },
     "Mailboxes" : {},
+    "Make Default" : {
+      "comment" : "Button that makes the selected account the one new messages are sent from"
+    },
     "Mark as Read" : {},
     "Mark as Unread" : {},
     "Message" : {
@@ -163,17 +175,20 @@
     "Messages are sent immediately, so nothing waits here." : {},
     "Move to Trash" : {},
     "Move to Trash (⌘⌫)" : {},
+    "Needs sign-in" : {
+      "comment" : "Shown next to an account whose Google access was revoked or expired"
+    },
     "New Message" : {},
     "New Message (⌘N)" : {},
     "New message" : {
       "comment" : "Composer title"
     },
+    "No Accounts" : {},
     "No Conversation Selected" : {},
     "No conversations" : {},
     "No folder refresh yet" : {},
     "No matching mail" : {},
     "No recipient" : {},
-    "No window is available to present Google sign-in." : {},
     "Nothing here yet" : {},
     "Opening mailbox…" : {},
     "Opening saved mail…" : {},
@@ -183,16 +198,23 @@
     },
     "Outbox is empty" : {},
     "Postie" : {},
+    "Postie can no longer sync %@. Sign in again to update it; downloaded messages can still be read." : {},
     "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access." : {},
     "Read" : {
       "comment" : "Swipe action label: mark the conversation as read"
     },
     "Read your mail in a native Mac app.\nLoaded mail is saved on this Mac for offline reading." : {},
     "Recipient email address" : {},
+    "Reconnect" : {
+      "comment" : "Button that signs a disconnected account in again"
+    },
     "Reconnect Gmail" : {},
     "Refresh to check for new mail." : {},
     "Remote images enabled" : {},
+    "Remove %@?" : {},
+    "Remove Account" : {},
     "Remove star" : {},
+    "Remove…" : {},
     "Reply" : {
       "comment" : "Composer title"
     },
@@ -203,7 +225,6 @@
     "Reply All (⇧⌘R)" : {},
     "Sample mail only. Gmail is not connected and no real email is sent." : {},
     "Save Draft" : {},
-    "Saved mail for %@. Google is unavailable; downloaded messages can still be read." : {},
     "Search" : {},
     "Search covers loaded conversations in this folder only. Load more or try another phrase." : {},
     "Select a conversation to read it." : {},
@@ -217,15 +238,15 @@
       "comment" : "Mailbox name"
     },
     "Show unread count on the Dock icon" : {},
-    "Showing saved mail for %@ while connecting to Google." : {},
-    "Sign Out" : {},
-    "Sign Out…" : {},
-    "Sign out of Gmail?" : {},
-    "Signed in as" : {},
+    "Sign in with Google" : {},
     "Star conversation" : {},
     "Starred" : {},
     "Stars cannot be changed yet." : {},
+    "Start Using Postie" : {
+      "comment" : "Onboarding button that closes the setup and opens the inbox"
+    },
     "Subject" : {},
+    "The Keychain could not be accessed (error %d)." : {},
     "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message." : {},
     "This draft is saved for the current demo session only." : {},
     "This message body has not been downloaded. Connect to Gmail to read it." : {},
@@ -251,7 +272,7 @@
     "Unable to open the account cache. This session will use online mail only." : {},
     "Unable to read the local mail cache. Online mail is still available." : {},
     "Unable to read the locally saved message." : {},
-    "Unable to remove locally cached mail. Sign-out was not completed." : {},
+    "Unable to remove locally cached mail. The account was not removed." : {},
     "Unable to save mail locally. Newly fetched mail may not be available offline." : {},
     "Unable to save the local unread count." : {},
     "Unable to save this message for offline reading." : {},
@@ -262,8 +283,11 @@
     },
     "Untitled draft" : {},
     "Use Save Draft to keep this message for the current demo session." : {},
+    "Welcome to Postie" : {},
     "Write something thoughtful…" : {},
-    "Your Google session could not be restored. Sign in again to continue." : {},
+    "You're all set" : {
+      "comment" : "Onboarding: shown after the first account is connected"
+    },
     "Your Google session has expired. Sign out and sign in again." : {},
     "Your demo messages will appear here." : {},
     "name@example.com" : {}

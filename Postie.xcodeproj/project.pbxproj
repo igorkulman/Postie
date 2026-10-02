@@ -7,8 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000000000000000000001 /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GoogleSignIn */; };
-		A10000000000000000000002 /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* GoogleSignInSwift */; };
 		C10000000000000000000001 /* GRDB in Frameworks */ = {isa = PBXBuildFile; productRef = C10000000000000000000003 /* GRDB */; };
 /* End PBXBuildFile section */
 
@@ -53,8 +51,6 @@
 		F3DE2CF3306F998200EBD6E5 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				A10000000000000000000001 /* GoogleSignIn in Frameworks */,
-				A10000000000000000000002 /* GoogleSignInSwift in Frameworks */,
 				C10000000000000000000001 /* GRDB in Frameworks */,
 			);
 		};
@@ -130,8 +126,6 @@
 			);
 			name = Postie;
 			packageProductDependencies = (
-				A10000000000000000000011 /* GoogleSignIn */,
-				A10000000000000000000012 /* GoogleSignInSwift */,
 				C10000000000000000000003 /* GRDB */,
 			);
 			productName = Postie;
@@ -167,7 +161,6 @@
 			mainGroup = F3DE2CED306F998200EBD6E5;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
 				C10000000000000000000002 /* XCRemoteSwiftPackageReference "GRDB" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -476,14 +469,6 @@
 /* End XCConfigurationList section */
 
 /* Begin XCRemoteSwiftPackageReference section */
-		A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/google/GoogleSignIn-iOS";
-			requirement = {
-				kind = exactVersion;
-				version = 10.0.0;
-			};
-		};
 		C10000000000000000000002 /* XCRemoteSwiftPackageReference "GRDB" */ = {
 			isa = XCRemoteSwiftPackageReference;
 			repositoryURL = "https://github.com/groue/GRDB.swift";
@@ -495,16 +480,6 @@
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A10000000000000000000011 /* GoogleSignIn */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
-			productName = GoogleSignIn;
-		};
-		A10000000000000000000012 /* GoogleSignInSwift */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000010 /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
-			productName = GoogleSignInSwift;
-		};
 		C10000000000000000000003 /* GRDB */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = C10000000000000000000002 /* XCRemoteSwiftPackageReference "GRDB" */;

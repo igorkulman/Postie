@@ -1,118 +1,106 @@
 import SwiftUI
 
 struct GmailInboxView: View {
-    @Bindable var reader: GmailReaderStore
-    var accountNotice: String? = nil
-    var reconnect: (() -> Void)? = nil
-    var accountEmail: String? = nil
-    @State private var selectedID: String?
+    let hub: MailHub
+    @State private var selectedID: ConversationKey?
     @State private var searchText = ""
     @State private var refreshRequest = 0
     @State private var pageRequest = 0
     @State private var retryRequest = 0
-    @State private var neighborAfterRemoval: String?
-    @State private var autoReadID: String?
+    @State private var neighborAfterRemoval: ConversationKey?
+    @State private var autoReadID: ConversationKey?
     @State private var composer: ComposeDraft?
 
-    private var conversations: [GmailConversation] {
-        reader.conversations.filter { $0.matches(searchText) }
+    private var conversations: [MergedConversation] {
+        hub.conversations.filter { $0.conversation.matches(searchText) }
     }
 
     private var mailboxSelection: Binding<Mailbox?> {
         Binding(
-            get: { reader.mailbox },
+            get: { hub.mailbox },
             set: { mailbox in
-                guard let mailbox, mailbox != reader.mailbox else { return }
+                guard let mailbox, mailbox != hub.mailbox else { return }
                 selectedID = nil
                 searchText = ""
                 pageRequest = 0
-                reader.changeMailbox(mailbox)
+                hub.changeMailbox(mailbox)
             }
         )
     }
 
-    // Reply, forward, and compose are not available yet; archive and trash are.
     private var mailActions: MailActions {
         MailActions(
-            currentMailbox: reader.mailbox,
+            currentMailbox: hub.mailbox,
             selectMailbox: { mailboxSelection.wrappedValue = $0 },
-            newMessage: canCompose ? { composer = ComposeDraft() } : nil,
-            refresh: reader.isLoadingMailbox || reader.mailbox == .outbox ? nil : { refreshRequest += 1 },
-            archive: selectedID != nil && reader.canArchive ? { selectedID.map { remove($0, archiving: true) } } : nil,
-            trash: selectedID != nil && reader.canTrash ? { selectedID.map { remove($0, archiving: false) } } : nil,
+            newMessage: canCompose ? { composer = ComposeDraft(accountID: hub.defaultSendingAccount?.id) } : nil,
+            refresh: hub.isLoadingMailbox || hub.mailbox == .outbox ? nil : { refreshRequest += 1 },
+            archive: selectedID != nil && hub.canArchive(selectedID) ? { selectedID.map { remove($0, archiving: true) } } : nil,
+            trash: selectedID != nil && hub.canTrash(selectedID) ? { selectedID.map { remove($0, archiving: false) } } : nil,
             reply: openConversation == nil ? nil : { respond(.reply) },
             replyAll: openConversation == nil ? nil : { respond(.replyAll) },
             forward: openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { respond(.forward) } : nil,
             toggleRead: selected.map { conversation in { toggleRead(conversation) } },
             toggleFlag: selected.map { conversation in { toggleStar(conversation) } },
-            selectionIsUnread: selected?.isUnread ?? false,
-            selectionIsFlagged: selected?.isStarred ?? false
+            selectionIsUnread: selected?.conversation.isUnread ?? false,
+            selectionIsFlagged: selected?.conversation.isStarred ?? false
         )
     }
 
     /// Marks the open conversation read after it has stayed open briefly, so skimming past mail doesn't change it.
     private func markOpenedConversationRead() async {
-        guard let id = selectedID, reader.canModifyLabels, autoReadID != id else { return }
+        guard let key = selectedID, hub.canModifyLabels(key), autoReadID != key else { return }
         try? await Task.sleep(for: .seconds(1))
-        guard !Task.isCancelled, selectedID == id, reader.selectedConversation?.id == id,
-              reader.selectedConversation?.isUnread == true else { return }
-        autoReadID = id
+        guard !Task.isCancelled, selectedID == key, hub.openConversation(for: key)?.isUnread == true else { return }
+        autoReadID = key
         // Unstructured: the follow-up refresh must not be cancelled by a selection change.
-        Task { await reader.setUnread(id, false) }
+        Task { await hub.setUnread(key, false) }
     }
 
-    private var canCompose: Bool { reader.canSend && accountEmail != nil }
+    private var canCompose: Bool { !hub.sendingAccounts.isEmpty }
 
-    /// The fully loaded conversation that Reply and Forward act on.
+    /// The fully loaded conversation that Reply and Forward act on. Its account is the one that sends the response.
     private var openConversation: GmailConversation? {
-        guard canCompose, let selectedID, let conversation = reader.selectedConversation,
-              conversation.id == selectedID, reader.mailbox != .outbox else { return nil }
-        return conversation
+        guard let selectedID, hub.sendingAccounts.contains(where: { $0.id == selectedID.accountID }),
+              hub.mailbox != .outbox else { return nil }
+        return hub.openConversation(for: selectedID)
     }
 
     private func respond(_ kind: ComposeKind) {
-        guard let conversation = openConversation, let accountEmail else { return }
-        let thread = conversation.presentation(includingBodies: true, mailbox: reader.mailbox)
+        guard let key = selectedID, let conversation = openConversation,
+              let accountEmail = hub.email(for: key.accountID) else { return }
+        let thread = conversation.presentation(includingBodies: true, mailbox: hub.mailbox)
         var draft = kind == .forward
             ? MailStore.forwardDraft(thread)
             : MailStore.replyDraft(to: thread, accountEmail: accountEmail, allRecipients: kind == .replyAll)
-        draft.gmailThreadID = kind == .forward ? nil : conversation.id
+        draft.accountID = key.accountID
+        draft.gmailThreadID = kind == .forward ? nil : key.threadID
         composer = draft
     }
 
-    private func send(_ draft: ComposeDraft) async throws {
-        guard let accountEmail else { return }
-        try await reader.send(OutgoingMessage(
-            from: accountEmail,
-            to: draft.recipient.trimmingCharacters(in: .whitespacesAndNewlines),
-            cc: draft.cc.trimmingCharacters(in: .whitespacesAndNewlines),
-            subject: draft.subject, body: draft.body, threadID: draft.gmailThreadID
-        ))
+    private var selected: MergedConversation? {
+        guard let selectedID, hub.canModifyLabels(selectedID),
+              let conversation = hub.conversation(for: selectedID) else { return nil }
+        return MergedConversation(key: selectedID, conversation: conversation)
     }
 
-    private var selected: GmailConversation? {
-        guard reader.canModifyLabels, let selectedID else { return nil }
-        return reader.conversations.first { $0.id == selectedID }
+    private func toggleRead(_ item: MergedConversation) {
+        Task { await hub.setUnread(item.key, !item.conversation.isUnread) }
     }
 
-    private func toggleRead(_ conversation: GmailConversation) {
-        Task { await reader.setUnread(conversation.id, !conversation.isUnread) }
+    private func toggleStar(_ item: MergedConversation) {
+        Task { await hub.setStarred(item.key, !item.conversation.isStarred) }
     }
 
-    private func toggleStar(_ conversation: GmailConversation) {
-        Task { await reader.setStarred(conversation.id, !conversation.isStarred) }
-    }
-
-    private func remove(_ id: String, archiving: Bool) {
+    private func remove(_ key: ConversationKey, archiving: Bool) {
         let list = conversations
         // Select the neighbor that will take the row's place.
-        let next = list.firstIndex { $0.id == id }.flatMap { index in
-            list.indices.contains(index + 1) ? list[index + 1].id : (index > 0 ? list[index - 1].id : nil)
+        let next = list.firstIndex { $0.key == key }.flatMap { index in
+            list.indices.contains(index + 1) ? list[index + 1].key : (index > 0 ? list[index - 1].key : nil)
         }
         // Only move selection when the removed row is the open one.
-        neighborAfterRemoval = selectedID == id ? next : selectedID
+        neighborAfterRemoval = selectedID == key ? next : selectedID
         Task {
-            _ = archiving ? await reader.archive(id) : await reader.trash(id)
+            _ = archiving ? await hub.archive(key) : await hub.trash(key)
             neighborAfterRemoval = nil
         }
     }
@@ -120,10 +108,11 @@ struct GmailInboxView: View {
     private struct MailboxRequest: Hashable {
         let mailbox: Mailbox
         let refresh: Int
+        let accounts: [String]
     }
 
     private struct SelectionRequest: Hashable {
-        let id: String?
+        let id: ConversationKey?
         let mailboxVersion: Int
         let retry: Int
     }
@@ -134,7 +123,7 @@ struct GmailInboxView: View {
                 Section("Mailboxes") {
                     ForEach(Mailbox.allCases) { mailbox in
                         Label(mailbox.title, systemImage: mailbox.symbol)
-                            .badge(mailbox == .inbox ? (reader.unreadInboxCount ?? 0) : 0)
+                            .badge(mailbox == .inbox ? (hub.unreadInboxCount ?? 0) : 0)
                             .tag(mailbox)
                     }
                 }
@@ -148,62 +137,52 @@ struct GmailInboxView: View {
             detail
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
         }
-        .navigationTitle(reader.mailbox.title)
+        .navigationTitle(hub.mailbox.title)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar { MailToolbar(actions: mailActions) }
         .focusedSceneValue(\.mailActions, mailActions)
         .sheet(item: $composer) { draft in
-            ComposerView(draft: draft, save: nil, send: send, fromAddress: accountEmail ?? "", isDemo: false)
+            ComposerView(draft: draft, save: nil, send: hub.send, accounts: hub.sendingAccounts, isDemo: false)
         }
-        .task(id: MailboxRequest(mailbox: reader.mailbox, refresh: refreshRequest)) {
-            await reader.restoreCachedMailbox()
-            if selectedID == nil { selectedID = conversations.first?.id }
-            await reader.refresh()
+        // Also runs when an account is added, so its mail appears without choosing a folder again.
+        .task(id: MailboxRequest(mailbox: hub.mailbox, refresh: refreshRequest, accounts: hub.sessions.map(\.id))) {
+            await hub.restoreCachedMailbox()
+            if selectedID == nil { selectedID = conversations.first?.key }
+            await hub.refresh()
         }
         .task(id: pageRequest) {
-            if pageRequest > 0 { await reader.loadMore() }
+            if pageRequest > 0 { await hub.loadMore() }
         }
-        .task(id: SelectionRequest(id: selectedID, mailboxVersion: reader.mailboxVersion, retry: retryRequest)) {
-            await reader.select(selectedID)
+        .task(id: SelectionRequest(id: selectedID, mailboxVersion: hub.mailboxVersion, retry: retryRequest)) {
+            await hub.select(selectedID)
             await markOpenedConversationRead()
         }
-        .onChange(of: reader.mailboxVersion) { _, _ in
-            if !conversations.contains(where: { $0.id == selectedID }) {
-                selectedID = conversations.first { $0.id == neighborAfterRemoval }?.id ?? conversations.first?.id
+        .onChange(of: hub.mailboxVersion) { _, _ in
+            if !conversations.contains(where: { $0.key == selectedID }) {
+                selectedID = conversations.first { $0.key == neighborAfterRemoval }?.key ?? conversations.first?.key
             }
         }
         .onChange(of: searchText) { _, _ in
-            if !conversations.contains(where: { $0.id == selectedID }) { selectedID = nil }
+            if !conversations.contains(where: { $0.key == selectedID }) { selectedID = nil }
         }
     }
 
     private var messageList: some View {
         VStack(spacing: 0) {
-            if let notice = reader.cacheError ?? accountNotice {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(notice)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                    if let reconnect { Button("Reconnect Gmail", action: reconnect) }
-                }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            ForEach(hub.notices) { notice in
+                noticeView(notice)
                 Divider()
             }
-            if let error = reader.mailboxError {
-                GmailErrorBanner(message: error) { refreshRequest += 1 }
-                Divider()
-            }
-            if (reader.isLoadingMailbox || reader.isRestoringCache) && reader.conversations.isEmpty {
+            if (hub.isLoadingMailbox || hub.isRestoringCache) && hub.loadedCount == 0 {
                 ProgressView("Loading mail…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if conversations.isEmpty {
                 ContentUnavailableView {
-                    Label(searchText.isEmpty ? (reader.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
-                          systemImage: searchText.isEmpty ? reader.mailbox.symbol : "magnifyingglass")
+                    Label(searchText.isEmpty ? (hub.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
+                          systemImage: searchText.isEmpty ? hub.mailbox.symbol : "magnifyingglass")
                 } description: {
                     Text(searchText.isEmpty
-                         ? (reader.mailbox == .outbox
+                         ? (hub.mailbox == .outbox
                             ? String(localized: "Messages are sent immediately, so nothing waits here.")
                             : String(localized: "Refresh to check for new mail."))
                          : String(localized: "Search covers loaded conversations in this folder only. Load more or try another phrase."))
@@ -211,27 +190,27 @@ struct GmailInboxView: View {
                 .frame(maxHeight: .infinity)
             } else {
                 List(selection: $selectedID) {
-                    ForEach(conversations) { conversation in
-                        MailThreadRow(thread: conversation.presentation(includingBodies: false, mailbox: reader.mailbox))
-                            .tag(conversation.id)
+                    ForEach(conversations) { item in
+                        MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox))
+                            .tag(item.key)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
                             .swipeActions(edge: .leading) {
-                                if reader.canModifyLabels {
-                                    Button { toggleRead(conversation) } label: {
-                                        Label(conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
-                                              systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge")
+                                if hub.canModifyLabels(item.key) {
+                                    Button { toggleRead(item) } label: {
+                                        Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
+                                              systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
                                     }
                                 }
                             }
                             .swipeActions(edge: .trailing) {
-                                if reader.canTrash {
-                                    Button(role: .destructive) { remove(conversation.id, archiving: false) } label: {
+                                if hub.canTrash(item.key) {
+                                    Button(role: .destructive) { remove(item.key, archiving: false) } label: {
                                         Label("Delete", systemImage: "trash")
                                     }
                                 }
-                                if reader.canArchive {
-                                    Button { remove(conversation.id, archiving: true) } label: {
+                                if hub.canArchive(item.key) {
+                                    Button { remove(item.key, archiving: true) } label: {
                                         Label("Archive", systemImage: "archivebox")
                                     }
                                     .tint(.indigo)
@@ -239,56 +218,57 @@ struct GmailInboxView: View {
                             }
                             .onAppear {
                                 // Load the next page as the end of the list scrolls into view.
-                                if conversation.id == conversations.last?.id, searchText.isEmpty,
-                                   reader.nextPageToken != nil, !reader.isLoadingMailbox {
+                                if item.key == conversations.last?.key, searchText.isEmpty,
+                                   hub.hasMorePages, !hub.isLoadingMailbox {
                                     pageRequest += 1
                                 }
                             }
                     }
                 }
                 .listStyle(.inset)
-                .onDeleteCommand { if reader.canTrash, let id = selectedID { remove(id, archiving: false) } }
-                .contextMenu(forSelectionType: String.self) { ids in
-                    if let id = ids.first {
-                        if reader.canModifyLabels, let conversation = reader.conversations.first(where: { $0.id == id }) {
+                .onDeleteCommand { if let key = selectedID, hub.canTrash(key) { remove(key, archiving: false) } }
+                .contextMenu(forSelectionType: ConversationKey.self) { keys in
+                    if let key = keys.first {
+                        if hub.canModifyLabels(key), let conversation = hub.conversation(for: key) {
+                            let item = MergedConversation(key: key, conversation: conversation)
                             Button(conversation.isUnread ? String(localized: "Mark as Read") : String(localized: "Mark as Unread"),
-                                   systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(conversation) }
+                                   systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(item) }
                             Button(conversation.isStarred ? String(localized: "Unflag") : String(localized: "Flag"),
-                                   systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(conversation) }
+                                   systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(item) }
                             Divider()
                         }
-                        if id == openConversation?.id {
+                        if key == selectedID, let open = openConversation {
                             Button("Reply", systemImage: "arrowshape.turn.up.left") { respond(.reply) }
                             Button("Reply All", systemImage: "arrowshape.turn.up.left.2") { respond(.replyAll) }
-                            if openConversation?.messages.allSatisfy(\.bodyLoaded) == true {
+                            if open.messages.allSatisfy(\.bodyLoaded) {
                                 Button("Forward", systemImage: "arrowshape.turn.up.right") { respond(.forward) }
                             }
                             Divider()
                         }
-                        if reader.canArchive {
-                            Button("Archive", systemImage: "archivebox") { remove(id, archiving: true) }
+                        if hub.canArchive(key) {
+                            Button("Archive", systemImage: "archivebox") { remove(key, archiving: true) }
                         }
-                        if reader.canTrash {
-                            Button("Move to Trash", systemImage: "trash", role: .destructive) { remove(id, archiving: false) }
+                        if hub.canTrash(key) {
+                            Button("Move to Trash", systemImage: "trash", role: .destructive) { remove(key, archiving: false) }
                         }
                     }
                 }
             }
             Divider()
             HStack {
-                if reader.isLoadingMailbox {
+                if hub.isLoadingMailbox {
                     ProgressView().controlSize(.small)
                         .accessibilityLabel("Loading")
                 }
-                Text(reader.showingCachedMail
-                     ? String(localized: "\(reader.conversations.count) cached", comment: "Conversation count in the list footer; the mail was loaded from the local cache")
-                     : String(localized: "\(reader.conversations.count) loaded", comment: "Conversation count in the list footer; the mail was loaded from Gmail"))
+                Text(hub.showingCachedMail
+                     ? String(localized: "\(hub.loadedCount) cached", comment: "Conversation count in the list footer; the mail was loaded from the local cache")
+                     : String(localized: "\(hub.loadedCount) loaded", comment: "Conversation count in the list footer; the mail was loaded from Gmail"))
                     .foregroundStyle(.secondary)
-                    .help(reader.lastRefreshed.map { String(localized: "Last updated: \($0.formatted())") } ?? String(localized: "No folder refresh yet"))
+                    .help(hub.lastRefreshed.map { String(localized: "Last updated: \($0.formatted())") } ?? String(localized: "No folder refresh yet"))
                 Spacer()
-                if reader.nextPageToken != nil {
+                if hub.hasMorePages {
                     Button("Load More") { pageRequest += 1 }
-                        .disabled(reader.isLoadingMailbox)
+                        .disabled(hub.isLoadingMailbox)
                 }
             }
             .font(.subheadline)
@@ -298,23 +278,43 @@ struct GmailInboxView: View {
     }
 
     @ViewBuilder
+    private func noticeView(_ notice: HubNotice) -> some View {
+        if notice.isError {
+            GmailErrorBanner(message: notice.message) { refreshRequest += 1 }
+        } else {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(notice.message)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                if case .reconnect(let accountID) = notice.fix {
+                    Button("Reconnect Gmail") { hub.accounts.reconnect(accountID) }
+                        .disabled(hub.accounts.isBusy)
+                }
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
     private var detail: some View {
-        if let conversation = reader.selectedConversation, conversation.id == selectedID {
+        if let key = selectedID, let conversation = hub.openConversation(for: key) {
             VStack(spacing: 0) {
-                if let error = reader.conversationError {
+                if let error = hub.conversationError(key) {
                     GmailErrorBanner(message: error) { retryRequest += 1 }
                     Divider()
                 }
                 GmailConversationView(
-                    conversation: conversation, mailbox: reader.mailbox,
-                    canToggleStar: reader.canModifyLabels, toggleStar: { toggleStar(conversation) }
+                    conversation: conversation, mailbox: hub.mailbox,
+                    canToggleStar: hub.canModifyLabels(key),
+                    toggleStar: { toggleStar(MergedConversation(key: key, conversation: conversation)) }
                 )
-                    .id(conversation.id)
+                    .id(key)
             }
-        } else if reader.isLoadingConversation {
+        } else if hub.isLoadingConversation(selectedID) {
             ProgressView("Loading conversation…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = reader.conversationError {
+        } else if let error = hub.conversationError(selectedID) {
             ContentUnavailableView {
                 Label("Could Not Load Conversation", systemImage: "exclamationmark.triangle")
             } description: {
@@ -410,7 +410,7 @@ private struct PreviewGmailAPI: GmailReading {
 }
 
 @MainActor
-private func makeGmailPreviewStore(mailbox: Mailbox = .inbox, failsBody: Bool = false) -> GmailReaderStore {
+private func makeGmailPreviewHub(mailbox: Mailbox = .inbox, failsBody: Bool = false) -> MailHub {
     let conversations = Dictionary(grouping: SampleMail.threads(), by: \.mailbox).mapValues { threads in
         threads.map { thread in
             GmailConversation(id: thread.id.uuidString, subject: thread.subject, messages: thread.messages.map {
@@ -420,31 +420,54 @@ private func makeGmailPreviewStore(mailbox: Mailbox = .inbox, failsBody: Bool = 
             })
         }
     }
-    return GmailReaderStore(api: PreviewGmailAPI(conversations: conversations, failsBody: failsBody), mailbox: mailbox)
+    let identity = GoogleIdentity(id: "preview", email: MailStore.accountEmail, name: MailStore.accountName)
+    let credentials = GoogleCredentials(
+        refreshToken: "", accessToken: "", expiresAt: .distantFuture, scopes: Set(GoogleOAuthClient.requiredScopes)
+    )
+    let accounts = AccountStore(vault: MemoryAccountVault([StoredAccount(identity: identity, credentials: credentials, addedAt: Date())]))
+    accounts.restore()
+    let hub = MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false) { _ in
+        PreviewGmailAPI(conversations: conversations, failsBody: failsBody)
+    }
+    hub.changeMailbox(mailbox)
+    return hub
+}
+
+private struct GmailPreview: View {
+    @State private var hub: MailHub
+
+    init(mailbox: Mailbox = .inbox, failsBody: Bool = false) {
+        _hub = State(initialValue: makeGmailPreviewHub(mailbox: mailbox, failsBody: failsBody))
+    }
+
+    var body: some View {
+        GmailInboxView(hub: hub)
+            .task { await hub.reconcile() }
+    }
 }
 
 #Preview("Gmail Reader") {
-    GmailInboxView(reader: makeGmailPreviewStore())
+    GmailPreview()
         .frame(width: 1200, height: 820)
 }
 
 #Preview("Gmail Reader · Compact") {
-    GmailInboxView(reader: makeGmailPreviewStore())
+    GmailPreview()
         .frame(width: 960, height: 640)
 }
 
 #Preview("Gmail Reader · Retry") {
-    GmailInboxView(reader: makeGmailPreviewStore(failsBody: true))
+    GmailPreview(failsBody: true)
         .frame(width: 960, height: 640)
 }
 
 #Preview("Gmail Sent · Dark") {
-    GmailInboxView(reader: makeGmailPreviewStore(mailbox: .sent))
+    GmailPreview(mailbox: .sent)
         .frame(width: 1200, height: 820)
         .preferredColorScheme(.dark)
 }
 
 #Preview("Gmail Outbox · Compact") {
-    GmailInboxView(reader: makeGmailPreviewStore(mailbox: .outbox))
+    GmailPreview(mailbox: .outbox)
         .frame(width: 960, height: 640)
 }

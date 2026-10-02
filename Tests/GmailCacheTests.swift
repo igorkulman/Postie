@@ -19,7 +19,6 @@ struct GmailCacheTests {
             try await session.saveUnreadCount(42)
         }
         let reopened = try await GmailCache.open(at: url)
-        #expect(try await reopened.latestAccount() == account)
         let session = try await reopened.session(for: account)
         let page = try await session.loadMailbox(.inbox)
         #expect(page?.conversations == [full])

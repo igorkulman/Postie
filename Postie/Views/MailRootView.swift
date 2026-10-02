@@ -1,54 +1,44 @@
 import SwiftUI
-import GoogleSignInSwift
 
 struct MailRootView: View {
-    @State private var account: GoogleAccount
+    let hub: MailHub
     @Environment(\.scenePhase) private var scenePhase
-    @State private var activationRefresh = 0
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
-    @State private var reader: GmailReaderStore
     // Launch with `-PostieDemoData` to start on sample mail (e.g. for screenshots).
     @State private var showingDemo = ProcessInfo.processInfo.arguments.contains("-PostieDemoData")
     @State private var demoUnreadCount: Int?
-    @State private var cache: GmailCache?
-    @State private var readerAccount: CachedGmailAccount?
-    @State private var preparingCache: Bool
-    @State private var storageError: String?
+    // The welcome screen was on screen, so the next account is the first one: finish with the "all set" step.
+    @State private var sawWelcome = false
+    @State private var isOnboarding = false
     private let restoresSession: Bool
     private let updatesDockBadge: Bool
-    private let persistsMail: Bool
 
-    init(account providedAccount: GoogleAccount? = nil, restoresSession: Bool = true, updatesDockBadge: Bool = true, persistsMail: Bool = true) {
+    init(hub: MailHub, restoresSession: Bool = true, updatesDockBadge: Bool = true) {
+        self.hub = hub
         self.restoresSession = restoresSession
         self.updatesDockBadge = updatesDockBadge
-        self.persistsMail = persistsMail
-        _preparingCache = State(initialValue: persistsMail)
-        let account = providedAccount ?? GoogleAccount()
-        _account = State(initialValue: account)
-        _reader = State(initialValue: GmailReaderStore(api: GmailAPI { try await account.accessToken() }))
     }
 
+    private var accounts: AccountStore { hub.accounts }
+
     private var unreadCount: Int? {
-        if readerAccount != nil, account.accountID == nil || account.accountID == readerAccount?.id {
-            return reader.unreadInboxCount
-        }
-        return showingDemo ? demoUnreadCount : nil
+        hub.sessions.isEmpty ? (showingDemo ? demoUnreadCount : nil) : hub.unreadInboxCount
     }
 
     var body: some View {
         ZStack {
-            if preparingCache {
+            if hub.isPreparing {
                 ProgressView("Opening saved mail…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if let readerAccount, account.accountID == nil || account.accountID == readerAccount.id {
-                GmailInboxView(
-                    reader: reader, accountNotice: accountNotice,
-                    reconnect: reconnectAction, accountEmail: readerAccount.email
-                )
-                    .id(readerAccount.id)
-            } else if account.accountID != nil {
-                ProgressView("Opening mailbox…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if isOnboarding, !accounts.accounts.isEmpty {
+                AccountsReadyView(accounts: accounts) { isOnboarding = false }
+            } else if !accounts.accounts.isEmpty {
+                if hub.sessions.isEmpty {
+                    ProgressView("Opening mailbox…")
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    GmailInboxView(hub: hub)
+                }
             } else if showingDemo {
                 ContentView(unreadCountChanged: { demoUnreadCount = $0 })
             } else {
@@ -56,38 +46,23 @@ struct MailRootView: View {
             }
         }
         .task {
-            await prepareCache()
-            if restoresSession, !showingDemo { await account.restore() }
+            // Accounts first, so a returning person never sees the welcome screen flash by.
+            if restoresSession, !showingDemo { accounts.restore() }
+            await hub.prepare()
         }
-        .task(id: AccountBinding(id: account.accountID, ready: !preparingCache)) {
-            if !preparingCache, let id = account.accountID, let email = account.email {
-                await bindReader(to: CachedGmailAccount(id: id, email: email))
-            }
-        }
-        .task(id: AutomaticSyncRequest(accountID: account.accountID, readerID: readerAccount?.id, activation: activationRefresh)) {
-            guard restoresSession, persistsMail, let id = account.accountID, id == readerAccount?.id else { return }
-            let activeReader = reader
-            await activeReader.refresh()
-            // Remain active while the app runs, including while another app is frontmost.
-            // SwiftUI owns cancellation when the window/account changes.
-            while !Task.isCancelled {
-                do { try await Task.sleep(for: .seconds(60)) }
-                catch { return }
-                guard account.accountID == id, readerAccount?.id == id else { return }
-                await activeReader.refresh()
-            }
+        .task(id: AccountBinding(ids: accounts.accounts.map(\.id), ready: !hub.isPreparing)) {
+            if !hub.isPreparing { await hub.reconcile() }
         }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active { activationRefresh += 1 }
+            if phase == .active { Task { await hub.refresh() } }
         }
         .onChange(of: unreadCount, initial: true) { _, _ in updateDockBadge() }
         .onChange(of: showsDockBadge) { _, _ in updateDockBadge() }
-        .onChange(of: account.accountID) { _, id in
+        .onChange(of: accounts.accounts.isEmpty) { _, isEmpty in
+            guard !isEmpty else { return }
             showingDemo = false
-            if readerAccount?.id != id {
-                reader.reset()
-                readerAccount = nil
-            }
+            if sawWelcome { isOnboarding = true }
+            sawWelcome = false
         }
     }
 
@@ -95,85 +70,9 @@ struct MailRootView: View {
         if updatesDockBadge { DockBadge.update(unreadCount: showsDockBadge ? unreadCount : nil) }
     }
 
-    private struct AutomaticSyncRequest: Hashable {
-        let accountID: String?
-        let readerID: String?
-        let activation: Int
-    }
-
     private struct AccountBinding: Hashable {
-        let id: String?
+        let ids: [String]
         let ready: Bool
-    }
-
-    private var reconnectAction: (() -> Void)? {
-        guard account.email == nil, !account.isBusy, account.configurationIssue == nil else { return nil }
-        return { account.signIn() }
-    }
-
-    private var accountNotice: String? {
-        if let storageError { return storageError }
-        guard account.email == nil, let readerAccount else { return nil }
-        return account.isBusy
-            ? String(localized: "Showing saved mail for \(readerAccount.email) while connecting to Google.")
-            : String(localized: "Saved mail for \(readerAccount.email). Google is unavailable; downloaded messages can still be read.")
-    }
-
-    private func prepareCache() async {
-        guard persistsMail, !showingDemo else { preparingCache = false; return }
-        defer { preparingCache = false }
-        do {
-            let database = try await GmailCache.open()
-            try Task.checkCancellation()
-            cache = database
-            account.useCache(database)
-            if let savedAccount = try await database.latestAccount() {
-                let savedSession = try await database.session(for: savedAccount)
-                let savedReader = GmailReaderStore(api: api(for: savedAccount.id), cache: savedSession)
-                await savedReader.restoreCachedMailbox()
-                try Task.checkCancellation()
-                reader = savedReader
-                readerAccount = savedAccount
-            }
-        } catch is CancellationError {
-            // Closing the window must not publish a partially prepared mailbox.
-        } catch {
-            storageError = String(localized: "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally.")
-        }
-    }
-
-    private func api(for accountID: String) -> GmailAPI {
-        GmailAPI {
-            guard account.accountID == accountID else { throw GmailError.signInRequired }
-            let token = try await account.accessToken()
-            guard account.accountID == accountID else { throw GmailError.signInRequired }
-            return token
-        }
-    }
-
-    private func bindReader(to identity: CachedGmailAccount) async {
-        if readerAccount?.id == identity.id {
-            // Cached mail can appear before OAuth restoration completes. Refresh again
-            // once this account becomes connected, without recreating the reading pane.
-            await reader.refresh()
-            return
-        }
-        do {
-            let savedSession = try await cache?.session(for: identity)
-            let newReader = GmailReaderStore(api: api(for: identity.id), cache: savedSession)
-            await newReader.restoreCachedMailbox()
-            try Task.checkCancellation()
-            guard account.accountID == identity.id else { await savedSession?.invalidate(); return }
-            reader.reset()
-            reader = newReader
-            readerAccount = identity
-        } catch {
-            guard !Task.isCancelled, account.accountID == identity.id else { return }
-            storageError = String(localized: "Unable to open the account cache. This session will use online mail only.")
-            reader.reset()
-            reader = GmailReaderStore(api: api(for: identity.id))
-            readerAccount = identity
-        }
     }
 
     private var connectionView: some View {
@@ -182,22 +81,26 @@ struct MailRootView: View {
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            Text("Connect Gmail")
+            Text("Welcome to Postie")
                 .font(.title2.weight(.semibold))
                 .accessibilityAddTraits(.isHeader)
             Text("Read your mail in a native Mac app.\nLoaded mail is saved on this Mac for offline reading.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
 
-            if account.isBusy {
+            if accounts.isBusy {
                 ProgressView("Connecting…")
             } else {
-                GoogleSignInButton(action: account.signIn)
-                    .frame(width: 220)
-                    .disabled(account.configurationIssue != nil)
+                Button { accounts.addAccount() } label: {
+                    Label("Sign in with Google", systemImage: "person.crop.circle.badge.checkmark")
+                        .frame(minWidth: 180)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .disabled(accounts.configurationIssue != nil)
             }
 
-            if let issue = account.configurationIssue ?? account.error ?? storageError {
+            if let issue = accounts.configurationIssue ?? accounts.error ?? hub.storageError {
                 Text(issue)
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -209,10 +112,83 @@ struct MailRootView: View {
         .padding(32)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .navigationTitle("Postie")
+        .onAppear { sawWelcome = true }
     }
 }
 
-#Preview("Connect Gmail") {
-    MailRootView(restoresSession: false, updatesDockBadge: false, persistsMail: false)
+/// Shown once after the first sign-in: confirms what is connected and lets the person add more before starting.
+private struct AccountsReadyView: View {
+    let accounts: AccountStore
+    let start: () -> Void
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "checkmark.circle")
+                .font(.system(size: 40, weight: .light))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Text("You're all set")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            VStack(spacing: 6) {
+                ForEach(accounts.accounts) { account in
+                    Label(account.email, systemImage: "envelope")
+                        .labelStyle(.titleAndIcon)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: 320)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Connected accounts")
+            Text("Mail from all your accounts appears together. You can add or remove accounts later in Settings.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: 420)
+
+            if accounts.isBusy {
+                ProgressView("Connecting…")
+            } else {
+                HStack(spacing: 12) {
+                    Button("Add Another Account…") { accounts.addAccount() }
+                    Button("Start Using Postie", action: start)
+                        .buttonStyle(.borderedProminent)
+                        .keyboardShortcut(.defaultAction)
+                }
+                .controlSize(.large)
+            }
+
+            if let error = accounts.error {
+                Text(error)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 420)
+            }
+        }
+        .padding(32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .navigationTitle("Postie")
+    }
+}
+
+#Preview("Welcome") {
+    let accounts = AccountStore(vault: MemoryAccountVault())
+    MailRootView(
+        hub: MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false),
+        restoresSession: false, updatesDockBadge: false
+    )
+    .frame(width: 960, height: 640)
+}
+
+#Preview("All set") {
+    let identity = GoogleIdentity(id: "a", email: "alex@example.com", name: nil)
+    let accounts = AccountStore(vault: MemoryAccountVault([StoredAccount(
+        identity: identity,
+        credentials: GoogleCredentials(refreshToken: "", accessToken: "", expiresAt: .distantFuture, scopes: Set(GoogleOAuthClient.requiredScopes)),
+        addedAt: Date()
+    )]))
+    accounts.restore()
+    return AccountsReadyView(accounts: accounts) {}
         .frame(width: 960, height: 640)
 }
