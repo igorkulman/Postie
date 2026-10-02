@@ -10,6 +10,7 @@ struct GmailInboxView: View {
     @State private var pageRequest = 0
     @State private var retryRequest = 0
     @State private var neighborAfterRemoval: String?
+    @State private var autoReadID: String?
 
     private var conversations: [GmailConversation] {
         reader.conversations.filter { $0.matches(searchText) }
@@ -41,6 +42,17 @@ struct GmailInboxView: View {
             selectionIsUnread: selected?.isUnread ?? false,
             selectionIsFlagged: selected?.isStarred ?? false
         )
+    }
+
+    /// Marks the open conversation read after it has stayed open briefly, so skimming past mail doesn't change it.
+    private func markOpenedConversationRead() async {
+        guard let id = selectedID, reader.canModifyLabels, autoReadID != id else { return }
+        try? await Task.sleep(for: .seconds(1))
+        guard !Task.isCancelled, selectedID == id, reader.selectedConversation?.id == id,
+              reader.selectedConversation?.isUnread == true else { return }
+        autoReadID = id
+        // Unstructured: the follow-up refresh must not be cancelled by a selection change.
+        Task { await reader.setUnread(id, false) }
     }
 
     private var selected: GmailConversation? {
@@ -115,6 +127,7 @@ struct GmailInboxView: View {
         }
         .task(id: SelectionRequest(id: selectedID, mailboxVersion: reader.mailboxVersion, retry: retryRequest)) {
             await reader.select(selectedID)
+            await markOpenedConversationRead()
         }
         .onChange(of: reader.mailboxVersion) { _, _ in
             if !conversations.contains(where: { $0.id == selectedID }) {
@@ -260,7 +273,7 @@ struct GmailInboxView: View {
             ContentUnavailableView {
                 Label("No Conversation Selected", systemImage: "envelope.open")
             } description: {
-                Text("Select a conversation to read it. Reading does not change its Gmail read status.")
+                Text("Select a conversation to read it.")
             }
         }
     }

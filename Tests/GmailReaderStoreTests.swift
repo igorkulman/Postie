@@ -40,7 +40,7 @@ struct GmailReaderStoreTests {
         #expect(api.tokens == [nil, "next", "next"])
     }
 
-    @Test("Reading caches bodies and makes them searchable without marking mail read")
+    @Test("Loading a body caches it and makes it searchable, leaving read state to the view")
     func bodyCache() async throws {
         let metadata = try GmailFixtures.conversation("a1", includeBody: false)
         let api = StubAPI([.success(GmailPage(conversations: [metadata], nextPageToken: nil))])
