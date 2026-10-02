@@ -20,7 +20,6 @@ subscriptions, AI features, or workspace bloat.
 - Archive, trash, star, and read/unread actions
 - Local SQLite cache for previously loaded mail
 - Incremental Gmail synchronization while the app is running
-- Local search across loaded mail
 - Native light and dark mode
 - Dock badge for unread Inbox mail
 
@@ -34,6 +33,7 @@ every feature of Gmail or become a generic IMAP client.
 
 Planned:
 
+- Search across all accounts (local first, then Gmail)
 - Attachments and CID images
 - Saving and syncing drafts (the Drafts folder is view-only for now)
 - Gmail labels
