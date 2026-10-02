@@ -47,10 +47,13 @@ struct MailThreadRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                        Spacer(minLength: 4)
                         if thread.isStarred {
+                            // Stays orange on the selection highlight, like Mimestream.
                             Image(systemName: "star.fill")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
+                                .font(.callout)
+                                .foregroundStyle(.orange)
+                                .accessibilityLabel("Starred")
                         }
                     }
                     Text(thread.preview)

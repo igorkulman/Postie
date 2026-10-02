@@ -35,8 +35,25 @@ struct GmailInboxView: View {
             selectMailbox: { mailboxSelection.wrappedValue = $0 },
             refresh: reader.isLoadingMailbox || reader.mailbox == .outbox ? nil : { refreshRequest += 1 },
             archive: selectedID != nil && reader.canArchive ? { selectedID.map { remove($0, archiving: true) } } : nil,
-            trash: selectedID != nil && reader.canTrash ? { selectedID.map { remove($0, archiving: false) } } : nil
+            trash: selectedID != nil && reader.canTrash ? { selectedID.map { remove($0, archiving: false) } } : nil,
+            toggleRead: selected.map { conversation in { toggleRead(conversation) } },
+            toggleFlag: selected.map { conversation in { toggleStar(conversation) } },
+            selectionIsUnread: selected?.isUnread ?? false,
+            selectionIsFlagged: selected?.isStarred ?? false
         )
+    }
+
+    private var selected: GmailConversation? {
+        guard reader.canModifyLabels, let selectedID else { return nil }
+        return reader.conversations.first { $0.id == selectedID }
+    }
+
+    private func toggleRead(_ conversation: GmailConversation) {
+        Task { await reader.setUnread(conversation.id, !conversation.isUnread) }
+    }
+
+    private func toggleStar(_ conversation: GmailConversation) {
+        Task { await reader.setStarred(conversation.id, !conversation.isStarred) }
     }
 
     private func remove(_ id: String, archiving: Bool) {
@@ -146,6 +163,14 @@ struct GmailInboxView: View {
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
+                            .swipeActions(edge: .leading) {
+                                if reader.canModifyLabels {
+                                    Button { toggleRead(conversation) } label: {
+                                        Label(conversation.isUnread ? "Read" : "Unread",
+                                              systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge")
+                                    }
+                                }
+                            }
                             .swipeActions(edge: .trailing) {
                                 if reader.canTrash {
                                     Button(role: .destructive) { remove(conversation.id, archiving: false) } label: {
@@ -172,6 +197,13 @@ struct GmailInboxView: View {
                 .onDeleteCommand { if reader.canTrash, let id = selectedID { remove(id, archiving: false) } }
                 .contextMenu(forSelectionType: String.self) { ids in
                     if let id = ids.first {
+                        if reader.canModifyLabels, let conversation = reader.conversations.first(where: { $0.id == id }) {
+                            Button(conversation.isUnread ? "Mark as Read" : "Mark as Unread",
+                                   systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(conversation) }
+                            Button(conversation.isStarred ? "Unflag" : "Flag",
+                                   systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(conversation) }
+                            Divider()
+                        }
                         if reader.canArchive {
                             Button("Archive", systemImage: "archivebox") { remove(id, archiving: true) }
                         }
@@ -207,7 +239,10 @@ struct GmailInboxView: View {
                     GmailErrorBanner(message: error) { retryRequest += 1 }
                     Divider()
                 }
-                GmailConversationView(conversation: conversation, mailbox: reader.mailbox)
+                GmailConversationView(
+                    conversation: conversation, mailbox: reader.mailbox,
+                    canToggleStar: reader.canModifyLabels, toggleStar: { toggleStar(conversation) }
+                )
                     .id(conversation.id)
             }
         } else if reader.isLoadingConversation {
@@ -251,16 +286,20 @@ private struct GmailErrorBanner: View {
 private struct GmailConversationView: View {
     let conversation: GmailConversation
     let mailbox: Mailbox
+    let canToggleStar: Bool
+    let toggleStar: () -> Void
     @State private var thread: MailThread
 
-    init(conversation: GmailConversation, mailbox: Mailbox) {
+    init(conversation: GmailConversation, mailbox: Mailbox, canToggleStar: Bool, toggleStar: @escaping () -> Void) {
         self.conversation = conversation
         self.mailbox = mailbox
+        self.canToggleStar = canToggleStar
+        self.toggleStar = toggleStar
         _thread = State(initialValue: conversation.presentation(includingBodies: true, mailbox: mailbox))
     }
 
     var body: some View {
-        ThreadDetailView(thread: thread, canToggleStar: false, toggleStar: {})
+        ThreadDetailView(thread: thread, canToggleStar: canToggleStar, toggleStar: toggleStar)
             .onChange(of: conversation) { _, updated in
                 thread = updated.presentation(includingBodies: true, mailbox: mailbox)
             }

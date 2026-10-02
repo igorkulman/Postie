@@ -12,7 +12,7 @@ nonisolated struct GmailMessage: Identifiable, Equatable, Sendable {
     let body: String
     var bodyLoaded: Bool = true
     var htmlBody: String? = nil
-    let labelIDs: Set<String>
+    var labelIDs: Set<String>
 }
 
 nonisolated struct GmailConversation: Identifiable, Equatable, Sendable {
@@ -24,6 +24,15 @@ nonisolated struct GmailConversation: Identifiable, Equatable, Sendable {
     var isUnread: Bool { labelIDs.contains("UNREAD") }
     var isStarred: Bool { labelIDs.contains("STARRED") }
     var latestDate: Date { messages.last?.date ?? .distantPast }
+
+    /// A copy with a label added to or removed from every message, mirroring Gmail's thread-level modify.
+    func setting(_ label: String, to on: Bool) -> GmailConversation {
+        GmailConversation(id: id, subject: subject, messages: messages.map { message in
+            var message = message
+            if on { message.labelIDs.insert(label) } else { message.labelIDs.remove(label) }
+            return message
+        })
+    }
 
     func matches(_ query: String) -> Bool {
         let term = query.trimmingCharacters(in: .whitespacesAndNewlines)

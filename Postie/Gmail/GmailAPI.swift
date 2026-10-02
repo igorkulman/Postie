@@ -9,6 +9,7 @@ nonisolated protocol GmailReading: Sendable {
 nonisolated protocol GmailMutating: Sendable {
     func archive(threadID: String) async throws
     func trash(threadID: String) async throws
+    func setLabel(_ label: String, on: Bool, threadID: String) async throws
 }
 
 nonisolated struct GmailHTTPResponse: Sendable {
@@ -155,6 +156,10 @@ actor GmailAPI: GmailSyncReading, GmailMutating {
 
     func archive(threadID: String) async throws {
         try await post(path: try threadPath(threadID) + "/modify", body: ["removeLabelIds": ["INBOX"]])
+    }
+
+    func setLabel(_ label: String, on: Bool, threadID: String) async throws {
+        try await post(path: try threadPath(threadID) + "/modify", body: [on ? "addLabelIds" : "removeLabelIds": [label]])
     }
 
     func trash(threadID: String) async throws {

@@ -164,6 +164,31 @@ final class GmailReaderStore {
         return await mutate(id) { try await api.trash(threadID: id) }
     }
 
+    var canModifyLabels: Bool { api is any GmailMutating }
+
+    func setStarred(_ id: String, _ starred: Bool) async { await setLabel("STARRED", starred, id) }
+    func setUnread(_ id: String, _ unread: Bool) async { await setLabel("UNREAD", unread, id) }
+
+    private func setLabel(_ label: String, _ on: Bool, _ id: String) async {
+        guard let api = api as? any GmailMutating else { return }
+        let currentSession = session
+        do { try await api.setLabel(label, on: on, threadID: id) }
+        catch {
+            guard session == currentSession else { return }
+            mailboxError = error.localizedDescription
+            return
+        }
+        guard session == currentSession else { return }
+        mailboxError = nil
+        if let index = conversations.firstIndex(where: { $0.id == id }) {
+            conversations[index] = conversations[index].setting(label, to: on)
+        }
+        if let selected = selectedConversation, selected.id == id { selectedConversation = selected.setting(label, to: on) }
+        if let cached = bodies[id] { bodies[id] = cached.setting(label, to: on) }
+        // Persist through Gmail history and refresh the unread badge.
+        await refresh()
+    }
+
     private func mutate(_ id: String, _ change: () async throws -> Void) async -> Bool {
         let currentSession = session
         do {
