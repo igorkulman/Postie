@@ -6,6 +6,11 @@ nonisolated protocol GmailReading: Sendable {
     func unreadInboxCount() async throws -> Int
 }
 
+/// Searches with Gmail's own query syntax. `mailbox` limits the search to one folder; nil searches all mail.
+nonisolated protocol GmailSearching: GmailReading {
+    func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage
+}
+
 nonisolated protocol GmailMutating: Sendable {
     func archive(threadID: String) async throws
     func trash(threadID: String) async throws
@@ -41,7 +46,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailMutating, GmailSending {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
 
@@ -52,9 +57,18 @@ actor GmailAPI: GmailSyncReading, GmailMutating, GmailSending {
     }
 
     func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage {
+        try await threads(in: mailbox, matching: nil, pageToken: pageToken)
+    }
+
+    func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage {
+        try await threads(in: mailbox, matching: query, pageToken: pageToken)
+    }
+
+    private func threads(in mailbox: Mailbox?, matching search: String?, pageToken: String?) async throws -> GmailPage {
         // Outbox is a local send queue, not a Gmail label. Sending is not implemented yet.
         guard mailbox != .outbox else { return GmailPage(conversations: [], nextPageToken: nil) }
         var query = [URLQueryItem(name: "maxResults", value: "25")]
+        var terms: [String] = []
         switch mailbox {
         case .inbox: query.append(URLQueryItem(name: "labelIds", value: "INBOX"))
         case .drafts: query.append(URLQueryItem(name: "labelIds", value: "DRAFT"))
@@ -64,9 +78,11 @@ actor GmailAPI: GmailSyncReading, GmailMutating, GmailSending {
             query.append(URLQueryItem(name: "includeSpamTrash", value: "true"))
         case .archive:
             // Gmail has no ARCHIVE label: use received mail outside the other system folders.
-            query.append(URLQueryItem(name: "q", value: "-in:inbox -in:sent -in:drafts -in:spam -in:trash"))
-        case .outbox: break
+            terms.append("-in:inbox -in:sent -in:drafts -in:spam -in:trash")
+        case .outbox, nil: break
         }
+        if let search { terms.append(search) }
+        if !terms.isEmpty { query.append(URLQueryItem(name: "q", value: terms.joined(separator: " "))) }
         if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
         let page: GmailThreadList = try await get(path: "threads", query: query)
         var seen: Set<String> = []

@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 
 /// A Gmail thread ID is only unique within one account, so merged lists identify conversations by both.
 nonisolated struct ConversationKey: Hashable, Sendable {
@@ -11,6 +12,11 @@ struct MergedConversation: Identifiable, Equatable {
     let key: ConversationKey
     let conversation: GmailConversation
     var id: ConversationKey { key }
+}
+
+/// Where a search looks.
+enum SearchScope: Hashable {
+    case folder, allMail
 }
 
 /// An account that can send mail, as offered in the composer's From picker.
@@ -73,6 +79,14 @@ final class MailHub {
     private(set) var mailbox: Mailbox = .inbox
     private(set) var isPreparing: Bool
     private(set) var storageError: String?
+    private(set) var searchQuery = ""
+    private(set) var searchScope: SearchScope = .allMail
+    private(set) var searchResults: [MergedConversation] = []
+    private(set) var isSearching = false
+    private(set) var searchError: String?
+    private var searchVersion = 0
+    @ObservationIgnored private var searchTokens: [String: String] = [:]
+    @ObservationIgnored private var searchGeneration = UUID()
 
     @ObservationIgnored private var cache: GmailCache?
     @ObservationIgnored private let persistsMail: Bool
@@ -176,6 +190,7 @@ final class MailHub {
     }
 
     func loadMore() async {
+        if isSearchActive { await search(pageAfter: true); return }
         await withTaskGroup(of: Void.self) { group in
             for session in sessions where session.reader.nextPageToken != nil {
                 let reader = session.reader
@@ -186,9 +201,10 @@ final class MailHub {
 
     // MARK: Merged state
 
-    /// The folder's conversations from every account, newest first.
+    /// What the list shows: search results while searching, else the folder's conversations from every account, newest first.
     var conversations: [MergedConversation] {
-        sessions.flatMap { session in
+        if isSearchActive { return searchResults }
+        return sessions.flatMap { session in
             session.reader.conversations.map {
                 MergedConversation(key: ConversationKey(accountID: session.id, threadID: $0.id), conversation: $0)
             }
@@ -196,18 +212,96 @@ final class MailHub {
         .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
     }
 
+    // MARK: Search
+
+    var isSearchActive: Bool { !searchQuery.isEmpty }
+
+    /// Switches the list to search mode (or back) right away. `performSearch` then fetches the results.
+    func setSearch(_ text: String, scope: SearchScope) {
+        let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard query != searchQuery || scope != searchScope else { return }
+        searchGeneration = UUID()
+        searchQuery = query
+        searchScope = scope
+        searchError = nil
+        isSearching = !query.isEmpty
+        if query.isEmpty { searchResults = []; searchTokens = [:] }
+        searchVersion += 1
+    }
+
+    /// Asks every account for the first page of results. Results appear as each account answers.
+    func performSearch() async { await search(pageAfter: false) }
+
+    private func search(pageAfter: Bool) async {
+        let query = searchQuery
+        guard !query.isEmpty else { return }
+        let generation = searchGeneration
+        let folder: Mailbox? = searchScope == .folder ? mailbox : nil
+        let targets = sessions.filter { $0.reader.canSearch && (!pageAfter || searchTokens[$0.id] != nil) }
+        isSearching = true
+        searchError = nil
+        var collected: [MergedConversation] = pageAfter ? searchResults : []
+        var failures: [String] = []
+        if !pageAfter { searchTokens = [:] }
+        await withTaskGroup(of: (String, Result<GmailPage, Error>).self) { group in
+            for session in targets {
+                let reader = session.reader
+                let id = session.id
+                let token = pageAfter ? searchTokens[id] : nil
+                group.addTask { @MainActor in
+                    do { return (id, .success(try await reader.search(query, in: folder, pageToken: token))) }
+                    catch { return (id, .failure(error)) }
+                }
+            }
+            for await (id, result) in group {
+                guard searchGeneration == generation, !Task.isCancelled else { group.cancelAll(); return }
+                switch result {
+                case .success(let page):
+                    searchTokens[id] = page.nextPageToken
+                    let known = Set(collected.map(\.key))
+                    collected += page.conversations
+                        .map { MergedConversation(key: ConversationKey(accountID: id, threadID: $0.id), conversation: $0) }
+                        .filter { !known.contains($0.key) }
+                    collected.sort { $0.conversation.latestDate > $1.conversation.latestDate }
+                    searchResults = collected
+                    searchVersion += 1
+                case .failure(let error):
+                    if !(error is CancellationError) { failures.append(error.localizedDescription) }
+                }
+            }
+        }
+        guard searchGeneration == generation, !Task.isCancelled else { return }
+        if pageAfter == false, targets.isEmpty { searchResults = [] }
+        searchError = failures.first
+        isSearching = false
+    }
+
+    private func updateSearchResult(_ key: ConversationKey, _ change: (GmailConversation) -> GmailConversation) {
+        guard let index = searchResults.firstIndex(where: { $0.key == key }) else { return }
+        searchResults[index] = MergedConversation(key: key, conversation: change(searchResults[index].conversation))
+        searchVersion += 1
+    }
+
+    private func removeSearchResult(_ key: ConversationKey) {
+        guard searchResults.contains(where: { $0.key == key }) else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            searchResults.removeAll { $0.key == key }
+            searchVersion += 1
+        }
+    }
+
     var unreadInboxCount: Int? {
         let counts = sessions.compactMap(\.reader.unreadInboxCount)
         return counts.isEmpty ? nil : counts.reduce(0, +)
     }
 
-    var isLoadingMailbox: Bool { sessions.contains { $0.reader.isLoadingMailbox } }
+    var isLoadingMailbox: Bool { isSearchActive ? isSearching : sessions.contains { $0.reader.isLoadingMailbox } }
     var isRestoringCache: Bool { sessions.contains { $0.reader.isRestoringCache } }
-    var showingCachedMail: Bool { sessions.contains { $0.reader.showingCachedMail } }
-    var hasMorePages: Bool { sessions.contains { $0.reader.nextPageToken != nil } }
+    var showingCachedMail: Bool { !isSearchActive && sessions.contains { $0.reader.showingCachedMail } }
+    var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : sessions.contains { $0.reader.nextPageToken != nil } }
     var lastRefreshed: Date? { sessions.compactMap(\.reader.lastRefreshed).min() }
-    var mailboxVersion: Int { sessions.reduce(0) { $0 + $1.reader.mailboxVersion } }
-    var loadedCount: Int { sessions.reduce(0) { $0 + $1.reader.conversations.count } }
+    var mailboxVersion: Int { sessions.reduce(searchVersion) { $0 + $1.reader.mailboxVersion } }
+    var loadedCount: Int { isSearchActive ? searchResults.count : sessions.reduce(0) { $0 + $1.reader.conversations.count } }
     var hasMultipleAccounts: Bool { sessions.count > 1 }
 
     var sendingAccounts: [SendingAccount] {
@@ -246,6 +340,9 @@ final class MailHub {
                 notices.append(HubNotice(id: "error-\(session.id)", message: label(error), isError: true, fix: .retry))
             }
         }
+        if let searchError, isSearchActive {
+            notices.append(HubNotice(id: "search", message: searchError, isError: true, fix: .retry))
+        }
         return notices
     }
 
@@ -256,7 +353,7 @@ final class MailHub {
     }
 
     func conversation(for key: ConversationKey) -> GmailConversation? {
-        session(for: key.accountID)?.reader.conversations.first { $0.id == key.threadID }
+        searchResult(key) ?? session(for: key.accountID)?.reader.conversations.first { $0.id == key.threadID }
     }
 
     /// The fully loaded conversation, once its owner has opened it.
@@ -278,12 +375,27 @@ final class MailHub {
         key.flatMap { session(for: $0.accountID)?.reader.canModifyLabels } ?? false
     }
 
+    /// Search results come from any folder, so what can be done depends on the thread's own labels.
+    private func searchResult(_ key: ConversationKey?) -> GmailConversation? {
+        guard isSearchActive, let key else { return nil }
+        return searchResults.first { $0.key == key }?.conversation
+    }
+
     func canArchive(_ key: ConversationKey?) -> Bool {
-        key.flatMap { session(for: $0.accountID)?.reader.canArchive } ?? false
+        guard let key else { return false }
+        if isSearchActive {
+            return searchResult(key)?.labelIDs.contains("INBOX") == true && canModifyLabels(key)
+        }
+        return session(for: key.accountID)?.reader.canArchive ?? false
     }
 
     func canTrash(_ key: ConversationKey?) -> Bool {
-        key.flatMap { session(for: $0.accountID)?.reader.canTrash } ?? false
+        guard let key else { return false }
+        if isSearchActive {
+            guard let labels = searchResult(key)?.labelIDs else { return false }
+            return !labels.contains("TRASH") && canModifyLabels(key)
+        }
+        return session(for: key.accountID)?.reader.canTrash ?? false
     }
 
     /// Opens a conversation in its account and closes whatever another account had open.
@@ -295,20 +407,28 @@ final class MailHub {
 
     @discardableResult
     func archive(_ key: ConversationKey) async -> Bool {
-        await session(for: key.accountID)?.reader.archive(key.threadID) ?? false
+        let done = await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive) ?? false
+        if done { removeSearchResult(key) }
+        return done
     }
 
     @discardableResult
     func trash(_ key: ConversationKey) async -> Bool {
-        await session(for: key.accountID)?.reader.trash(key.threadID) ?? false
+        let done = await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive) ?? false
+        if done { removeSearchResult(key) }
+        return done
     }
 
     func setUnread(_ key: ConversationKey, _ unread: Bool) async {
-        await session(for: key.accountID)?.reader.setUnread(key.threadID, unread)
+        guard let reader = session(for: key.accountID)?.reader else { return }
+        await reader.setUnread(key.threadID, unread)
+        if reader.mailboxError == nil { updateSearchResult(key) { $0.setting("UNREAD", to: unread) } }
     }
 
     func setStarred(_ key: ConversationKey, _ starred: Bool) async {
-        await session(for: key.accountID)?.reader.setStarred(key.threadID, starred)
+        guard let reader = session(for: key.accountID)?.reader else { return }
+        await reader.setStarred(key.threadID, starred)
+        if reader.mailboxError == nil { updateSearchResult(key) { $0.setting("STARRED", to: starred) } }
     }
 
     /// Sends from the draft's account. A reply always goes out from the account that received the mail.

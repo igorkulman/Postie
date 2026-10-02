@@ -4,6 +4,9 @@ struct GmailInboxView: View {
     let hub: MailHub
     @State private var selectedID: ConversationKey?
     @State private var searchText = ""
+    @State private var searchScope: SearchScope = .allMail
+    @State private var searchRetry = 0
+    @State private var selectionBeforeSearch: ConversationKey?
     @State private var refreshRequest = 0
     @State private var pageRequest = 0
     @State private var retryRequest = 0
@@ -11,8 +14,12 @@ struct GmailInboxView: View {
     @State private var autoReadID: ConversationKey?
     @State private var composer: ComposeDraft?
 
-    private var conversations: [MergedConversation] {
-        hub.conversations.filter { $0.conversation.matches(searchText) }
+    private var conversations: [MergedConversation] { hub.conversations }
+
+    private struct SearchRequest: Hashable {
+        let text: String
+        let scope: SearchScope
+        let retry: Int
     }
 
     private var mailboxSelection: Binding<Mailbox?> {
@@ -22,6 +29,7 @@ struct GmailInboxView: View {
                 guard let mailbox, mailbox != hub.mailbox else { return }
                 selectedID = nil
                 searchText = ""
+                selectionBeforeSearch = nil
                 pageRequest = 0
                 hub.changeMailbox(mailbox)
             }
@@ -147,8 +155,25 @@ struct GmailInboxView: View {
         // Also runs when an account is added, so its mail appears without choosing a folder again.
         .task(id: MailboxRequest(mailbox: hub.mailbox, refresh: refreshRequest, accounts: hub.sessions.map(\.id))) {
             await hub.restoreCachedMailbox()
-            if selectedID == nil { selectedID = conversations.first?.key }
+            if selectedID == nil, !hub.isSearchActive { selectedID = conversations.first?.key }
             await hub.refresh()
+        }
+        // Searches as you type, after a short pause. A new keystroke cancels the pending request.
+        .task(id: SearchRequest(text: searchText, scope: searchScope, retry: searchRetry)) {
+            hub.setSearch(searchText, scope: searchScope)
+            guard hub.isSearchActive else { return }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            await hub.performSearch()
+        }
+        .onChange(of: hub.isSearchActive) { _, active in
+            if active {
+                selectionBeforeSearch = selectedID
+                selectedID = nil
+            } else {
+                selectedID = selectionBeforeSearch
+                selectionBeforeSearch = nil
+            }
         }
         .task(id: pageRequest) {
             if pageRequest > 0 { await hub.loadMore() }
@@ -159,11 +184,9 @@ struct GmailInboxView: View {
         }
         .onChange(of: hub.mailboxVersion) { _, _ in
             if !conversations.contains(where: { $0.key == selectedID }) {
-                selectedID = conversations.first { $0.key == neighborAfterRemoval }?.key ?? conversations.first?.key
+                selectedID = conversations.first { $0.key == neighborAfterRemoval }?.key
+                    ?? (hub.isSearchActive ? nil : conversations.first?.key)
             }
-        }
-        .onChange(of: searchText) { _, _ in
-            if !conversations.contains(where: { $0.key == selectedID }) { selectedID = nil }
         }
     }
 
@@ -173,19 +196,26 @@ struct GmailInboxView: View {
                 noticeView(notice)
                 Divider()
             }
-            if (hub.isLoadingMailbox || hub.isRestoringCache) && hub.loadedCount == 0 {
+            if hub.isSearchActive {
+                searchHeader
+                Divider()
+            }
+            if hub.isSearchActive && hub.isSearching && hub.loadedCount == 0 {
+                ProgressView("Searching…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if (hub.isLoadingMailbox || hub.isRestoringCache) && hub.loadedCount == 0 {
                 ProgressView("Loading mail…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if conversations.isEmpty {
                 ContentUnavailableView {
-                    Label(searchText.isEmpty ? (hub.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
-                          systemImage: searchText.isEmpty ? hub.mailbox.symbol : "magnifyingglass")
+                    Label(!hub.isSearchActive ? (hub.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
+                          systemImage: !hub.isSearchActive ? hub.mailbox.symbol : "magnifyingglass")
                 } description: {
-                    Text(searchText.isEmpty
+                    Text(!hub.isSearchActive
                          ? (hub.mailbox == .outbox
                             ? String(localized: "Messages are sent immediately, so nothing waits here.")
                             : String(localized: "Refresh to check for new mail."))
-                         : String(localized: "Search covers loaded conversations in this folder only. Load more or try another phrase."))
+                         : String(localized: "Try other words, or use Gmail search such as from:name or has:attachment."))
                 }
                 .frame(maxHeight: .infinity)
             } else {
@@ -218,7 +248,7 @@ struct GmailInboxView: View {
                             }
                             .onAppear {
                                 // Load the next page as the end of the list scrolls into view.
-                                if item.key == conversations.last?.key, searchText.isEmpty,
+                                if item.key == conversations.last?.key,
                                    hub.hasMorePages, !hub.isLoadingMailbox {
                                     pageRequest += 1
                                 }
@@ -277,10 +307,47 @@ struct GmailInboxView: View {
         }
     }
 
+    private var searchHeader: some View {
+        HStack(spacing: 6) {
+            Text("Search for “\(hub.searchQuery)”")
+                .font(.subheadline.weight(.semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .accessibilityAddTraits(.isHeader)
+            if hub.isSearching {
+                ProgressView().controlSize(.mini)
+                    .accessibilityLabel("Searching")
+            }
+            Spacer(minLength: 8)
+            HStack(spacing: 2) {
+                scopeButton(hub.mailbox.title, .folder)
+                scopeButton(String(localized: "All Mail"), .allMail)
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Search in")
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+    }
+
+    /// A quiet, neutral pill: the scope is secondary to the results, so it doesn't use the accent color.
+    private func scopeButton(_ title: String, _ scope: SearchScope) -> some View {
+        Button { searchScope = scope } label: {
+            Text(title)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(searchScope == scope ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: Capsule())
+                .foregroundStyle(searchScope == scope ? .primary : .secondary)
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(searchScope == scope ? .isSelected : [])
+    }
+
     @ViewBuilder
     private func noticeView(_ notice: HubNotice) -> some View {
         if notice.isError {
-            GmailErrorBanner(message: notice.message) { refreshRequest += 1 }
+            GmailErrorBanner(message: notice.message) { refreshRequest += 1; searchRetry += 1 }
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 Text(notice.message)

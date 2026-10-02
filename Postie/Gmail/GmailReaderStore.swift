@@ -150,18 +150,25 @@ final class GmailReaderStore {
 
     var canArchive: Bool { mailbox == .inbox && api is any GmailMutating }
     var canTrash: Bool { ![.trash, .outbox].contains(mailbox) && api is any GmailMutating }
+    var canSearch: Bool { api is any GmailSearching }
+
+    /// One page of Gmail search results. Nothing is cached or added to the folder list.
+    func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage {
+        guard let api = api as? any GmailSearching else { throw GmailError.permissionRequired }
+        return try await api.search(query, in: mailbox, pageToken: pageToken)
+    }
 
     /// Archives or trashes a conversation, then drops it from the loaded list right away.
     /// Returns false (with `mailboxError` set) when Gmail rejects the change.
     @discardableResult
-    func archive(_ id: String) async -> Bool {
-        guard canArchive, let api = api as? any GmailMutating else { return false }
+    func archive(_ id: String, fromAnyFolder: Bool = false) async -> Bool {
+        guard fromAnyFolder ? canModifyLabels : canArchive, let api = api as? any GmailMutating else { return false }
         return await mutate(id) { try await api.archive(threadID: id) }
     }
 
     @discardableResult
-    func trash(_ id: String) async -> Bool {
-        guard canTrash, let api = api as? any GmailMutating else { return false }
+    func trash(_ id: String, fromAnyFolder: Bool = false) async -> Bool {
+        guard fromAnyFolder ? canModifyLabels : canTrash, let api = api as? any GmailMutating else { return false }
         return await mutate(id) { try await api.trash(threadID: id) }
     }
 

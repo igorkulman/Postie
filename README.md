@@ -18,6 +18,9 @@ subscriptions, AI features, or workspace bloat.
 - Conversation view with HTML email rendering
 - Compose, reply, reply all, and forward (plain text)
 - Archive, trash, star, and read/unread actions
+- Search as you type across all accounts, powered by Gmail: search the current
+  folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
+  Results are not stored in the local cache
 - Local SQLite cache for previously loaded mail
 - Incremental Gmail synchronization while the app is running
 - Native light and dark mode
@@ -33,7 +36,7 @@ every feature of Gmail or become a generic IMAP client.
 
 Planned:
 
-- Search across all accounts (local first, then Gmail)
+- Search suggestions (people and subjects)
 - Attachments and CID images
 - Saving and syncing drafts (the Drafts folder is view-only for now)
 - Gmail labels

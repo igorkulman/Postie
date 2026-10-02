@@ -3,11 +3,12 @@ import Testing
 @testable import Postie
 
 /// A Gmail account that serves fixed mail and records what is done to it.
-actor HubAPI: GmailReading, GmailMutating, GmailSending {
+actor HubAPI: GmailSearching, GmailMutating, GmailSending {
     private(set) var mail: [GmailConversation]
     private(set) var archived: [String] = []
     private(set) var trashed: [String] = []
     private(set) var sent: [OutgoingMessage] = []
+    private(set) var searches: [(query: String, mailbox: Mailbox?)] = []
 
     init(_ mail: [GmailConversation]) { self.mail = mail }
 
@@ -17,6 +18,10 @@ actor HubAPI: GmailReading, GmailMutating, GmailSending {
     func conversation(id: String) async throws -> GmailConversation {
         guard let found = mail.first(where: { $0.id == id }) else { throw GmailError.http(404) }
         return found
+    }
+    func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage {
+        searches.append((query, mailbox))
+        return GmailPage(conversations: mail.filter { $0.subject.localizedCaseInsensitiveContains(query) }, nextPageToken: nil)
     }
     func unreadInboxCount() async throws -> Int { mail.filter(\.isUnread).count }
     func archive(threadID: String) async throws { archived.append(threadID); mail.removeAll { $0.id == threadID } }
@@ -137,5 +142,46 @@ struct MailHubTests {
         #expect(hub.sessions.map(\.id) == ["b"])
         #expect(hub.conversations.map(\.key.accountID) == ["b"])
         #expect(hub.accounts.accounts.map(\.id) == ["b"])
+    }
+
+    @Test("Search merges results from every account without touching the folder list")
+    func search() async {
+        let a = HubAPI([Self.conversation("alza1", at: 100), Self.conversation("other", at: 300)])
+        let b = HubAPI([Self.conversation("alza2", at: 200)])
+        let hub = await makeHub(["a": a, "b": b])
+        hub.setSearch("  alza ", scope: .allMail)
+        #expect(hub.isSearchActive)
+        await hub.performSearch()
+        #expect(hub.conversations.map(\.key) == [
+            ConversationKey(accountID: "b", threadID: "alza2"),
+            ConversationKey(accountID: "a", threadID: "alza1")
+        ])
+        #expect(!hub.isSearching)
+        #expect(await a.searches.map(\.query) == ["alza"])
+        #expect(await a.searches.first?.mailbox == nil)
+        hub.setSearch("", scope: .allMail)
+        #expect(!hub.isSearchActive)
+        #expect(hub.conversations.count == 3)
+    }
+
+    @Test("Searching this folder limits the query to the current mailbox")
+    func searchFolder() async {
+        let a = HubAPI([Self.conversation("alza1", at: 100)])
+        let hub = await makeHub(["a": a])
+        hub.setSearch("alza", scope: .folder)
+        await hub.performSearch()
+        #expect(await a.searches.first?.mailbox == .inbox)
+    }
+
+    @Test("Archiving a search result removes it from the results")
+    func archiveFromSearch() async {
+        let a = HubAPI([Self.conversation("alza1", at: 100), Self.conversation("alza2", at: 200)])
+        let hub = await makeHub(["a": a])
+        hub.setSearch("alza", scope: .allMail)
+        await hub.performSearch()
+        let key = ConversationKey(accountID: "a", threadID: "alza1")
+        #expect(hub.canArchive(key))
+        #expect(await hub.archive(key))
+        #expect(hub.conversations.map(\.key.threadID) == ["alza2"])
     }
 }

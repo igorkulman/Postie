@@ -79,6 +79,7 @@
     "Add a Gmail account to read and send mail." : {},
     "Add to the sample Sent mailbox. Does not send real email." : {},
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {},
+    "All Mail" : {},
     "Archive" : {
       "comment" : "Mailbox name"
     },
@@ -226,7 +227,10 @@
     "Sample mail only. Gmail is not connected and no real email is sent." : {},
     "Save Draft" : {},
     "Search" : {},
-    "Search covers loaded conversations in this folder only. Load more or try another phrase." : {},
+    "Search for “%@”" : {},
+    "Search in" : {},
+    "Searching" : {},
+    "Searching…" : {},
     "Select a conversation to read it." : {},
     "Send" : {},
     "Send Demo" : {},
@@ -267,6 +271,7 @@
     },
     "Try Again" : {},
     "Try a different name, subject, or phrase." : {},
+    "Try other words, or use Gmail search such as from:name or has:attachment." : {},
     "Unable to display HTML. Showing plain text." : {},
     "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally." : {},
     "Unable to open the account cache. This session will use online mail only." : {},
