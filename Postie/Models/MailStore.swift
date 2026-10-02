@@ -78,16 +78,22 @@ final class MailStore {
     }
 
     func reply(to thread: MailThread, allRecipients: Bool = false) -> ComposeDraft {
+        Self.replyDraft(to: thread, accountEmail: Self.accountEmail, allRecipients: allRecipients)
+    }
+
+    func forward(_ thread: MailThread) -> ComposeDraft { Self.forwardDraft(thread) }
+
+    static func replyDraft(to thread: MailThread, accountEmail: String, allRecipients: Bool = false) -> ComposeDraft {
         let message = thread.messages.last(where: {
-            $0.senderEmail.caseInsensitiveCompare(Self.accountEmail) != .orderedSame
+            $0.senderEmail.caseInsensitiveCompare(accountEmail) != .orderedSame
         }) ?? thread.latestMessage
-        var seen: Set<String> = [Self.accountEmail.lowercased()]
+        var seen: Set<String> = [accountEmail.lowercased()]
         func uniqueExternal(_ addresses: [String]) -> [String] {
             addresses.filter { address in
                 !address.isEmpty && seen.insert(address.lowercased()).inserted
             }
         }
-        let isOwnMessage = message?.senderEmail.caseInsensitiveCompare(Self.accountEmail) == .orderedSame
+        let isOwnMessage = message?.senderEmail.caseInsensitiveCompare(accountEmail) == .orderedSame
         let primary = isOwnMessage ? EmailAddresses.split(message?.recipient ?? "") : [message?.senderEmail ?? ""]
         let to = uniqueExternal(primary)
         let cc = allRecipients ? uniqueExternal(
@@ -100,7 +106,7 @@ final class MailStore {
         )
     }
 
-    func forward(_ thread: MailThread) -> ComposeDraft {
+    static func forwardDraft(_ thread: MailThread) -> ComposeDraft {
         let hasPrefix = thread.subject.lowercased().hasPrefix("fwd:") || thread.subject.lowercased().hasPrefix("fw:")
         let subject = hasPrefix ? thread.subject : "Fwd: " + thread.subject
         var body = ""

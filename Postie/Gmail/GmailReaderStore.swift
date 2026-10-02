@@ -164,6 +164,15 @@ final class GmailReaderStore {
         return await mutate(id) { try await api.trash(threadID: id) }
     }
 
+    var canSend: Bool { api is any GmailSending }
+
+    /// Sends through Gmail. Sent mail and reply threads are picked up by a background refresh.
+    func send(_ message: OutgoingMessage) async throws {
+        guard let api = api as? any GmailSending else { throw GmailError.permissionRequired }
+        try await api.send(message)
+        Task { await refresh() }
+    }
+
     var canModifyLabels: Bool { api is any GmailMutating }
 
     func setStarred(_ id: String, _ starred: Bool) async { await setLabel("STARRED", starred, id) }

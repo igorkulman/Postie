@@ -2,8 +2,13 @@ import SwiftUI
 
 struct ComposerView: View {
     @State var draft: ComposeDraft
-    let save: (ComposeDraft) -> Void
-    let send: (ComposeDraft) -> Void
+    /// Nil for real accounts: Gmail drafts are not synced yet, so only the demo can keep drafts.
+    let save: ((ComposeDraft) -> Void)?
+    let send: (ComposeDraft) async throws -> Void
+    var fromAddress = MailStore.accountEmail
+    var isDemo = true
+    @State private var isSending = false
+    @State private var sendError: String?
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsDiscard = false
     @FocusState private var focusedField: Field?
@@ -18,7 +23,7 @@ struct ComposerView: View {
                 Text(draft.kind.rawValue)
                     .font(.title3.weight(.semibold))
                 Spacer()
-                DemoBadge()
+                if isDemo { DemoBadge() }
             }
             .padding(24)
 
@@ -27,7 +32,7 @@ struct ComposerView: View {
             VStack(spacing: 0) {
                 HStack {
                     Text("From").foregroundStyle(.secondary).frame(width: 52, alignment: .leading)
-                    Text(MailStore.accountEmail).foregroundStyle(.secondary)
+                    Text(fromAddress).foregroundStyle(.secondary)
                     Spacer()
                 }
                 .padding(.vertical, 13)
@@ -83,9 +88,15 @@ struct ComposerView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 14) {
-                Text("Demo only. No email will be sent. Drafts disappear when you quit.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if let sendError {
+                    Label(sendError, systemImage: "exclamationmark.triangle")
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                } else if isDemo {
+                    Text("Demo only. No email will be sent. Drafts disappear when you quit.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
                 HStack {
                     Button("Cancel") {
                         if draft.hasContent {
@@ -95,35 +106,48 @@ struct ComposerView: View {
                         }
                     }
                     .keyboardShortcut(.cancelAction)
-                    Button("Save Draft") {
-                        save(draft)
-                        dismiss()
+                    .disabled(isSending)
+                    if let save {
+                        Button("Save Draft") {
+                            save(draft)
+                            dismiss()
+                        }
+                        .disabled(!draft.hasContent || isSending)
                     }
-                    .disabled(!draft.hasContent)
                     Spacer()
+                    if isSending { ProgressView().controlSize(.small) }
                     Button {
-                        send(draft)
-                        dismiss()
+                        Task {
+                            isSending = true
+                            sendError = nil
+                            do {
+                                try await send(draft)
+                                dismiss()
+                            } catch {
+                                sendError = error.localizedDescription
+                            }
+                            isSending = false
+                        }
                     } label: {
-                        Label("Send Demo", systemImage: "paperplane.fill")
+                        Label(isDemo ? "Send Demo" : "Send", systemImage: "paperplane.fill")
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!draft.canSend)
+                    .disabled(!draft.canSend || isSending)
                     .keyboardShortcut(.return, modifiers: [.command])
-                    .help("Add to the sample Sent mailbox. Does not send real email.")
+                    .help(isDemo ? "Add to the sample Sent mailbox. Does not send real email." : "Send with Gmail (⌘↩)")
                 }
                 .controlSize(.large)
             }
             .padding(24)
         }
         .frame(width: 620, height: 620)
-        .interactiveDismissDisabled(draft.hasContent)
+        .interactiveDismissDisabled(draft.hasContent || isSending)
         .onAppear { focusedField = draft.recipient.isEmpty ? .recipient : .body }
         .alert("Discard these changes?", isPresented: $confirmsDiscard) {
             Button("Keep Writing", role: .cancel) {}
             Button("Discard Changes", role: .destructive) { dismiss() }
         } message: {
-            Text("Use Save Draft to keep this message for the current demo session.")
+            Text(save == nil ? "This message has not been sent." : "Use Save Draft to keep this message for the current demo session.")
         }
     }
 }

@@ -4,6 +4,7 @@ struct GmailInboxView: View {
     @Bindable var reader: GmailReaderStore
     var accountNotice: String? = nil
     var reconnect: (() -> Void)? = nil
+    var accountEmail: String? = nil
     @State private var selectedID: String?
     @State private var searchText = ""
     @State private var refreshRequest = 0
@@ -11,6 +12,7 @@ struct GmailInboxView: View {
     @State private var retryRequest = 0
     @State private var neighborAfterRemoval: String?
     @State private var autoReadID: String?
+    @State private var composer: ComposeDraft?
 
     private var conversations: [GmailConversation] {
         reader.conversations.filter { $0.matches(searchText) }
@@ -34,9 +36,13 @@ struct GmailInboxView: View {
         MailActions(
             currentMailbox: reader.mailbox,
             selectMailbox: { mailboxSelection.wrappedValue = $0 },
+            newMessage: canCompose ? { composer = ComposeDraft() } : nil,
             refresh: reader.isLoadingMailbox || reader.mailbox == .outbox ? nil : { refreshRequest += 1 },
             archive: selectedID != nil && reader.canArchive ? { selectedID.map { remove($0, archiving: true) } } : nil,
             trash: selectedID != nil && reader.canTrash ? { selectedID.map { remove($0, archiving: false) } } : nil,
+            reply: openConversation == nil ? nil : { respond(.reply) },
+            replyAll: openConversation == nil ? nil : { respond(.replyAll) },
+            forward: openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { respond(.forward) } : nil,
             toggleRead: selected.map { conversation in { toggleRead(conversation) } },
             toggleFlag: selected.map { conversation in { toggleStar(conversation) } },
             selectionIsUnread: selected?.isUnread ?? false,
@@ -53,6 +59,35 @@ struct GmailInboxView: View {
         autoReadID = id
         // Unstructured: the follow-up refresh must not be cancelled by a selection change.
         Task { await reader.setUnread(id, false) }
+    }
+
+    private var canCompose: Bool { reader.canSend && accountEmail != nil }
+
+    /// The fully loaded conversation that Reply and Forward act on.
+    private var openConversation: GmailConversation? {
+        guard canCompose, let selectedID, let conversation = reader.selectedConversation,
+              conversation.id == selectedID, reader.mailbox != .outbox else { return nil }
+        return conversation
+    }
+
+    private func respond(_ kind: ComposeKind) {
+        guard let conversation = openConversation, let accountEmail else { return }
+        let thread = conversation.presentation(includingBodies: true, mailbox: reader.mailbox)
+        var draft = kind == .forward
+            ? MailStore.forwardDraft(thread)
+            : MailStore.replyDraft(to: thread, accountEmail: accountEmail, allRecipients: kind == .replyAll)
+        draft.gmailThreadID = kind == .forward ? nil : conversation.id
+        composer = draft
+    }
+
+    private func send(_ draft: ComposeDraft) async throws {
+        guard let accountEmail else { return }
+        try await reader.send(OutgoingMessage(
+            from: accountEmail,
+            to: draft.recipient.trimmingCharacters(in: .whitespacesAndNewlines),
+            cc: draft.cc.trimmingCharacters(in: .whitespacesAndNewlines),
+            subject: draft.subject, body: draft.body, threadID: draft.gmailThreadID
+        ))
     }
 
     private var selected: GmailConversation? {
@@ -117,6 +152,9 @@ struct GmailInboxView: View {
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
         .toolbar { MailToolbar(actions: mailActions) }
         .focusedSceneValue(\.mailActions, mailActions)
+        .sheet(item: $composer) { draft in
+            ComposerView(draft: draft, save: nil, send: send, fromAddress: accountEmail ?? "", isDemo: false)
+        }
         .task(id: MailboxRequest(mailbox: reader.mailbox, refresh: refreshRequest)) {
             await reader.restoreCachedMailbox()
             if selectedID == nil { selectedID = conversations.first?.id }
@@ -165,7 +203,7 @@ struct GmailInboxView: View {
                           systemImage: searchText.isEmpty ? reader.mailbox.symbol : "magnifyingglass")
                 } description: {
                     Text(searchText.isEmpty
-                         ? (reader.mailbox == .outbox ? "Messages waiting to be sent will appear here. Sending is not available yet." : "Refresh to check your \(reader.mailbox.rawValue).")
+                         ? (reader.mailbox == .outbox ? "Messages are sent immediately, so nothing waits here." : "Refresh to check your \(reader.mailbox.rawValue).")
                          : "Search covers loaded conversations in this folder only. Load more or try another phrase.")
                 }
                 .frame(maxHeight: .infinity)
@@ -215,6 +253,14 @@ struct GmailInboxView: View {
                                    systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(conversation) }
                             Button(conversation.isStarred ? "Unflag" : "Flag",
                                    systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(conversation) }
+                            Divider()
+                        }
+                        if id == openConversation?.id {
+                            Button("Reply", systemImage: "arrowshape.turn.up.left") { respond(.reply) }
+                            Button("Reply All", systemImage: "arrowshape.turn.up.left.2") { respond(.replyAll) }
+                            if openConversation?.messages.allSatisfy(\.bodyLoaded) == true {
+                                Button("Forward", systemImage: "arrowshape.turn.up.right") { respond(.forward) }
+                            }
                             Divider()
                         }
                         if reader.canArchive {

@@ -41,7 +41,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailMutating {
+actor GmailAPI: GmailSyncReading, GmailMutating, GmailSending {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
 
@@ -162,11 +162,35 @@ actor GmailAPI: GmailSyncReading, GmailMutating {
         try await post(path: try threadPath(threadID) + "/modify", body: [on ? "addLabelIds" : "removeLabelIds": [label]])
     }
 
+    func send(_ message: OutgoingMessage) async throws {
+        var inReplyTo: String?
+        var references: String?
+        if let threadID = message.threadID {
+            // Threading needs the Message-ID chain of the message being answered.
+            let resource: GmailThreadResource = try await get(path: try threadPath(threadID), query: [
+                URLQueryItem(name: "format", value: "metadata"),
+                URLQueryItem(name: "metadataHeaders", value: "Message-ID"),
+                URLQueryItem(name: "metadataHeaders", value: "References")
+            ])
+            let last = (resource.messages ?? []).max { (Double($0.internalDate ?? "") ?? 0) < (Double($1.internalDate ?? "") ?? 0) }
+            inReplyTo = last?.payload?.header("Message-ID").nilIfEmpty
+            references = last?.payload?.header("References").nilIfEmpty
+        }
+        let raw = GmailMessageBuilder.base64URL(GmailMessageBuilder.rfc822(message, inReplyTo: inReplyTo, references: references))
+        var body = ["raw": raw]
+        if let threadID = message.threadID { body["threadId"] = threadID }
+        try await post(path: "messages/send", json: body)
+    }
+
     func trash(threadID: String) async throws {
         try await post(path: try threadPath(threadID) + "/trash", body: [:])
     }
 
     private func post(path: String, body: [String: [String]]) async throws {
+        try await post(path: path, json: body)
+    }
+
+    private func post(path: String, json body: [String: Any]) async throws {
         try Task.checkCancellation()
         let token = try await accessToken()
         try Task.checkCancellation()
@@ -206,4 +230,8 @@ actor GmailAPI: GmailSyncReading, GmailMutating {
         do { return try JSONDecoder().decode(Value.self, from: response.data) }
         catch { throw GmailError.invalidResponse }
     }
+}
+
+private extension String {
+    nonisolated var nilIfEmpty: String? { isEmpty ? nil : self }
 }

@@ -43,7 +43,7 @@ struct MailRootView: View {
             } else if let readerAccount, account.accountID == nil || account.accountID == readerAccount.id {
                 GmailInboxView(
                     reader: reader, accountNotice: accountNotice,
-                    reconnect: reconnectAction
+                    reconnect: reconnectAction, accountEmail: readerAccount.email
                 )
                     .id(readerAccount.id)
             } else if account.accountID != nil {
