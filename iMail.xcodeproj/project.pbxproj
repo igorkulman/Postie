@@ -28,7 +28,6 @@
 		A10000000000000000000005 /* iMail.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = iMail.entitlements; sourceTree = "<group>"; };
 		B10000000000000000000001 /* iMailTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = iMailTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		B10000000000000000000012 /* iMail.xctestplan */ = {isa = PBXFileReference; lastKnownFileType = text; path = iMail.xctestplan; sourceTree = "<group>"; };
-		F3A64D2C306FAC0100B0FECC /* Google.local.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Google.local.xcconfig; sourceTree = "<group>"; };
 		F3DE2CF6306F998200EBD6E5 /* iMail.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = iMail.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -68,7 +67,6 @@
 				A10000000000000000000003 /* Google.xcconfig */,
 				A10000000000000000000004 /* Info.plist */,
 				A10000000000000000000005 /* iMail.entitlements */,
-				F3A64D2C306FAC0100B0FECC /* Google.local.xcconfig */,
 			);
 			path = Configuration;
 			sourceTree = "<group>";
