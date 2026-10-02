@@ -88,11 +88,16 @@ private struct MessageView: View {
             .help(message.senderEmail)
 
             if isExpanded {
-                Text(message.body)
-                    .font(.system(size: 13))
-                    .lineSpacing(3)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .textSelection(.enabled)
+                if let html = message.htmlBody {
+                    HTMLMessageBody(html: html, plainText: message.body)
+                        .id(message.id)
+                } else {
+                    Text(message.body)
+                        .font(.system(size: 13))
+                        .lineSpacing(3)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .textSelection(.enabled)
+                }
             }
         }
     }

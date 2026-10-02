@@ -13,6 +13,9 @@ A small native macOS email-client prototype, built with SwiftUI.
 - Show an empty local Outbox until sending is implemented
 - Load full conversations when selected
 - Refresh the current folder manually with Command-R
+- Render HTML formatting with restricted WebKit; keep plain text for search and fallback
+- Load remote HTTP(S) images automatically; block email scripts, external stylesheets/fonts, forms, and automatic navigation
+- Open clicked HTTP(S)/mailto links outside the reader
 - Preserve Gmail IDs, custom/system labels, and read/star state without modifying the mailbox
 - Search loaded conversation headers and snippets, plus bodies already fetched in this session
 - Show loading, retry, and pagination states; switching folders clears the previous folder's selection and pagination
@@ -20,7 +23,7 @@ A small native macOS email-client prototype, built with SwiftUI.
 
 Only `gmail.readonly` is requested in addition to Google's basic sign-in scopes. All Gmail API requests are GETs. Compose, archive, trash, reply, forward, and changing stars are disabled in Gmail mode. Opening a conversation does **not** mark it read in Gmail.
 
-Email is held in memory, with no database or on-disk HTTP cache. HTML-only mail uses a plain-text fallback. Attachments are not fetched. There is no offline mode or automatic background refresh.
+Email is held in memory, with no database or on-disk HTTP cache. The HTML renderer uses nonpersistent website storage, a restrictive content security policy, and a compiled content blocker installed before loading any email. If that setup or rendering fails, it shows plain text instead. Remote HTTP(S) images load automatically, including tracking pixels: senders may learn your IP address and when you opened a message. Remote stylesheets, fonts, scripts, frames, and other non-image resources remain blocked. Inline data images are supported; CID images and other attachments are not yet fetched. There is no offline mode or automatic background refresh. Bodies requiring attachment downloads are not fetched.
 
 ### Sample-data demo
 
@@ -80,13 +83,13 @@ External apps in Testing can have refresh tokens expire after seven days; sign i
 
 Select the **iMail** scheme and **My Mac**, then press **Command-U** (Product → Test). Individual tests and parameterized cases also appear in Xcode's **Test Navigator** (Command-6). The shared scheme uses the **iMail** test plan and builds the `iMailTests` target. No shell runners or separate Swift executables are needed.
 
-Tests use `@testable import iMail` to exercise the actual app module. The demo suites cover filtering, read/star state, drafts, archive/trash, addressing, forwarding, validation, and simulated sends. Gmail suites cover folder queries, REST request construction, pagination, bounded fan-out, MIME/header parsing, read-only behavior, retries, cancellation, and stale results after selection/folder changes or reset.
+Tests use `@testable import iMail` to exercise the actual app module. The demo suites cover filtering, read/star state, drafts, archive/trash, addressing, forwarding, validation, and simulated sends. Gmail suites cover folder queries, REST request construction, pagination, bounded fan-out, MIME/header parsing, read-only behavior, retries, cancellation, and stale results after selection/folder changes or reset. HTML tests compile the actual WebKit content rules and load fixture messages to verify styling, inline data images, disabled page scripts, and image-only resource exceptions and blocked unsupported resources/forms/navigation.
 
 The tests are deterministic and require no OAuth configuration or real Gmail account. Network responses are supplied by fixtures. The test plan sets `IMAIL_UNIT_TESTS=1`, which disables automatic Google session restoration in the hosted app so tests cannot silently use saved account credentials. Real sign-in and UI interactions still need the manual verification below.
 
 ### Manual Gmail verification
 
-After configuring OAuth, sign in with your test account; compare each folder and a multi-message conversation with Gmail. Archive contains received mail outside Inbox, Drafts, Junk, and Trash; Outbox stays empty until sending is implemented. Confirm unread/star state is unchanged after reading. Exercise Load More, folder switches, local search, Command-R, and an offline refresh and retry. Relaunch to verify Keychain session restoration. Confirm all write actions are disabled and the account/logout toolbar menu is absent. HTML formatting and remote images are not rendered yet.
+After configuring OAuth, sign in with your test account; compare each folder and a multi-message conversation with Gmail. Archive contains received mail outside Inbox, Drafts, Junk, and Trash; Outbox stays empty until sending is implemented. Confirm unread/star state is unchanged after reading. Exercise Load More, folder switches, local search, Command-R, and an offline refresh and retry. Relaunch to verify Keychain session restoration. Confirm all write actions are disabled and the account/logout toolbar menu is absent. Compare a real HTML email with Gmail in light/dark appearances and a narrow reader pane; confirm its layout and remote images are displayed, links open externally, and scrolling and message expansion behave correctly. Email scripts, forms, external stylesheets/fonts, and automatic redirects must remain blocked. SwiftUI preview snapshots may be captured before WebKit's asynchronous content load completes; they do not establish HTML rendering correctness.
 
 ## Next
 
@@ -101,5 +104,7 @@ CID images/attachments, offline persistence, multiple accounts, and background d
 - [Calling Google APIs with refreshed credentials](https://developers.google.com/identity/sign-in/ios/api-access)
 - [Gmail thread listing](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.threads/list)
 - [Gmail message and MIME resources](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages)
+- [WebKit page JavaScript controls](https://developer.apple.com/documentation/webkit/wkwebpagepreferences/allowscontentjavascript)
+- [WebKit content blockers](https://developer.apple.com/documentation/webkit/wkcontentrulelist)
 
 A distribution license has not been selected yet.
