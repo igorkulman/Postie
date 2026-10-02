@@ -2,7 +2,9 @@ import SwiftUI
 
 struct GmailInboxView: View {
     let hub: MailHub
-    @State private var selectedID: ConversationKey?
+    @State private var selection = ConversationSelection<ConversationKey>()
+    @FocusState private var listIsFocused: Bool
+    @FocusState private var searchIsFocused: Bool
     @State private var searchText = ""
     @State private var searchScope: SearchScope = .allMail
     @State private var searchRetry = 0
@@ -10,11 +12,18 @@ struct GmailInboxView: View {
     @State private var refreshRequest = 0
     @State private var pageRequest = 0
     @State private var retryRequest = 0
-    @State private var neighborAfterRemoval: ConversationKey?
     @State private var autoReadID: ConversationKey?
     @State private var composer: ComposeDraft?
 
     private var conversations: [MergedConversation] { hub.conversations }
+    private var conversationKeys: [ConversationKey] { conversations.map(\.key) }
+    private var selectedID: ConversationKey? {
+        get { selection.selectedID.flatMap { conversationKeys.contains($0) ? $0 : nil } }
+        nonmutating set { selection.select(newValue) }
+    }
+    private var listSelection: Binding<ConversationKey?> {
+        Binding(get: { selectedID }, set: { selection.updateFromList($0, visibleIDs: conversationKeys) })
+    }
 
     private struct SearchRequest: Hashable {
         let text: String
@@ -27,7 +36,7 @@ struct GmailInboxView: View {
             get: { hub.mailbox },
             set: { mailbox in
                 guard let mailbox, mailbox != hub.mailbox else { return }
-                selectedID = nil
+                selection.reset()
                 searchText = ""
                 selectionBeforeSearch = nil
                 pageRequest = 0
@@ -42,8 +51,8 @@ struct GmailInboxView: View {
             selectMailbox: { mailboxSelection.wrappedValue = $0 },
             newMessage: canCompose ? { composer = ComposeDraft(accountID: hub.defaultSendingAccount?.id) } : nil,
             refresh: hub.isLoadingMailbox || hub.mailbox == .outbox ? nil : { refreshRequest += 1 },
-            archive: selectedID != nil && hub.canArchive(selectedID) ? { selectedID.map { remove($0, archiving: true) } } : nil,
-            trash: selectedID != nil && hub.canTrash(selectedID) ? { selectedID.map { remove($0, archiving: false) } } : nil,
+            archive: canRemoveSelection && hub.canArchive(selectedID) ? { selectedID.map { remove($0, archiving: true) } } : nil,
+            trash: canRemoveSelection && hub.canTrash(selectedID) ? { selectedID.map { remove($0, archiving: false) } } : nil,
             reply: openConversation == nil ? nil : { respond(.reply) },
             replyAll: openConversation == nil ? nil : { respond(.replyAll) },
             forward: openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { respond(.forward) } : nil,
@@ -52,6 +61,10 @@ struct GmailInboxView: View {
             selectionIsUnread: selected?.conversation.isUnread ?? false,
             selectionIsFlagged: selected?.conversation.isStarred ?? false
         )
+    }
+
+    private var canRemoveSelection: Bool {
+        selectedID.map { !selection.isRemoving($0) } ?? false
     }
 
     /// Marks the open conversation read after it has stayed open briefly, so skimming past mail doesn't change it.
@@ -100,16 +113,19 @@ struct GmailInboxView: View {
     }
 
     private func remove(_ key: ConversationKey, archiving: Bool) {
-        let list = conversations
-        // Select the neighbor that will take the row's place.
-        let next = list.firstIndex { $0.key == key }.flatMap { index in
-            list.indices.contains(index + 1) ? list[index + 1].key : (index > 0 ? list[index - 1].key : nil)
-        }
-        // Only move selection when the removed row is the open one.
-        neighborAfterRemoval = selectedID == key ? next : selectedID
+        guard let token = selection.beginRemoval(of: key, visibleIDs: conversationKeys) else { return }
         Task {
-            _ = archiving ? await hub.archive(key) : await hub.trash(key)
-            neighborAfterRemoval = nil
+            let onRemoved = {
+                if selection.finishRemoval(token, removed: true, visibleIDs: conversationKeys),
+                   !searchIsFocused, composer == nil {
+                    // An explicit selected-thread removal returns keyboard navigation to the list,
+                    // including when it is empty. Background sync never steals search focus.
+                    listIsFocused = true
+                }
+            }
+            if archiving { _ = await hub.archive(key, onRemoved: onRemoved) }
+            else { _ = await hub.trash(key, onRemoved: onRemoved) }
+            selection.finishRemoval(token, removed: false, visibleIDs: conversationKeys)
         }
     }
 
@@ -147,6 +163,7 @@ struct GmailInboxView: View {
         }
         .navigationTitle(hub.mailbox.title)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+        .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: mailActions) }
         .focusedSceneValue(\.mailActions, mailActions)
         .sheet(item: $composer) { draft in
@@ -155,25 +172,27 @@ struct GmailInboxView: View {
         // Also runs when an account is added, so its mail appears without choosing a folder again.
         .task(id: MailboxRequest(mailbox: hub.mailbox, refresh: refreshRequest, accounts: hub.sessions.map(\.id))) {
             await hub.restoreCachedMailbox()
-            if selectedID == nil, !hub.isSearchActive { selectedID = conversations.first?.key }
             await hub.refresh()
         }
         // Searches as you type, after a short pause. A new keystroke cancels the pending request.
         .task(id: SearchRequest(text: searchText, scope: searchScope, retry: searchRetry)) {
+            let wasSearching = hub.isSearchActive
+            let willSearch = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            if !wasSearching, willSearch {
+                // Save identity before changing which rows the hub exposes.
+                selectionBeforeSearch = selection.selectedID
+                selectedID = nil
+            }
             hub.setSearch(searchText, scope: searchScope)
+            if wasSearching, !willSearch {
+                if let previous = selectionBeforeSearch { selectedID = previous }
+                selectionBeforeSearch = nil
+                selection.reconcile(with: conversationKeys)
+            }
             guard hub.isSearchActive else { return }
             try? await Task.sleep(for: .milliseconds(350))
             guard !Task.isCancelled else { return }
             await hub.performSearch()
-        }
-        .onChange(of: hub.isSearchActive) { _, active in
-            if active {
-                selectionBeforeSearch = selectedID
-                selectedID = nil
-            } else {
-                selectedID = selectionBeforeSearch
-                selectionBeforeSearch = nil
-            }
         }
         .task(id: pageRequest) {
             if pageRequest > 0 { await hub.loadMore() }
@@ -182,11 +201,8 @@ struct GmailInboxView: View {
             await hub.select(selectedID)
             await markOpenedConversationRead()
         }
-        .onChange(of: hub.mailboxVersion) { _, _ in
-            if !conversations.contains(where: { $0.key == selectedID }) {
-                selectedID = conversations.first { $0.key == neighborAfterRemoval }?.key
-                    ?? (hub.isSearchActive ? nil : conversations.first?.key)
-            }
+        .onChange(of: conversationKeys, initial: true) { _, keys in
+            selection.reconcile(with: keys)
         }
     }
 
@@ -200,88 +216,77 @@ struct GmailInboxView: View {
                 searchHeader
                 Divider()
             }
-            if hub.isSearchActive && hub.isSearching && hub.loadedCount == 0 {
-                ProgressView("Searching…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if (hub.isLoadingMailbox || hub.isRestoringCache) && hub.loadedCount == 0 {
-                ProgressView("Loading mail…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if conversations.isEmpty {
-                ContentUnavailableView {
-                    Label(!hub.isSearchActive ? (hub.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
-                          systemImage: !hub.isSearchActive ? hub.mailbox.symbol : "magnifyingglass")
-                } description: {
-                    Text(!hub.isSearchActive
-                         ? (hub.mailbox == .outbox
-                            ? String(localized: "Messages are sent immediately, so nothing waits here.")
-                            : String(localized: "Refresh to check for new mail."))
-                         : String(localized: "Try other words, or use Gmail search such as from:name or has:attachment."))
+            // Keep the List (and its first responder) alive across loading and empty states.
+            List(selection: listSelection) {
+                ForEach(conversations) { item in
+                    MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox))
+                        .tag(item.key)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                        .listRowSeparator(.hidden)
+                        .swipeActions(edge: .leading) {
+                            if hub.canModifyLabels(item.key) {
+                                Button { toggleRead(item) } label: {
+                                    Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
+                                          systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
+                                }
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            if hub.canTrash(item.key) {
+                                Button(role: .destructive) { remove(item.key, archiving: false) } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            if hub.canArchive(item.key) {
+                                Button { remove(item.key, archiving: true) } label: {
+                                    Label("Archive", systemImage: "archivebox")
+                                }
+                                .tint(.indigo)
+                            }
+                        }
+                        .onAppear {
+                            // Load the next page as the end of the list scrolls into view.
+                            if item.key == conversations.last?.key,
+                               hub.hasMorePages, !hub.isLoadingMailbox {
+                                pageRequest += 1
+                            }
+                        }
                 }
-                .frame(maxHeight: .infinity)
-            } else {
-                List(selection: $selectedID) {
-                    ForEach(conversations) { item in
-                        MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox))
-                            .tag(item.key)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
-                            .listRowSeparator(.hidden)
-                            .swipeActions(edge: .leading) {
-                                if hub.canModifyLabels(item.key) {
-                                    Button { toggleRead(item) } label: {
-                                        Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
-                                              systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
-                                    }
-                                }
-                            }
-                            .swipeActions(edge: .trailing) {
-                                if hub.canTrash(item.key) {
-                                    Button(role: .destructive) { remove(item.key, archiving: false) } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
-                                }
-                                if hub.canArchive(item.key) {
-                                    Button { remove(item.key, archiving: true) } label: {
-                                        Label("Archive", systemImage: "archivebox")
-                                    }
-                                    .tint(.indigo)
-                                }
-                            }
-                            .onAppear {
-                                // Load the next page as the end of the list scrolls into view.
-                                if item.key == conversations.last?.key,
-                                   hub.hasMorePages, !hub.isLoadingMailbox {
-                                    pageRequest += 1
-                                }
-                            }
+            }
+            .listStyle(.inset)
+            .focused($listIsFocused)
+            .accessibilityIdentifier("conversationList")
+            .onDeleteCommand { if let key = selectedID, hub.canTrash(key) { remove(key, archiving: false) } }
+            .contextMenu(forSelectionType: ConversationKey.self) { keys in
+                if let key = keys.first {
+                    if hub.canModifyLabels(key), let conversation = hub.conversation(for: key) {
+                        let item = MergedConversation(key: key, conversation: conversation)
+                        Button(conversation.isUnread ? String(localized: "Mark as Read") : String(localized: "Mark as Unread"),
+                               systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(item) }
+                        Button(conversation.isStarred ? String(localized: "Unflag") : String(localized: "Flag"),
+                               systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(item) }
+                        Divider()
+                    }
+                    if key == selectedID, let open = openConversation {
+                        Button("Reply", systemImage: "arrowshape.turn.up.left") { respond(.reply) }
+                        Button("Reply All", systemImage: "arrowshape.turn.up.left.2") { respond(.replyAll) }
+                        if open.messages.allSatisfy(\.bodyLoaded) {
+                            Button("Forward", systemImage: "arrowshape.turn.up.right") { respond(.forward) }
+                        }
+                        Divider()
+                    }
+                    if hub.canArchive(key) {
+                        Button("Archive", systemImage: "archivebox") { remove(key, archiving: true) }
+                    }
+                    if hub.canTrash(key) {
+                        Button("Move to Trash", systemImage: "trash", role: .destructive) { remove(key, archiving: false) }
                     }
                 }
-                .listStyle(.inset)
-                .onDeleteCommand { if let key = selectedID, hub.canTrash(key) { remove(key, archiving: false) } }
-                .contextMenu(forSelectionType: ConversationKey.self) { keys in
-                    if let key = keys.first {
-                        if hub.canModifyLabels(key), let conversation = hub.conversation(for: key) {
-                            let item = MergedConversation(key: key, conversation: conversation)
-                            Button(conversation.isUnread ? String(localized: "Mark as Read") : String(localized: "Mark as Unread"),
-                                   systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { toggleRead(item) }
-                            Button(conversation.isStarred ? String(localized: "Unflag") : String(localized: "Flag"),
-                                   systemImage: conversation.isStarred ? "star.slash" : "star") { toggleStar(item) }
-                            Divider()
-                        }
-                        if key == selectedID, let open = openConversation {
-                            Button("Reply", systemImage: "arrowshape.turn.up.left") { respond(.reply) }
-                            Button("Reply All", systemImage: "arrowshape.turn.up.left.2") { respond(.replyAll) }
-                            if open.messages.allSatisfy(\.bodyLoaded) {
-                                Button("Forward", systemImage: "arrowshape.turn.up.right") { respond(.forward) }
-                            }
-                            Divider()
-                        }
-                        if hub.canArchive(key) {
-                            Button("Archive", systemImage: "archivebox") { remove(key, archiving: true) }
-                        }
-                        if hub.canTrash(key) {
-                            Button("Move to Trash", systemImage: "trash", role: .destructive) { remove(key, archiving: false) }
-                        }
-                    }
+            }
+            .overlay {
+                if conversations.isEmpty {
+                    messageListPlaceholder
+                        .allowsHitTesting(false)
                 }
             }
             Divider()
@@ -304,6 +309,25 @@ struct GmailInboxView: View {
             .font(.subheadline)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+        }
+    }
+
+    @ViewBuilder
+    private var messageListPlaceholder: some View {
+        if hub.isLoadingMailbox || hub.isRestoringCache {
+            ProgressView(hub.isSearchActive ? "Searching…" : "Loading mail…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            ContentUnavailableView {
+                Label(!hub.isSearchActive ? (hub.mailbox == .outbox ? String(localized: "Outbox is empty") : String(localized: "No conversations")) : String(localized: "No matching mail"),
+                      systemImage: !hub.isSearchActive ? hub.mailbox.symbol : "magnifyingglass")
+            } description: {
+                Text(!hub.isSearchActive
+                     ? (hub.mailbox == .outbox
+                        ? String(localized: "Messages are sent immediately, so nothing waits here.")
+                        : String(localized: "Refresh to check for new mail."))
+                     : String(localized: "Try other words, or use Gmail search such as from:name or has:attachment."))
+            }
         }
     }
 

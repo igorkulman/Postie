@@ -93,21 +93,22 @@ final class MailHub {
     @ObservationIgnored private let syncsInBackground: Bool
     @ObservationIgnored private let makeAPI: (@MainActor (String) -> any GmailReading)?
 
-    /// `makeAPI` lets previews and tests supply canned mail instead of talking to Gmail.
+    /// `makeAPI` supplies local mail; `cache` lets regression mode/tests use SQLite without opening the real database.
     init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true,
-         makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
+         cache: GmailCache? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
         self.accounts = accounts
         self.persistsMail = persistsMail
         self.syncsInBackground = syncsInBackground
+        self.cache = cache
         self.makeAPI = makeAPI
-        isPreparing = persistsMail
+        isPreparing = persistsMail && cache == nil
     }
 
     // MARK: Lifecycle
 
     func prepare() async {
         defer { isPreparing = false }
-        guard persistsMail else { return }
+        guard persistsMail, cache == nil else { return }
         do {
             cache = try await GmailCache.open()
         } catch {
@@ -406,17 +407,21 @@ final class MailHub {
     }
 
     @discardableResult
-    func archive(_ key: ConversationKey) async -> Bool {
-        let done = await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive) ?? false
-        if done { removeSearchResult(key) }
-        return done
+    func archive(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+        let generation = searchGeneration
+        return await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive) {
+            if self.searchGeneration == generation { self.removeSearchResult(key) }
+            onRemoved()
+        } ?? false
     }
 
     @discardableResult
-    func trash(_ key: ConversationKey) async -> Bool {
-        let done = await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive) ?? false
-        if done { removeSearchResult(key) }
-        return done
+    func trash(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+        let generation = searchGeneration
+        return await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive) {
+            if self.searchGeneration == generation { self.removeSearchResult(key) }
+            onRemoved()
+        } ?? false
     }
 
     func setUnread(_ key: ConversationKey, _ unread: Bool) async {

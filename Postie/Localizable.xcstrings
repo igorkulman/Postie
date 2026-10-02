@@ -84,6 +84,7 @@
       "comment" : "Mailbox name"
     },
     "Archive (⌃⌘A)" : {},
+    "Archive Sample Thread Externally" : {},
     "CC email addresses" : {},
     "Cancel" : {},
     "Cc" : {
@@ -100,6 +101,7 @@
     "Connecting…" : {},
     "Continue Writing" : {},
     "Could Not Load Conversation" : {},
+    "Could Not Open Regression Mail" : {},
     "Default" : {
       "comment" : "Badge on the account that new messages are sent from"
     },
@@ -143,6 +145,7 @@
     "Inbox" : {
       "comment" : "Mailbox name"
     },
+    "Insert Newer Mail" : {},
     "Junk" : {
       "comment" : "Mailbox name"
     },
@@ -191,7 +194,9 @@
     "No matching mail" : {},
     "No recipient" : {},
     "Nothing here yet" : {},
+    "OK" : {},
     "Opening mailbox…" : {},
+    "Opening regression mail…" : {},
     "Opening saved mail…" : {},
     "Optional · separate addresses with commas" : {},
     "Outbox" : {
@@ -211,6 +216,9 @@
     },
     "Reconnect Gmail" : {},
     "Refresh to check for new mail." : {},
+    "Regression" : {},
+    "Regression Action Failed" : {},
+    "Reject Next Archive or Trash" : {},
     "Remote images enabled" : {},
     "Remove %@?" : {},
     "Remove Account" : {},

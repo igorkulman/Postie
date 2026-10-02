@@ -86,6 +86,31 @@ Open `Postie.xcodeproj`, choose the **Postie** scheme and **My Mac**, and run.
 Launch Postie with the `-PostieDemoData` argument (Xcode: Scheme > Run >
 Arguments) to start on built-in sample mail instead of a real account.
 
+## Selection regression without a mailbox
+
+Launch with `-PostieSelectionRegression` to run the real Gmail list/detail UI
+against deterministic mail and an in-memory SQLite cache. It uses no real
+credentials, network requests, or saved mailbox database.
+
+1. Open **Thread to open**.
+2. Choose **Regression > Insert Newer Mail**. The highlight and detail must stay
+   on the same conversation, even though its row moved.
+3. Archive it with **⌃⌘A**. **Next older thread** must become selected and open.
+   Use the arrow keys immediately to check that keyboard focus is in the list.
+4. Archive the remaining threads until the inbox is empty. Both selection and
+   detail must clear, Archive/Trash must be disabled, and the empty list must
+   retain keyboard focus. Inserting mail again must not automatically open it.
+
+The Regression menu also simulates an external archive of **Thread to open**
+and a rejected next archive/trash. External disappearance clears selection
+without opening unrelated mail; rejection preserves the selected thread.
+
+The policy in both Gmail and sample mode is identity-based: an explicit removal
+chooses the next surviving older neighbor from the visible order at action time,
+then the nearest surviving newer neighbor, then no selection. Reordering never
+changes a surviving selection. Removing an unselected thread or completing an
+operation after the user changes selection does not choose a new thread.
+
 ## Tests
 
 Run the **Postie** scheme's tests (⌘U). They use fixtures and need neither a

@@ -161,15 +161,15 @@ final class GmailReaderStore {
     /// Archives or trashes a conversation, then drops it from the loaded list right away.
     /// Returns false (with `mailboxError` set) when Gmail rejects the change.
     @discardableResult
-    func archive(_ id: String, fromAnyFolder: Bool = false) async -> Bool {
+    func archive(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
         guard fromAnyFolder ? canModifyLabels : canArchive, let api = api as? any GmailMutating else { return false }
-        return await mutate(id) { try await api.archive(threadID: id) }
+        return await mutate(id, onRemoved: onRemoved) { try await api.archive(threadID: id) }
     }
 
     @discardableResult
-    func trash(_ id: String, fromAnyFolder: Bool = false) async -> Bool {
+    func trash(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
         guard fromAnyFolder ? canModifyLabels : canTrash, let api = api as? any GmailMutating else { return false }
-        return await mutate(id) { try await api.trash(threadID: id) }
+        return await mutate(id, onRemoved: onRemoved) { try await api.trash(threadID: id) }
     }
 
     var canSend: Bool { api is any GmailSending }
@@ -206,7 +206,7 @@ final class GmailReaderStore {
         await refresh()
     }
 
-    private func mutate(_ id: String, _ change: () async throws -> Void) async -> Bool {
+    private func mutate(_ id: String, onRemoved: () -> Void, _ change: () async throws -> Void) async -> Bool {
         let currentSession = session
         do {
             try await change()
@@ -223,6 +223,8 @@ final class GmailReaderStore {
             if selectedConversation?.id == id { selectedConversation = nil }
             bodies[id] = nil
             mailboxVersion += 1
+            // Reconcile UI selection in the same transaction, not after the network refresh.
+            onRemoved()
         }
         // Reconcile the cache and unread badge with Gmail's history.
         await refresh()

@@ -4,7 +4,9 @@ struct ContentView: View {
     var unreadCountChanged: (Int) -> Void = { _ in }
     @State private var store = MailStore()
     @State private var mailbox: Mailbox? = .inbox
-    @State private var selectedID: UUID?
+    @State private var selection = ConversationSelection<UUID>()
+    @FocusState private var listIsFocused: Bool
+    @FocusState private var searchIsFocused: Bool
     @State private var searchText = ""
     @State private var composer: ComposeDraft?
     @State private var confirmsDraftDeletion = false
@@ -12,6 +14,14 @@ struct ContentView: View {
     private var currentMailbox: Mailbox { mailbox ?? .inbox }
     private var conversations: [MailThread] {
         store.conversations(in: currentMailbox, matching: searchText)
+    }
+    private var conversationIDs: [UUID] { conversations.map(\.id) }
+    private var selectedID: UUID? {
+        get { selection.selectedID }
+        nonmutating set { selection.select(newValue) }
+    }
+    private var listSelection: Binding<UUID?> {
+        Binding(get: { selectedID }, set: { selection.updateFromList($0, visibleIDs: conversationIDs) })
     }
     private var selectedThread: MailThread? {
         conversations.first { $0.id == selectedID }
@@ -30,6 +40,7 @@ struct ContentView: View {
         }
         .navigationTitle(currentMailbox.title)
         .searchable(text: $searchText, placement: .toolbar, prompt: "Search")
+        .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: mailActions) }
         .focusedSceneValue(\.mailActions, mailActions)
         .alert("Delete this draft?", isPresented: $confirmsDraftDeletion) {
@@ -52,15 +63,16 @@ struct ContentView: View {
                 }
             }
         }
-        .onAppear {
-            if selectedID == nil { selectedID = conversations.first?.id }
+        .onChange(of: conversationIDs, initial: true) { _, ids in
+            selection.reconcile(with: ids)
         }
         .onChange(of: store.unreadCount, initial: true) { _, count in
             unreadCountChanged(count)
         }
         .onChange(of: mailbox) { _, _ in
             searchText = ""
-            selectedID = conversations.first?.id
+            selection.reset()
+            selection.reconcile(with: conversationIDs)
         }
         .onChange(of: selectedID) { _, id in
             if let id { store.markRead(id) }
@@ -107,10 +119,10 @@ struct ContentView: View {
     }
 
     private func archive(_ id: UUID) {
-        let index = conversations.firstIndex { $0.id == id } ?? 0
+        guard let token = selection.beginRemoval(of: id, visibleIDs: conversationIDs) else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
             store.archive(id)
-            if selectedID == id { selectNeighbor(at: index) }
+            finishRemoval(token)
         }
     }
 
@@ -128,14 +140,14 @@ struct ContentView: View {
     }
 
     private func remove(_ id: UUID) {
-        let index = conversations.firstIndex { $0.id == id } ?? 0
+        guard let token = selection.beginRemoval(of: id, visibleIDs: conversationIDs) else { return }
         withAnimation(.easeInOut(duration: 0.25)) {
             if currentMailbox == .drafts {
                 store.deleteDraft(id)
             } else {
                 store.moveToTrash(id)
             }
-            if selectedID == id { selectNeighbor(at: index) }
+            finishRemoval(token)
         }
     }
 
@@ -143,9 +155,11 @@ struct ContentView: View {
         if thread.isUnread { store.markRead(thread.id) } else { store.markUnread(thread.id) }
     }
 
-    private func selectNeighbor(at index: Int) {
-        let remaining = conversations
-        selectedID = remaining.isEmpty ? nil : remaining[min(index, remaining.count - 1)].id
+    private func finishRemoval(_ token: UUID) {
+        if selection.finishRemoval(token, removed: true, visibleIDs: conversationIDs),
+           !searchIsFocused, composer == nil {
+            listIsFocused = true
+        }
     }
 
     @ViewBuilder
@@ -200,47 +214,49 @@ struct ContentView: View {
 
     private var messageList: some View {
         VStack(spacing: 0) {
-            if conversations.isEmpty {
-                ContentUnavailableView {
-                    Label(searchText.isEmpty ? String(localized: "Nothing here yet") : String(localized: "No matching mail"), systemImage: searchText.isEmpty ? currentMailbox.symbol : "magnifyingglass")
-                } description: {
-                    Text(searchText.isEmpty ? String(localized: "Your demo messages will appear here.") : String(localized: "Try a different name, subject, or phrase."))
-                }
-                .frame(maxHeight: .infinity)
-            } else {
-                List(selection: $selectedID) {
-                    ForEach(conversations) { thread in
-                        MailThreadRow(thread: thread)
-                            .tag(thread.id)
-                            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
-                            .listRowSeparator(.hidden)
-                            .swipeActions(edge: .leading) {
-                                Button { toggleRead(thread) } label: {
-                                    Label(thread.isUnread ? String(localized: "Read") : String(localized: "Unread"),
-                                          systemImage: thread.isUnread ? "envelope.open" : "envelope.badge")
+            List(selection: listSelection) {
+                ForEach(conversations) { thread in
+                    MailThreadRow(thread: thread)
+                        .tag(thread.id)
+                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                        .listRowSeparator(.hidden)
+                        .swipeActions(edge: .leading) {
+                            Button { toggleRead(thread) } label: {
+                                Label(thread.isUnread ? String(localized: "Read") : String(localized: "Unread"),
+                                      systemImage: thread.isUnread ? "envelope.open" : "envelope.badge")
+                            }
+                        }
+                        .swipeActions(edge: .trailing) {
+                            if currentMailbox != .trash {
+                                Button(role: .destructive) { remove(thread.id) } label: {
+                                    Label("Delete", systemImage: "trash")
                                 }
                             }
-                            .swipeActions(edge: .trailing) {
-                                if currentMailbox != .trash {
-                                    Button(role: .destructive) { remove(thread.id) } label: {
-                                        Label("Delete", systemImage: "trash")
-                                    }
+                            if thread.mailbox == .inbox {
+                                Button { archive(thread.id) } label: {
+                                    Label("Archive", systemImage: "archivebox")
                                 }
-                                if thread.mailbox == .inbox {
-                                    Button { archive(thread.id) } label: {
-                                        Label("Archive", systemImage: "archivebox")
-                                    }
-                                    .tint(.indigo)
-                                }
+                                .tint(.indigo)
                             }
-                    }
+                        }
                 }
-                .listStyle(.inset)
-                .onDeleteCommand(perform: mailActions.trash)
-                .contextMenu(forSelectionType: UUID.self) { ids in
-                    if let id = ids.first, let thread = conversations.first(where: { $0.id == id }) {
-                        rowMenu(for: thread)
+            }
+            .listStyle(.inset)
+            .focused($listIsFocused)
+            .onDeleteCommand(perform: mailActions.trash)
+            .contextMenu(forSelectionType: UUID.self) { ids in
+                if let id = ids.first, let thread = conversations.first(where: { $0.id == id }) {
+                    rowMenu(for: thread)
+                }
+            }
+            .overlay {
+                if conversations.isEmpty {
+                    ContentUnavailableView {
+                        Label(searchText.isEmpty ? String(localized: "Nothing here yet") : String(localized: "No matching mail"), systemImage: searchText.isEmpty ? currentMailbox.symbol : "magnifyingglass")
+                    } description: {
+                        Text(searchText.isEmpty ? String(localized: "Your demo messages will appear here.") : String(localized: "Try a different name, subject, or phrase."))
                     }
+                    .allowsHitTesting(false)
                 }
             }
         }
