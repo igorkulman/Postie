@@ -33,7 +33,7 @@ struct GmailModelsTests {
     @Test("Metadata does not extract bodies")
     func metadata() throws {
         let metadata = try GmailFixtures.conversation("a1", includeBody: false)
-        #expect(metadata.messages.allSatisfy { $0.body.isEmpty && $0.htmlBody == nil })
+        #expect(metadata.messages.allSatisfy { $0.body.isEmpty && $0.htmlBody == nil && !$0.bodyLoaded })
     }
 
     @Test("Nested plain text is preferred and attachments are excluded")

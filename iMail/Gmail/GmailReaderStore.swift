@@ -21,6 +21,7 @@ final class GmailReaderStore {
 
     @ObservationIgnored private let api: any GmailReading
     @ObservationIgnored private let cache: GmailCacheSession?
+    @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredSession: UUID?
     @ObservationIgnored private var bodies: [String: GmailConversation] = [:]
     @ObservationIgnored private var session = UUID()
@@ -32,6 +33,9 @@ final class GmailReaderStore {
         self.api = api
         self.mailbox = mailbox
         self.cache = cache
+        if let cache, let syncAPI = api as? any GmailSyncReading {
+            synchronizer = GmailSyncCoordinator(api: syncAPI, cache: cache)
+        } else { synchronizer = nil }
     }
 
     func changeMailbox(_ mailbox: Mailbox) {
@@ -41,6 +45,7 @@ final class GmailReaderStore {
     }
 
     func reset() {
+        synchronizer?.cancel()
         resetMailbox()
         mailbox = .inbox
         unreadInboxCount = nil
@@ -104,8 +109,42 @@ final class GmailReaderStore {
         guard session == currentSession, !Task.isCancelled else { return }
         let accountSession = unreadCountSession
         async let unreadCount: Void = refreshUnreadCount(for: accountSession)
-        await loadPage(refreshing: true)
+        if let synchronizer { await synchronize(using: synchronizer) }
+        else { await loadPage(refreshing: true) }
         await unreadCount
+    }
+
+    private func synchronize(using synchronizer: GmailSyncCoordinator) async {
+        guard !isLoadingMailbox else { return }
+        let currentSession = session
+        let currentMailbox = mailbox
+        isLoadingMailbox = true
+        mailboxError = nil
+        defer { if session == currentSession { isLoadingMailbox = false } }
+        do {
+            try await synchronizer.synchronize(mailbox: currentMailbox)
+            let saved = try await cache?.loadMailbox(currentMailbox)
+            try Task.checkCancellation()
+            guard session == currentSession else { return }
+            let changed = saved.map { $0.conversations != conversations } ?? false
+            if let saved {
+                conversations = saved.conversations
+                nextPageToken = saved.nextPageToken
+                lastRefreshed = saved.fetchedAt
+            }
+            showingCachedMail = false
+            cacheError = nil
+            if changed {
+                selection = UUID()
+                isLoadingConversation = false
+                if let id = selectedConversation?.id { selectedConversation = conversations.first { $0.id == id } }
+                bodies = [:]
+                mailboxVersion += 1
+            }
+        } catch {
+            guard session == currentSession, !Task.isCancelled, !(error is CancellationError) else { return }
+            mailboxError = error.localizedDescription
+        }
     }
 
     func refreshUnreadCount() async {
@@ -147,6 +186,7 @@ final class GmailReaderStore {
         mailboxError = nil
         defer { if session == currentSession { isLoadingMailbox = false } }
         do {
+            let checkpoint = try? await cache?.checkpoint()
             let page = try await api.mailbox(currentMailbox, pageToken: pageToken)
             try Task.checkCancellation()
             guard session == currentSession else { return }
@@ -155,7 +195,7 @@ final class GmailReaderStore {
                 do {
                     let saved = try await cache.savePage(
                         GmailPage(conversations: page.conversations, nextPageToken: next),
-                        mailbox: currentMailbox, refreshing: refreshing
+                        mailbox: currentMailbox, refreshing: refreshing, checkpoint: checkpoint
                     )
                     guard session == currentSession, !Task.isCancelled else { return }
                     conversations = saved.conversations
@@ -164,6 +204,10 @@ final class GmailReaderStore {
                     showingCachedMail = false
                     cacheError = nil
                     if refreshing { mailboxVersion += 1 }
+                    return
+                } catch GmailCacheError.checkpointChanged {
+                    guard session == currentSession, !Task.isCancelled else { return }
+                    mailboxError = "Mail changed while loading this page. Please try again."
                     return
                 } catch {
                     guard session == currentSession, !Task.isCancelled else { return }
@@ -188,6 +232,10 @@ final class GmailReaderStore {
     }
 
     func select(_ id: String?) async {
+        // Background changes to other rows must not tear down an already-open,
+        // complete conversation and reset its reading position.
+        if synchronizer != nil, let id, let selectedConversation, selectedConversation.id == id,
+           selectedConversation.messages.allSatisfy(\.bodyLoaded), conversationError == nil { return }
         selection = UUID()
         let currentSelection = selection
         let currentSession = session
@@ -214,12 +262,19 @@ final class GmailReaderStore {
         isLoadingConversation = true
         defer { if selection == currentSelection { isLoadingConversation = false } }
         do {
+            let checkpoint = try? await cache?.checkpoint()
             let conversation = try await api.conversation(id: id)
             try Task.checkCancellation()
             guard session == currentSession, selection == currentSelection else { return }
             if let cache {
-                do { try await cache.saveConversation(conversation) }
-                catch {
+                do { try await cache.saveConversation(conversation, checkpoint: checkpoint) }
+                catch GmailCacheError.checkpointChanged {
+                    guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                    let saved = try? await cache.conversation(id: id)
+                    guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
+                    selectedConversation = saved
+                    return
+                } catch {
                     guard session == currentSession, selection == currentSelection, !Task.isCancelled else { return }
                     cacheError = "Unable to save this message for offline reading."
                 }

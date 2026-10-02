@@ -35,7 +35,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Only exposes GET operations. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailReading {
+actor GmailAPI: GmailSyncReading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
 
@@ -105,6 +105,30 @@ actor GmailAPI: GmailReading {
         let resource: GmailThreadResource = try await get(path: try threadPath(id), query: [URLQueryItem(name: "format", value: "full")])
         guard resource.id == id else { throw GmailError.invalidResponse }
         return try resource.conversation(includeBody: true)
+    }
+
+    func currentHistoryID() async throws -> String {
+        let profile: GmailProfile = try await get(path: "profile", query: [URLQueryItem(name: "fields", value: "historyId")])
+        guard GmailHistoryPage.validID(profile.historyId) else { throw GmailError.invalidResponse }
+        return profile.historyId
+    }
+
+    func history(startHistoryID: String, pageToken: String?) async throws -> GmailHistoryPage {
+        guard GmailHistoryPage.validID(startHistoryID) else { throw GmailError.invalidResponse }
+        var query = [URLQueryItem(name: "startHistoryId", value: startHistoryID),
+                     URLQueryItem(name: "maxResults", value: "500")]
+        if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+        // No label or history-type filter: moves OUT of Inbox and permanent deletions matter.
+        let page: GmailHistoryPage = try await get(path: "history", query: query)
+        guard GmailHistoryPage.validID(page.historyId), GmailHistoryPage.isAtLeast(page.historyId, startHistoryID),
+              (page.history ?? []).allSatisfy({ record in
+                  GmailHistoryPage.validID(record.id) && record.affectedMessages.allSatisfy { !$0.id.isEmpty && !$0.threadId.isEmpty }
+              }) else { throw GmailError.invalidResponse }
+        return page
+    }
+
+    func metadata(id: String) async throws -> GmailConversation? {
+        try await metadata(id: id, fallbackSnippet: nil)
     }
 
     private func metadata(id: String, fallbackSnippet: String?) async throws -> GmailConversation? {

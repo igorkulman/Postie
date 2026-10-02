@@ -12,8 +12,13 @@ nonisolated struct CachedGmailMailbox: Sendable {
     let fetchedAt: Date
 }
 
-nonisolated enum GmailCacheError: Error {
+nonisolated enum GmailCacheError: Error, Equatable {
     case sessionExpired
+    case checkpointChanged
+}
+
+nonisolated struct GmailCacheCheckpoint: Sendable {
+    let historyID: String?
 }
 
 // A lease makes revocation effective at the database boundary, not just in the UI.
@@ -28,15 +33,20 @@ nonisolated struct GmailCacheSession: Sendable {
     func loadMailbox(_ mailbox: Mailbox) async throws -> CachedGmailMailbox? {
         try await cache.loadMailbox(mailbox, session: self)
     }
-    func savePage(_ page: GmailPage, mailbox: Mailbox, refreshing: Bool) async throws -> CachedGmailMailbox {
-        try await cache.savePage(page, mailbox: mailbox, refreshing: refreshing, session: self)
+    func savePage(_ page: GmailPage, mailbox: Mailbox, refreshing: Bool, checkpoint: GmailCacheCheckpoint? = nil) async throws -> CachedGmailMailbox {
+        try await cache.savePage(page, mailbox: mailbox, refreshing: refreshing, checkpoint: checkpoint, session: self)
     }
     func conversation(id: String) async throws -> GmailConversation? {
         try await cache.conversation(id: id, session: self)
     }
-    func saveConversation(_ conversation: GmailConversation) async throws {
-        try await cache.saveConversation(conversation, session: self)
+    func saveConversation(_ conversation: GmailConversation, checkpoint: GmailCacheCheckpoint? = nil) async throws {
+        try await cache.saveConversation(conversation, checkpoint: checkpoint, session: self)
     }
+    func historyID() async throws -> String? { try await cache.historyID(session: self) }
+    func checkpoint() async throws -> GmailCacheCheckpoint { GmailCacheCheckpoint(historyID: try await historyID()) }
+    func cachedMailboxes() async throws -> [Mailbox] { try await cache.cachedMailboxes(session: self) }
+    func cachedThreadIDs() async throws -> [String] { try await cache.cachedThreadIDs(session: self) }
+    func applySync(_ batch: GmailSyncBatch) async throws { try await cache.applySync(batch, session: self) }
     func unreadCount() async throws -> Int? { try await cache.unreadCount(session: self) }
     func saveUnreadCount(_ count: Int) async throws { try await cache.saveUnreadCount(count, session: self) }
     func invalidate() async { await cache.invalidate(self) }
@@ -157,10 +167,11 @@ actor GmailCache {
     }
 
     fileprivate func savePage(_ page: GmailPage, mailbox: Mailbox, refreshing: Bool,
-                              session: GmailCacheSession) async throws -> CachedGmailMailbox {
+                              checkpoint: GmailCacheCheckpoint?, session: GmailCacheSession) async throws -> CachedGmailMailbox {
         try check(session)
         let saved = try await database.write { db in
             let accountID = session.accountID
+            if let checkpoint { try Self.checkCheckpoint(db, accountID: accountID, expected: checkpoint.historyID) }
             if refreshing {
                 // This is a folder page snapshot, not evidence of deletion from the account.
                 try db.execute(sql: "DELETE FROM folderEntries WHERE accountID = ? AND mailbox = ?",
@@ -193,9 +204,10 @@ actor GmailCache {
         return saved
     }
 
-    fileprivate func saveConversation(_ conversation: GmailConversation, session: GmailCacheSession) async throws {
+    fileprivate func saveConversation(_ conversation: GmailConversation, checkpoint: GmailCacheCheckpoint?, session: GmailCacheSession) async throws {
         try check(session)
         try await database.write { db in
+            if let checkpoint { try Self.checkCheckpoint(db, accountID: session.accountID, expected: checkpoint.historyID) }
             try Self.upsert(conversation, accountID: session.accountID, db: db)
             try Task.checkCancellation()
         }
@@ -217,6 +229,96 @@ actor GmailCache {
             try db.execute(sql: "UPDATE accounts SET unreadCount = ? WHERE id = ?", arguments: [count, session.accountID])
         }
         try check(session)
+    }
+
+    fileprivate func historyID(session: GmailCacheSession) async throws -> String? {
+        try check(session)
+        let value = try await database.read { db in
+            try String.fetchOne(db, sql: "SELECT historyID FROM accounts WHERE id = ?", arguments: [session.accountID])
+        }
+        try check(session)
+        return value
+    }
+
+    fileprivate func cachedMailboxes(session: GmailCacheSession) async throws -> [Mailbox] {
+        try check(session)
+        let values = try await database.read { db in
+            try String.fetchAll(db, sql: "SELECT mailbox FROM folderState WHERE accountID = ?", arguments: [session.accountID])
+        }
+        try check(session)
+        return values.compactMap(Mailbox.init(rawValue:)).filter { $0 != .outbox }
+    }
+
+    fileprivate func cachedThreadIDs(session: GmailCacheSession) async throws -> [String] {
+        try check(session)
+        let values = try await database.read { db in
+            try String.fetchAll(db, sql: "SELECT id FROM threads WHERE accountID = ?", arguments: [session.accountID])
+        }
+        try check(session)
+        return values
+    }
+
+    fileprivate func applySync(_ batch: GmailSyncBatch, session: GmailCacheSession) async throws {
+        try check(session)
+        try await database.write { db in
+            let accountID = session.accountID
+            try Self.checkCheckpoint(db, accountID: accountID, expected: batch.expectedHistoryID)
+            guard GmailHistoryPage.validID(batch.historyID) else { throw GmailError.invalidResponse }
+            var affected = Set(batch.conversations.map(\.id))
+            for (folder, page) in batch.snapshots {
+                try db.execute(sql: "DELETE FROM folderEntries WHERE accountID = ? AND mailbox = ?", arguments: [accountID, folder.rawValue])
+                for conversation in page.conversations {
+                    try Self.upsert(conversation, accountID: accountID, db: db)
+                    affected.insert(conversation.id)
+                }
+                try db.execute(sql: """
+                    INSERT INTO folderState(accountID, mailbox, nextPageToken, fetchedAt) VALUES (?, ?, ?, ?)
+                    ON CONFLICT(accountID, mailbox) DO UPDATE SET nextPageToken = excluded.nextPageToken, fetchedAt = excluded.fetchedAt
+                    """, arguments: [accountID, folder.rawValue, page.nextPageToken, Date().timeIntervalSince1970])
+            }
+            let folders = try String.fetchAll(db, sql: "SELECT mailbox FROM folderState WHERE accountID = ?", arguments: [accountID])
+                .compactMap(Mailbox.init(rawValue:)).filter { $0 != .outbox }
+            for conversation in batch.conversations {
+                let exists = try Bool.fetchOne(db, sql: "SELECT EXISTS(SELECT 1 FROM threads WHERE accountID = ? AND id = ?)",
+                                              arguments: [accountID, conversation.id])!
+                // Stay a partial cache: don't store unrelated folders' mail.
+                if exists || folders.contains(where: { conversation.belongs(to: $0) }) {
+                    try Self.upsert(conversation, accountID: accountID, db: db)
+                }
+            }
+            for id in batch.deletedThreadIDs {
+                try db.execute(sql: "DELETE FROM threads WHERE accountID = ? AND id = ?", arguments: [accountID, id])
+            }
+            for id in affected.subtracting(batch.deletedThreadIDs) {
+                guard let conversation = try Self.conversation(db, accountID: accountID, id: id) else { continue }
+                try db.execute(sql: "DELETE FROM folderEntries WHERE accountID = ? AND threadID = ?", arguments: [accountID, id])
+                for folder in folders where conversation.belongs(to: folder) {
+                    try db.execute(sql: "INSERT INTO folderEntries(accountID, mailbox, threadID, position) VALUES (?, ?, ?, 0)",
+                                   arguments: [accountID, folder.rawValue, id])
+                }
+            }
+            // History can add/move a thread or append a reply. Reorder loaded rows,
+            // retaining downloaded older pages and their bodies.
+            for folder in folders {
+                let ids = try String.fetchAll(db, sql: """
+                    SELECT e.threadID FROM folderEntries e JOIN messages m ON m.accountID = e.accountID AND m.threadID = e.threadID
+                    WHERE e.accountID = ? AND e.mailbox = ? GROUP BY e.threadID ORDER BY MAX(m.date) DESC, e.threadID
+                    """, arguments: [accountID, folder.rawValue])
+                for (position, id) in ids.enumerated() {
+                    try db.execute(sql: "UPDATE folderEntries SET position = ? WHERE accountID = ? AND mailbox = ? AND threadID = ?",
+                                   arguments: [position, accountID, folder.rawValue, id])
+                }
+            }
+            try db.execute(sql: "UPDATE folderState SET fetchedAt = ? WHERE accountID = ?", arguments: [Date().timeIntervalSince1970, accountID])
+            // The checkpoint and every mail/label/folder change commit together.
+            try db.execute(sql: "UPDATE accounts SET historyID = ? WHERE id = ?", arguments: [batch.historyID, accountID])
+        }
+        try check(session)
+    }
+
+    nonisolated private static func checkCheckpoint(_ db: Database, accountID: String, expected: String?) throws {
+        let current = try String.fetchOne(db, sql: "SELECT historyID FROM accounts WHERE id = ?", arguments: [accountID])
+        guard current == expected else { throw GmailCacheError.checkpointChanged }
     }
 
     nonisolated private static func mailbox(_ db: Database, accountID: String, mailbox: Mailbox) throws -> CachedGmailMailbox? {

@@ -3,6 +3,8 @@ import GoogleSignInSwift
 
 struct MailRootView: View {
     @State private var account: GoogleAccount
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var activationRefresh = 0
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
     @State private var reader: GmailReaderStore
     @State private var showingDemo = false
@@ -61,11 +63,27 @@ struct MailRootView: View {
                 await bindReader(to: CachedGmailAccount(id: id, email: email))
             }
         }
+        .task(id: AutomaticSyncRequest(accountID: account.accountID, readerID: readerAccount?.id, activation: activationRefresh)) {
+            guard restoresSession, persistsMail, let id = account.accountID, id == readerAccount?.id else { return }
+            let activeReader = reader
+            await activeReader.refresh()
+            // Remain active while the app runs, including while another app is frontmost.
+            // SwiftUI owns cancellation when the window/account changes.
+            while !Task.isCancelled {
+                do { try await Task.sleep(for: .seconds(60)) }
+                catch { return }
+                guard account.accountID == id, readerAccount?.id == id else { return }
+                await activeReader.refresh()
+            }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { activationRefresh += 1 }
+        }
         .onChange(of: unreadCount, initial: true) { _, _ in updateDockBadge() }
         .onChange(of: showsDockBadge) { _, _ in updateDockBadge() }
-        .onChange(of: account.accountID) { previous, id in
+        .onChange(of: account.accountID) { _, id in
             showingDemo = false
-            if previous != nil && id == nil {
+            if readerAccount?.id != id {
                 reader.reset()
                 readerAccount = nil
             }
@@ -74,6 +92,12 @@ struct MailRootView: View {
 
     private func updateDockBadge() {
         if updatesDockBadge { DockBadge.update(unreadCount: showsDockBadge ? unreadCount : nil) }
+    }
+
+    private struct AutomaticSyncRequest: Hashable {
+        let accountID: String?
+        let readerID: String?
+        let activation: Int
     }
 
     private struct AccountBinding: Hashable {
@@ -104,7 +128,7 @@ struct MailRootView: View {
             account.useCache(database)
             if let savedAccount = try await database.latestAccount() {
                 let savedSession = try await database.session(for: savedAccount)
-                let savedReader = GmailReaderStore(api: GmailAPI { try await account.accessToken() }, cache: savedSession)
+                let savedReader = GmailReaderStore(api: api(for: savedAccount.id), cache: savedSession)
                 await savedReader.restoreCachedMailbox()
                 try Task.checkCancellation()
                 reader = savedReader
@@ -117,6 +141,15 @@ struct MailRootView: View {
         }
     }
 
+    private func api(for accountID: String) -> GmailAPI {
+        GmailAPI {
+            guard account.accountID == accountID else { throw GmailError.signInRequired }
+            let token = try await account.accessToken()
+            guard account.accountID == accountID else { throw GmailError.signInRequired }
+            return token
+        }
+    }
+
     private func bindReader(to identity: CachedGmailAccount) async {
         if readerAccount?.id == identity.id {
             // Cached mail can appear before OAuth restoration completes. Refresh again
@@ -126,7 +159,7 @@ struct MailRootView: View {
         }
         do {
             let savedSession = try await cache?.session(for: identity)
-            let newReader = GmailReaderStore(api: GmailAPI { try await account.accessToken() }, cache: savedSession)
+            let newReader = GmailReaderStore(api: api(for: identity.id), cache: savedSession)
             await newReader.restoreCachedMailbox()
             try Task.checkCancellation()
             guard account.accountID == identity.id else { await savedSession?.invalidate(); return }
@@ -137,7 +170,7 @@ struct MailRootView: View {
             guard !Task.isCancelled, account.accountID == identity.id else { return }
             storageError = "Unable to open the account cache. This session will use online mail only."
             reader.reset()
-            reader = GmailReaderStore(api: GmailAPI { try await account.accessToken() })
+            reader = GmailReaderStore(api: api(for: identity.id))
             readerAccount = identity
         }
     }
