@@ -25,7 +25,7 @@ A small native macOS email-client prototype, built with SwiftUI.
 - Show loading, retry, and pagination states; switching folders clears the previous folder's selection and pagination
 - Account and Dock-badge preferences, including sign out, live in Settings (Command-,)
 
-Only `gmail.readonly` is requested in addition to Google's basic sign-in scopes. All Gmail API requests are GETs. Compose, archive, trash, reply, forward, and changing stars are disabled in Gmail mode. Opening a conversation does **not** mark it read in Gmail.
+`gmail.modify` is requested in addition to Google's basic sign-in scopes. Gmail API requests are GETs, except archive (removes the Inbox label) and move to Trash (recoverable, never permanent delete). Compose, reply, forward, and changing stars are disabled in Gmail mode. Opening a conversation does **not** mark it read in Gmail.
 
 Loaded Gmail mail is persisted locally using GRDB/SQLite; see **Local cache** below. HTTP responses and remote images still have no persistent cache. The HTML renderer uses nonpersistent website storage, a restrictive content security policy, and a compiled content blocker installed before loading any email. If that setup or rendering fails, it shows plain text instead. Remote HTTP(S) images load automatically, including tracking pixels: senders may learn your IP address and when you opened a message. Remote stylesheets, fonts, scripts, frames, and other non-image resources remain blocked. Inline data images are supported; CID images and other attachments are not yet fetched. Previously downloaded message bodies can be read offline; unopened bodies, remote images, and attachments still require a connection or are unsupported. Incremental history sync and periodic refresh run while the app is open; there is no push service or app-closed delivery. Bodies requiring attachment downloads are not fetched.
 
@@ -57,7 +57,7 @@ The app target currently requires macOS 26.0. Xcode resolves Google Sign-In and 
 The app builds without OAuth configuration; Gmail sign-in stays disabled until configured. No backend, client secret, or API key is needed.
 
 1. Create or select a project in [Google Cloud Console](https://console.cloud.google.com/) and enable the **Gmail API**.
-2. Configure the Google Auth Platform consent screen for your app. During development, use **Testing** and add your Google account as a test user. Add `https://www.googleapis.com/auth/gmail.readonly` to the app's data-access scopes. This is a restricted scope; public distribution requires Google's verification planning.
+2. Configure the Google Auth Platform consent screen for your app. During development, use **Testing** and add your Google account as a test user. Add `https://www.googleapis.com/auth/gmail.modify` to the app's data-access scopes. This is a restricted scope; public distribution requires Google's verification planning.
 3. Create an OAuth client with application type **iOS**, **even for this macOS app**, as required by Google Sign-In. Register the app's bundle identifier (`sk.kulman.Postie` unless you change it in Xcode). Use your own Apple Team ID if the console requests it. A Desktop or Web OAuth client is not interchangeable with this configuration.
 4. Open `Configuration/Google.local.xcconfig`. If it does not exist, duplicate `Google.local.xcconfig.example` and name the copy `Google.local.xcconfig`. Do not overwrite an existing configured file. Fill in both identifiers:
 

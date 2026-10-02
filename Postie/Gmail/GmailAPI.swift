@@ -6,6 +6,11 @@ nonisolated protocol GmailReading: Sendable {
     func unreadInboxCount() async throws -> Int
 }
 
+nonisolated protocol GmailMutating: Sendable {
+    func archive(threadID: String) async throws
+    func trash(threadID: String) async throws
+}
+
 nonisolated struct GmailHTTPResponse: Sendable {
     let data: Data
     let statusCode: Int
@@ -34,8 +39,8 @@ nonisolated struct GmailURLTransport: GmailTransport {
     }
 }
 
-// Only exposes GET operations. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading {
+// Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
+actor GmailAPI: GmailSyncReading, GmailMutating {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
 
@@ -146,6 +151,28 @@ actor GmailAPI: GmailSyncReading {
             // A conversation can disappear between listing and fetching its headers.
             return nil
         }
+    }
+
+    func archive(threadID: String) async throws {
+        try await post(path: try threadPath(threadID) + "/modify", body: ["removeLabelIds": ["INBOX"]])
+    }
+
+    func trash(threadID: String) async throws {
+        try await post(path: try threadPath(threadID) + "/trash", body: [:])
+    }
+
+    private func post(path: String, body: [String: [String]]) async throws {
+        try Task.checkCancellation()
+        let token = try await accessToken()
+        try Task.checkCancellation()
+        guard let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/" + path) else { throw GmailError.invalidResponse }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let response = try await transport.send(request)
+        guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
     }
 
     private func threadPath(_ id: String) throws -> String {

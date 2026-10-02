@@ -9,6 +9,7 @@ struct GmailInboxView: View {
     @State private var refreshRequest = 0
     @State private var pageRequest = 0
     @State private var retryRequest = 0
+    @State private var neighborAfterRemoval: String?
 
     private var conversations: [GmailConversation] {
         reader.conversations.filter { $0.matches(searchText) }
@@ -27,13 +28,29 @@ struct GmailInboxView: View {
         )
     }
 
-    // Gmail access is read-only, so only navigation and refresh are available.
+    // Reply, forward, and compose are not available yet; archive and trash are.
     private var mailActions: MailActions {
         MailActions(
             currentMailbox: reader.mailbox,
             selectMailbox: { mailboxSelection.wrappedValue = $0 },
-            refresh: reader.isLoadingMailbox || reader.mailbox == .outbox ? nil : { refreshRequest += 1 }
+            refresh: reader.isLoadingMailbox || reader.mailbox == .outbox ? nil : { refreshRequest += 1 },
+            archive: selectedID != nil && reader.canArchive ? { selectedID.map { remove($0, archiving: true) } } : nil,
+            trash: selectedID != nil && reader.canTrash ? { selectedID.map { remove($0, archiving: false) } } : nil
         )
+    }
+
+    private func remove(_ id: String, archiving: Bool) {
+        let list = conversations
+        // Select the neighbor that will take the row's place.
+        let next = list.firstIndex { $0.id == id }.flatMap { index in
+            list.indices.contains(index + 1) ? list[index + 1].id : (index > 0 ? list[index - 1].id : nil)
+        }
+        // Only move selection when the removed row is the open one.
+        neighborAfterRemoval = selectedID == id ? next : selectedID
+        Task {
+            _ = archiving ? await reader.archive(id) : await reader.trash(id)
+            neighborAfterRemoval = nil
+        }
     }
 
     private struct MailboxRequest: Hashable {
@@ -83,7 +100,9 @@ struct GmailInboxView: View {
             await reader.select(selectedID)
         }
         .onChange(of: reader.mailboxVersion) { _, _ in
-            if !conversations.contains(where: { $0.id == selectedID }) { selectedID = conversations.first?.id }
+            if !conversations.contains(where: { $0.id == selectedID }) {
+                selectedID = conversations.first { $0.id == neighborAfterRemoval }?.id ?? conversations.first?.id
+            }
         }
         .onChange(of: searchText) { _, _ in
             if !conversations.contains(where: { $0.id == selectedID }) { selectedID = nil }
@@ -127,6 +146,19 @@ struct GmailInboxView: View {
                             .tag(conversation.id)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
+                            .swipeActions(edge: .trailing) {
+                                if reader.canTrash {
+                                    Button(role: .destructive) { remove(conversation.id, archiving: false) } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                if reader.canArchive {
+                                    Button { remove(conversation.id, archiving: true) } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                    .tint(.indigo)
+                                }
+                            }
                             .onAppear {
                                 // Load the next page as the end of the list scrolls into view.
                                 if conversation.id == conversations.last?.id, searchText.isEmpty,
@@ -137,6 +169,17 @@ struct GmailInboxView: View {
                     }
                 }
                 .listStyle(.inset)
+                .onDeleteCommand { if reader.canTrash, let id = selectedID { remove(id, archiving: false) } }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    if let id = ids.first {
+                        if reader.canArchive {
+                            Button("Archive", systemImage: "archivebox") { remove(id, archiving: true) }
+                        }
+                        if reader.canTrash {
+                            Button("Move to Trash", systemImage: "trash", role: .destructive) { remove(id, archiving: false) }
+                        }
+                    }
+                }
             }
             Divider()
             HStack {

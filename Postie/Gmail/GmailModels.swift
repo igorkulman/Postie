@@ -116,10 +116,10 @@ nonisolated enum GmailError: LocalizedError, Equatable {
         switch self {
         case .invalidResponse: "Gmail returned a response that could not be read."
         case .http(401), .signInRequired: "Your Google session has expired. Sign out and sign in again."
-        case .http(403): "Gmail access was denied. Check that the Gmail API is enabled and read-only access was granted."
+        case .http(403): "Gmail access was denied. Check that the Gmail API is enabled and mail access was granted."
         case .http(429): "Gmail is temporarily rate-limiting requests. Please try again shortly."
         case .http(let code): "Gmail could not complete the request (HTTP \(code)). Try again."
-        case .permissionRequired: "Read-only Gmail access was not granted. Sign in again and allow Gmail access."
+        case .permissionRequired: "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access."
         }
     }
 }

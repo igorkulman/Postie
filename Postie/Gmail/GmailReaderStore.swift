@@ -147,6 +147,43 @@ final class GmailReaderStore {
         }
     }
 
+    var canArchive: Bool { mailbox == .inbox && api is any GmailMutating }
+    var canTrash: Bool { ![.trash, .outbox].contains(mailbox) && api is any GmailMutating }
+
+    /// Archives or trashes a conversation, then drops it from the loaded list right away.
+    /// Returns false (with `mailboxError` set) when Gmail rejects the change.
+    @discardableResult
+    func archive(_ id: String) async -> Bool {
+        guard canArchive, let api = api as? any GmailMutating else { return false }
+        return await mutate(id) { try await api.archive(threadID: id) }
+    }
+
+    @discardableResult
+    func trash(_ id: String) async -> Bool {
+        guard canTrash, let api = api as? any GmailMutating else { return false }
+        return await mutate(id) { try await api.trash(threadID: id) }
+    }
+
+    private func mutate(_ id: String, _ change: () async throws -> Void) async -> Bool {
+        let currentSession = session
+        do {
+            try await change()
+        } catch {
+            guard session == currentSession else { return false }
+            mailboxError = error.localizedDescription
+            return false
+        }
+        guard session == currentSession else { return true }
+        mailboxError = nil
+        conversations.removeAll { $0.id == id }
+        if selectedConversation?.id == id { selectedConversation = nil }
+        bodies[id] = nil
+        mailboxVersion += 1
+        // Reconcile the cache and unread badge with Gmail's history.
+        await refresh()
+        return true
+    }
+
     func refreshUnreadCount() async {
         await refreshUnreadCount(for: unreadCountSession)
     }

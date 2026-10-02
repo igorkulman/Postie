@@ -5,7 +5,8 @@ import Observation
 @MainActor
 @Observable
 final class GoogleAccount {
-    static let gmailReadOnlyScope = "https://www.googleapis.com/auth/gmail.readonly"
+    // Reading plus archive/trash. Narrower than full mailbox access: no permanent delete or sending.
+    static let gmailModifyScope = "https://www.googleapis.com/auth/gmail.modify"
 
     private(set) var email: String?
     private(set) var accountID: String?
@@ -59,7 +60,7 @@ final class GoogleAccount {
             defer { self.isBusy = false; self.signInTask = nil }
             do {
                 let result = try await GIDSignIn.sharedInstance.signIn(
-                    withPresenting: window, hint: nil, additionalScopes: [Self.gmailReadOnlyScope]
+                    withPresenting: window, hint: nil, additionalScopes: [Self.gmailModifyScope]
                 )
                 try Task.checkCancellation()
                 try self.accept(result.user)
@@ -77,7 +78,7 @@ final class GoogleAccount {
         let refreshed = try await user.refreshTokensIfNeeded()
         try Task.checkCancellation()
         guard email != nil, refreshed.userID == GIDSignIn.sharedInstance.currentUser?.userID else { throw GmailError.signInRequired }
-        guard refreshed.grantedScopes?.contains(Self.gmailReadOnlyScope) == true else { throw GmailError.permissionRequired }
+        guard refreshed.grantedScopes?.contains(Self.gmailModifyScope) == true else { throw GmailError.permissionRequired }
         return refreshed.accessToken.tokenString
     }
 
@@ -96,7 +97,7 @@ final class GoogleAccount {
     }
 
     private func accept(_ user: GIDGoogleUser) throws {
-        guard user.grantedScopes?.contains(Self.gmailReadOnlyScope) == true else { throw GmailError.permissionRequired }
+        guard user.grantedScopes?.contains(Self.gmailModifyScope) == true else { throw GmailError.permissionRequired }
         guard let id = user.userID, !id.isEmpty,
               let email = user.profile?.email, !email.isEmpty else { throw GmailError.invalidResponse }
         accountID = id

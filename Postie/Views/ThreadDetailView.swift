@@ -25,11 +25,7 @@ struct ThreadDetailView: View {
     }
 
     var body: some View {
-        GeometryReader { geometry in
-            // Keep the scroll viewport itself below native window chrome. Scroll-to-ID can
-            // otherwise place the sender header underneath a translucent title bar.
-            scrollingBody.padding(.top, geometry.safeAreaInsets.top)
-        }
+        scrollingBody
     }
 
     private var scrollingBody: some View {
@@ -47,7 +43,7 @@ struct ThreadDetailView: View {
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
                     .disabled(!canToggleStar)
-                    .help(canToggleStar ? (thread.isStarred ? "Remove star" : "Star conversation") : "Stars cannot be changed in read-only Gmail mode.")
+                    .help(canToggleStar ? (thread.isStarred ? "Remove star" : "Star conversation") : "Stars cannot be changed yet.")
                     .accessibilityLabel(thread.isStarred ? "Remove star" : "Star conversation")
                 }
 
