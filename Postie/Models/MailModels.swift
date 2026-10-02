@@ -38,7 +38,7 @@ nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
 }
 
 struct MailMessage: Identifiable, Equatable {
-    var id = UUID().uuidString
+    let id: String
     var senderName: String
     var senderEmail: String
     var recipient: String
@@ -54,7 +54,7 @@ struct MailMessage: Identifiable, Equatable {
 }
 
 struct MailThread: Identifiable, Equatable {
-    var id = UUID().uuidString
+    let id: String
     var subject: String
     var messages: [MailMessage]
     var mailbox: Mailbox

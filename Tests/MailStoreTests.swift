@@ -95,7 +95,7 @@ struct MailStoreTests {
     func replyPrefix() throws {
         let store = makeStore()
         let original = try #require(store.conversations(in: .inbox).first)
-        let thread = MailThread(subject: "Re: Existing subject", messages: original.messages, mailbox: .inbox)
+        let thread = MailThread(id: "re:-existing-subject", subject: "Re: Existing subject", messages: original.messages, mailbox: .inbox)
         #expect(store.reply(to: thread).subject == thread.subject)
     }
 
@@ -171,9 +171,9 @@ struct MailStoreTests {
     @Test("Reply to sent mail addresses the recipient rather than ourselves")
     func replyToOwnMessage() {
         let store = makeStore()
-        let ownMessage = MailMessage(senderName: MailStore.accountName, senderEmail: MailStore.accountEmail,
+        let ownMessage = MailMessage(id: "own", senderName: MailStore.accountName, senderEmail: MailStore.accountEmail,
                                      recipient: "sophie@example.com", date: now, body: "Hello Sophie")
-        let thread = MailThread(subject: "Hello", messages: [ownMessage], mailbox: .sent)
+        let thread = MailThread(id: "hello", subject: "Hello", messages: [ownMessage], mailbox: .sent)
         #expect(store.reply(to: thread).recipient == "sophie@example.com")
     }
 
@@ -189,15 +189,15 @@ struct MailStoreTests {
         #expect(forwarded.body.contains(original.body))
         #expect(forwarded.body.contains(original.senderEmail))
         #expect(forwarded.replyingTo == nil)
-        let prefixed = MailThread(subject: "Fwd: Coffee plans", messages: group.messages, mailbox: .inbox)
+        let prefixed = MailThread(id: "fwd:-coffee-plans", subject: "Fwd: Coffee plans", messages: group.messages, mailbox: .inbox)
         #expect(store.forward(prefixed).subject == prefixed.subject)
     }
 
     private func groupThread() -> MailThread {
-        let message = MailMessage(senderName: "Sophie Chen", senderEmail: "sophie@example.com",
+        let message = MailMessage(id: "sophie", senderName: "Sophie Chen", senderEmail: "sophie@example.com",
                                   recipient: "alex@example.com, james@example.com",
                                   cc: "maya@example.com, SOPHIE@example.com, ALEX@example.com, james@example.com",
                                   date: now, body: "A group conversation.")
-        return MailThread(subject: "Coffee plans", messages: [message], mailbox: .inbox)
+        return MailThread(id: "coffee-plans", subject: "Coffee plans", messages: [message], mailbox: .inbox)
     }
 }

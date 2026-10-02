@@ -2,9 +2,16 @@ import Foundation
 
 enum SampleMail {
     static func threads(now: Date = Date()) -> [MailThread] {
+        // Sample mail gets stable IDs, so the same sample always has the same identity.
+        var issued = 0
+        func nextID(_ kind: String) -> String {
+            issued += 1
+            return "sample-\(kind)-\(issued)"
+        }
+
         func message(_ name: String, _ email: String, _ minutesAgo: Double, _ body: String) -> MailMessage {
             MailMessage(
-                senderName: name, senderEmail: email,
+                id: nextID("message"), senderName: name, senderEmail: email,
                 recipient: MailStore.accountEmail,
                 date: now.addingTimeInterval(-minutesAgo * 60), body: body
             )
@@ -12,6 +19,7 @@ enum SampleMail {
 
         return [
             MailThread(
+                id: nextID("thread"),
                 subject: "A little room to breathe",
                 messages: [
                     message("Sophie Chen", "sophie@example.com", 120, """
@@ -40,6 +48,7 @@ enum SampleMail {
                 ], mailbox: .inbox
             ),
             MailThread(
+                id: nextID("thread"),
                 subject: "Your weekend, well spent",
                 messages: [message("The Sunday Edit", "hello@example.com", 48, """
                 A few good things for your weekend.
@@ -52,6 +61,7 @@ enum SampleMail {
                 """)], mailbox: .inbox, isUnread: true
             ),
             MailThread(
+                id: nextID("thread"),
                 subject: "Coffee on Thursday?",
                 messages: [message("James Wilson", "james@example.com", 95, """
                 Hi Alex,
@@ -64,6 +74,7 @@ enum SampleMail {
                 """)], mailbox: .inbox, isUnread: true, isStarred: true
             ),
             MailThread(
+                id: nextID("thread"),
                 subject: "The first version is ready",
                 messages: [message("Maya Patel", "maya@example.com", 240, """
                 Hi Alex,
@@ -77,6 +88,7 @@ enum SampleMail {
                 """)], mailbox: .inbox, isUnread: true
             ),
             MailThread(
+                id: nextID("thread"),
                 subject: "A table for two",
                 messages: [message("Juniper Kitchen", "reservations@example.com", 1260, """
                 Hello Alex,
@@ -89,6 +101,7 @@ enum SampleMail {
                 """)], mailbox: .inbox
             ),
             MailThread(
+                id: nextID("thread"),
                 subject: "Notes from our walk",
                 messages: [message("Oliver Brooks", "oliver@example.com", 1500, """
                 Alex,
@@ -105,9 +118,10 @@ enum SampleMail {
                 """)], mailbox: .inbox, isStarred: true
             ),
             MailThread(
+                id: nextID("thread"),
                 subject: "Thanks for a lovely evening",
                 messages: [MailMessage(
-                    senderName: MailStore.accountName, senderEmail: MailStore.accountEmail,
+                    id: nextID("message"), senderName: MailStore.accountName, senderEmail: MailStore.accountEmail,
                     recipient: "sophie@example.com", date: now.addingTimeInterval(-86400),
                     body: "Hi Sophie,\n\nThanks for having us over. Such a lovely evening — let's do it again soon.\n\nAlex"
                 )], mailbox: .sent

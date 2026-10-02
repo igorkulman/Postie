@@ -23,6 +23,7 @@ final class MailStore {
                     id: draft.id,
                     subject: draft.subject.isEmpty ? String(localized: "Untitled draft") : draft.subject,
                     messages: [MailMessage(
+                        id: draft.id + "-message",
                         senderName: draft.recipient.isEmpty ? String(localized: "No recipient") : draft.recipient,
                         senderEmail: Self.accountEmail,
                         recipient: draft.recipient,
@@ -105,6 +106,7 @@ final class MailStore {
     func sendDemo(_ draft: ComposeDraft) -> String? {
         guard draft.canSend else { return nil }
         let message = MailMessage(
+            id: UUID().uuidString,
             senderName: Self.accountName,
             senderEmail: Self.accountEmail,
             recipient: draft.recipient.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -112,7 +114,7 @@ final class MailStore {
             date: Date(),
             body: draft.body
         )
-        let sent = MailThread(subject: draft.subject, messages: [message], mailbox: .sent)
+        let sent = MailThread(id: UUID().uuidString, subject: draft.subject, messages: [message], mailbox: .sent)
         threads.append(sent)
         if let index = threads.firstIndex(where: { $0.id == draft.replyingTo }) {
             threads[index].messages.append(message)

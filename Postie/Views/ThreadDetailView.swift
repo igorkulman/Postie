@@ -184,19 +184,19 @@ private struct MessageView: View {
 
 private func longConversationPreview(html: Bool = false) -> MailThread {
     var messages = (1...20).map { index in
-        MailMessage(senderName: "Earlier sender \(index)", senderEmail: "sender@example.com",
+        MailMessage(id: "earlier-\(index)", senderName: "Earlier sender \(index)", senderEmail: "sender@example.com",
                     recipient: "alex@example.com", date: Date(timeIntervalSince1970: Double(index)),
                     body: "Earlier message \(index). Scroll up to read the conversation history.")
     }
     messages.append(MailMessage(
-        senderName: "Latest sender", senderEmail: "latest@example.com", recipient: "alex@example.com",
+        id: "latest", senderName: "Latest sender", senderEmail: "latest@example.com", recipient: "alex@example.com",
         date: Date(timeIntervalSince1970: 21),
         body: "This is the newest message. The conversation should open at this header.\n\n"
             + String(repeating: "More of the latest message.\n\n", count: 60),
         htmlBody: html ? "<h2>This is the newest message</h2>"
             + String(repeating: "<p>More of the latest HTML message.</p>", count: 60) : nil
     ))
-    return MailThread(subject: "Long conversation · newest message", messages: messages, mailbox: .inbox)
+    return MailThread(id: "long-conversation", subject: "Long conversation · newest message", messages: messages, mailbox: .inbox)
 }
 
 #Preview("Latest message · Long conversation") {

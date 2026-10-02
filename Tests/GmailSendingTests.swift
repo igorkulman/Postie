@@ -126,11 +126,11 @@ struct GmailSendingTests {
     @Test("Reply drafts address the other party and forwards start fresh threads")
     @MainActor
     func drafts() {
-        let mine = MailMessage(senderName: "Me", senderEmail: "me@example.com", recipient: "a@example.com", cc: "c@example.com",
+        let mine = MailMessage(id: "mine", senderName: "Me", senderEmail: "me@example.com", recipient: "a@example.com", cc: "c@example.com",
                                date: Date(), body: "Hi")
-        let theirs = MailMessage(senderName: "A", senderEmail: "a@example.com", recipient: "me@example.com", cc: "c@example.com",
+        let theirs = MailMessage(id: "theirs", senderName: "A", senderEmail: "a@example.com", recipient: "me@example.com", cc: "c@example.com",
                                  date: Date(), body: "Hello")
-        let thread = MailThread(subject: "Plans", messages: [mine, theirs], mailbox: .inbox)
+        let thread = MailThread(id: "plans", subject: "Plans", messages: [mine, theirs], mailbox: .inbox)
         let reply = ComposeDraft.reply(to: thread, accountEmail: "ME@example.com", allRecipients: true)
         #expect(reply.recipient == "a@example.com")
         #expect(reply.cc == "c@example.com")

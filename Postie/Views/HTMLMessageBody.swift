@@ -285,8 +285,9 @@ private let reservationPreviewHTML = """
 
 private func reservationPreview() -> ThreadDetailView {
     ThreadDetailView(thread: MailThread(
+        id: "reservation",
         subject: "Reservation confirmation",
-        messages: [MailMessage(senderName: "The Salon", senderEmail: "booking@example.com",
+        messages: [MailMessage(id: "reservation-message", senderName: "The Salon", senderEmail: "booking@example.com",
             recipient: "alex@example.com", date: Date(timeIntervalSince1970: 1_791_000_000),
             body: "Your reservation is confirmed. Haircut, Friday at 14:30, 24 Market Street.",
             htmlBody: reservationPreviewHTML)], mailbox: .inbox
