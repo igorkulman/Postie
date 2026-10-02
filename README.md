@@ -21,6 +21,8 @@ subscriptions, AI features, or workspace bloat.
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
   Results are not stored in the local cache
+- Reading attachments: shown in the message header and as a chip in the list;
+  double-click to open, or use the context menu to save, share, or copy
 - Local SQLite cache for previously loaded mail
 - Incremental Gmail synchronization while the app is running
 - Native light and dark mode
@@ -37,7 +39,7 @@ every feature of Gmail or become a generic IMAP client.
 Planned:
 
 - Search suggestions (people and subjects)
-- Attachments and CID images
+- Sending attachments and showing CID (embedded) images
 - Saving and syncing drafts (the Drafts folder is view-only for now)
 - Gmail labels
 - Rich-text composing (messages are plain text for now)

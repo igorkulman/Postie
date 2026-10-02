@@ -401,6 +401,9 @@ struct GmailInboxView: View {
                     toggleStar: { toggleStar(MergedConversation(key: key, conversation: conversation)) }
                 )
                     .id(key)
+                    .environment(\.attachmentLoader) { [hub] attachment in
+                        try await hub.attachmentFile(attachment, accountID: key.accountID)
+                    }
             }
         } else if hub.isLoadingConversation(selectedID) {
             ProgressView("Loading conversation…")
@@ -474,7 +477,7 @@ extension GmailConversation {
                             body: includingBodies
                                 ? ($0.bodyLoaded ? $0.body : $0.snippet + "\n\n" + String(localized: "This message body has not been downloaded. Connect to Gmail to read it."))
                                 : $0.snippet,
-                            htmlBody: includingBodies ? $0.htmlBody : nil)
+                            htmlBody: includingBodies ? $0.htmlBody : nil, attachments: $0.attachments)
             },
             mailbox: mailbox, isUnread: isUnread, isStarred: isStarred
         )

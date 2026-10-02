@@ -1,5 +1,18 @@
 import Foundation
 
+/// A file attached to a message. Embedded images that the HTML body shows inline are not attachments.
+nonisolated struct MailAttachment: Identifiable, Equatable, Hashable, Sendable {
+    let messageID: String
+    /// Position in the MIME tree. Gmail may reissue `attachmentID`, so this is what identifies the file.
+    let partID: String
+    let attachmentID: String
+    let filename: String
+    let mimeType: String
+    let size: Int
+
+    var id: String { messageID + "/" + partID }
+}
+
 // Gmail IDs and labels stay intact; the demo's exclusive Mailbox enum is only a UI projection.
 nonisolated struct GmailMessage: Identifiable, Equatable, Sendable {
     let id: String
@@ -12,6 +25,7 @@ nonisolated struct GmailMessage: Identifiable, Equatable, Sendable {
     let body: String
     var bodyLoaded: Bool = true
     var htmlBody: String? = nil
+    var attachments: [MailAttachment] = []
     var labelIDs: Set<String>
 }
 
@@ -75,7 +89,8 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
 
     struct Part: Decodable, Sendable {
         struct Header: Decodable, Sendable { let name: String; let value: String }
-        struct Body: Decodable, Sendable { let data: String?; let attachmentId: String? }
+        struct Body: Decodable, Sendable { let data: String?; let attachmentId: String?; let size: Int? }
+        let partId: String?
         let mimeType: String?
         let filename: String?
         let headers: [Header]?
@@ -93,6 +108,23 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
             if self.mimeType?.lowercased() == mimeType { return [self] }
             return (parts ?? []).flatMap { $0.textParts(ofType: mimeType) }
         }
+
+        /// Files the person would think of as attachments, in message order.
+        func attachments(messageID: String) -> [MailAttachment] {
+            if let attachment = attachment(messageID: messageID) { return [attachment] }
+            return (parts ?? []).flatMap { $0.attachments(messageID: messageID) }
+        }
+
+        private func attachment(messageID: String) -> MailAttachment? {
+            guard let name = filename, !name.isEmpty, let partId, let attachmentID = body?.attachmentId, !attachmentID.isEmpty
+            else { return nil }
+            // Gmail gives every attachment a Content-ID, so only a non-attachment image with one is embedded.
+            let embedded = !header("Content-Disposition").lowercased().hasPrefix("attachment")
+                && !header("Content-ID").isEmpty && (mimeType ?? "").lowercased().hasPrefix("image/")
+            guard !embedded else { return nil }
+            return MailAttachment(messageID: messageID, partID: partId, attachmentID: attachmentID, filename: name,
+                                  mimeType: mimeType ?? "application/octet-stream", size: body?.size ?? 0)
+        }
     }
 
     func conversation(includeBody: Bool, fallbackSnippet: String? = nil) throws -> GmailConversation {
@@ -109,6 +141,7 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
                 date: Date(timeIntervalSince1970: (Double(message.internalDate ?? "") ?? 0) / 1000),
                 snippet: GmailText.decodeEntities(message.snippet ?? (message.id == sorted.last?.id ? fallbackSnippet : nil) ?? ""),
                 body: content?.plainText ?? "", bodyLoaded: includeBody, htmlBody: content?.html,
+                attachments: message.payload?.attachments(messageID: message.id) ?? [],
                 labelIDs: Set(message.labelIds ?? [])
             )
         })

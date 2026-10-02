@@ -113,8 +113,12 @@ struct GmailAPITests {
         let formats = requests.compactMap {
             $0.url.flatMap { URLComponents(url: $0, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "format" }?.value }
         }
-        #expect(formats.contains("metadata"))
+        // The list asks for the full format only to see attachments, and without any body data.
+        let listRequest = try #require(requests.first { $0.url?.path.contains("/threads/a1") == true })
+        let listQuery = URLComponents(url: try #require(listRequest.url), resolvingAgainstBaseURL: false)?.queryItems ?? []
+        #expect(listQuery.contains { $0.name == "fields" })
         #expect(formats.last == "full")
+        #expect(requests.last?.url?.query?.contains("fields") == false)
     }
 
     @Test("Malformed responses and expired sessions are surfaced", arguments: [FixtureTransport.Mode.invalid, .denied])

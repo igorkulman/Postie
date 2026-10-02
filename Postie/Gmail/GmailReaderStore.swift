@@ -172,6 +172,13 @@ final class GmailReaderStore {
         return await mutate(id, onRemoved: onRemoved) { try await api.trash(threadID: id) }
     }
 
+    var canLoadAttachments: Bool { api is any GmailAttachmentLoading }
+
+    func attachmentData(_ attachment: MailAttachment) async throws -> Data {
+        guard let api = api as? any GmailAttachmentLoading else { throw GmailError.permissionRequired }
+        return try await api.attachmentData(attachment)
+    }
+
     var canSend: Bool { api is any GmailSending }
 
     /// Sends through Gmail. Sent mail and reply threads are picked up by a background refresh.

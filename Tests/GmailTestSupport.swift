@@ -61,20 +61,33 @@ actor FixtureTransport: GmailTransport {
         if url.lastPathComponent == "deleted" { return GmailHTTPResponse(data: Data(), statusCode: 404) }
         let data = GmailFixtures.thread(url.lastPathComponent)
         let format = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == "format" }?.value
-        if format == "metadata" {
+        let hasFieldMask = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.contains { $0.name == "fields" } == true
+        if format == "metadata" || (format == "full" && hasFieldMask) {
             var object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
             var messages = object["messages"] as! [[String: Any]]
             for index in messages.indices {
                 messages[index].removeValue(forKey: "snippet")
                 var payload = messages[index]["payload"] as! [String: Any]
                 payload.removeValue(forKey: "body")
-                payload.removeValue(forKey: "parts")
+                // The list's field mask keeps the MIME tree's shape but never its body data.
+                if format == "metadata" { payload.removeValue(forKey: "parts") }
+                else if let parts = payload["parts"] { payload["parts"] = Self.strippingBodyData(parts) }
                 messages[index]["payload"] = payload
             }
             object["messages"] = messages
             return GmailHTTPResponse(data: try JSONSerialization.data(withJSONObject: object), statusCode: 200)
         }
         return GmailHTTPResponse(data: data, statusCode: 200)
+    }
+}
+
+private extension FixtureTransport {
+    static func strippingBodyData(_ value: Any) -> Any {
+        if let array = value as? [Any] { return array.map(strippingBodyData) }
+        guard var object = value as? [String: Any] else { return value }
+        if var body = object["body"] as? [String: Any] { body.removeValue(forKey: "data"); object["body"] = body }
+        if let parts = object["parts"] { object["parts"] = strippingBodyData(parts) }
+        return object
     }
 }
 

@@ -60,6 +60,8 @@ struct MailThreadRow: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
+                    AttachmentChip(attachments: message.attachments)
+                        .padding(.top, 2)
                 }
             }
             .padding(.vertical, 6)
@@ -80,6 +82,12 @@ struct MailThreadRow: View {
         }
         parts.append(message.date.formatted(date: .abbreviated, time: .shortened))
         parts.append(thread.preview)
+        if let first = message.attachments.first {
+            parts.append(String(localized: "Attachment \(first.filename)"))
+            if message.attachments.count > 1 {
+                parts.append(String(localized: "and \(message.attachments.count - 1) more"))
+            }
+        }
         return parts.joined(separator: ". ")
     }
 }

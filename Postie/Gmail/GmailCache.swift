@@ -99,6 +99,13 @@ actor GmailCache {
                 FOREIGN KEY (accountID, threadID) REFERENCES threads(accountID, id) ON DELETE CASCADE
             );
             CREATE INDEX messages_thread ON messages(accountID, threadID, date);
+            CREATE TABLE attachments (
+                accountID TEXT NOT NULL, messageID TEXT NOT NULL, partID TEXT NOT NULL,
+                attachmentID TEXT NOT NULL, filename TEXT NOT NULL, mimeType TEXT NOT NULL,
+                size INTEGER NOT NULL, position INTEGER NOT NULL,
+                PRIMARY KEY (accountID, messageID, partID),
+                FOREIGN KEY (accountID, messageID) REFERENCES messages(accountID, id) ON DELETE CASCADE
+            );
             CREATE TABLE messageLabels (
                 accountID TEXT NOT NULL, messageID TEXT NOT NULL, labelID TEXT NOT NULL,
                 PRIMARY KEY (accountID, messageID, labelID),
@@ -332,10 +339,16 @@ actor GmailCache {
             let messageID: String = row["id"]
             let labels = try String.fetchAll(db, sql: "SELECT labelID FROM messageLabels WHERE accountID = ? AND messageID = ?",
                                              arguments: [accountID, messageID])
+            let attachments = try Row.fetchAll(db, sql: """
+                SELECT * FROM attachments WHERE accountID = ? AND messageID = ? ORDER BY position
+                """, arguments: [accountID, messageID]).map { row in
+                MailAttachment(messageID: messageID, partID: row["partID"], attachmentID: row["attachmentID"],
+                               filename: row["filename"], mimeType: row["mimeType"], size: row["size"])
+            }
             return GmailMessage(id: messageID, senderName: row["senderName"], senderEmail: row["senderEmail"],
                                 recipient: row["recipient"], cc: row["cc"], date: Date(timeIntervalSince1970: row["date"]),
                                 snippet: row["snippet"], body: (row["body"] as String?) ?? "", bodyLoaded: row["bodyLoaded"],
-                                htmlBody: row["htmlBody"], labelIDs: Set(labels))
+                                htmlBody: row["htmlBody"], attachments: attachments, labelIDs: Set(labels))
         }
         return GmailConversation(id: id, subject: subject, messages: messages)
     }
@@ -367,6 +380,14 @@ actor GmailCache {
                                  message.recipient, message.cc, message.date.timeIntervalSince1970, message.snippet,
                                  message.bodyLoaded ? message.body : nil, message.htmlBody, message.bodyLoaded,
                                  keepBody, keepBody, keepBody])
+            try db.execute(sql: "DELETE FROM attachments WHERE accountID = ? AND messageID = ?", arguments: [accountID, message.id])
+            for (position, attachment) in message.attachments.enumerated() {
+                try db.execute(sql: """
+                    INSERT INTO attachments(accountID, messageID, partID, attachmentID, filename, mimeType, size, position)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, arguments: [accountID, message.id, attachment.partID, attachment.attachmentID, attachment.filename,
+                                     attachment.mimeType, attachment.size, position])
+            }
             try db.execute(sql: "DELETE FROM messageLabels WHERE accountID = ? AND messageID = ?", arguments: [accountID, message.id])
             for label in message.labelIDs {
                 try db.execute(sql: "INSERT INTO messageLabels(accountID, messageID, labelID) VALUES (?, ?, ?)",

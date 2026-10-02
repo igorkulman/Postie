@@ -70,6 +70,9 @@
         }
       }
     },
+    "& %lld more" : {
+      "comment" : "After the first attachment's name in the message list"
+    },
     "A good subject goes a long way" : {},
     "Accounts" : {
       "comment" : "Settings tab and list name"
@@ -80,11 +83,17 @@
     "Add to the sample Sent mailbox. Does not send real email." : {},
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {},
     "All Mail" : {},
+    "and %lld more" : {
+      "comment" : "VoiceOver: the number of attachments besides the first one"
+    },
     "Archive" : {
       "comment" : "Mailbox name"
     },
     "Archive (⌃⌘A)" : {},
     "Archive Sample Thread Externally" : {},
+    "Attachment %@" : {
+      "comment" : "VoiceOver label of an attachment; the file name follows"
+    },
     "CC email addresses" : {},
     "Cancel" : {},
     "Cc" : {
@@ -100,7 +109,9 @@
     "Connected accounts" : {},
     "Connecting…" : {},
     "Continue Writing" : {},
+    "Copy" : {},
     "Could Not Load Conversation" : {},
+    "Could Not Open Attachment" : {},
     "Could Not Open Regression Mail" : {},
     "Default" : {
       "comment" : "Badge on the account that new messages are sent from"
@@ -195,6 +206,7 @@
     "No recipient" : {},
     "Nothing here yet" : {},
     "OK" : {},
+    "Open" : {},
     "Opening mailbox…" : {},
     "Opening regression mail…" : {},
     "Opening saved mail…" : {},
@@ -233,6 +245,9 @@
     },
     "Reply All (⇧⌘R)" : {},
     "Sample mail only. Gmail is not connected and no real email is sent." : {},
+    "Save" : {},
+    "Save All…" : {},
+    "Save As…" : {},
     "Save Draft" : {},
     "Search" : {},
     "Search for “%@”" : {},

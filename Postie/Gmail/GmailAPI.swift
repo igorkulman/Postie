@@ -11,6 +11,10 @@ nonisolated protocol GmailSearching: GmailReading {
     func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage
 }
 
+nonisolated protocol GmailAttachmentLoading: Sendable {
+    func attachmentData(_ attachment: MailAttachment) async throws -> Data
+}
+
 nonisolated protocol GmailMutating: Sendable {
     func archive(threadID: String) async throws
     func trash(threadID: String) async throws
@@ -46,7 +50,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailAttachmentLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
 
@@ -155,12 +159,10 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending {
 
     private func metadata(id: String, fallbackSnippet: String?) async throws -> GmailConversation? {
         do {
+            // Only the full format lists attachments, so ask for it without any body data.
             let resource: GmailThreadResource = try await get(path: try threadPath(id), query: [
-                URLQueryItem(name: "format", value: "metadata"),
-                URLQueryItem(name: "metadataHeaders", value: "From"),
-                URLQueryItem(name: "metadataHeaders", value: "To"),
-                URLQueryItem(name: "metadataHeaders", value: "Cc"),
-                URLQueryItem(name: "metadataHeaders", value: "Subject")
+                URLQueryItem(name: "format", value: "full"),
+                URLQueryItem(name: "fields", value: Self.listFields)
             ])
             guard resource.id == id else { throw GmailError.invalidResponse }
             return try resource.conversation(includeBody: false, fallbackSnippet: fallbackSnippet)
@@ -168,6 +170,34 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending {
             // A conversation can disappear between listing and fetching its headers.
             return nil
         }
+    }
+
+    /// Headers and the MIME tree's shape, without the (possibly huge) body data.
+    private static let listFields: String = {
+        let part = "partId,mimeType,filename,headers,body(attachmentId,size)"
+        var tree = part
+        for _ in 0..<4 { tree = "\(part),parts(\(tree))" }
+        return "id,messages(id,labelIds,snippet,internalDate,payload(\(tree)))"
+    }()
+
+    func attachmentData(_ attachment: MailAttachment) async throws -> Data {
+        do { return try await download(messageID: attachment.messageID, attachmentID: attachment.attachmentID) }
+        catch GmailError.http(let code) where code == 404 || code == 400 {
+            // Gmail may reissue attachment IDs, so look the file up again by its place in the message.
+            let message: GmailThreadResource.Message = try await get(path: try messagePath(attachment.messageID),
+                                                                     query: [URLQueryItem(name: "format", value: "full")])
+            guard let fresh = message.payload?.attachments(messageID: attachment.messageID)
+                .first(where: { $0.partID == attachment.partID }) else { throw GmailError.http(code) }
+            return try await download(messageID: fresh.messageID, attachmentID: fresh.attachmentID)
+        }
+    }
+
+    private func download(messageID: String, attachmentID: String) async throws -> Data {
+        struct Body: Decodable, Sendable { let data: String }
+        let path = try messagePath(messageID) + "/attachments/" + Self.pathComponent(attachmentID)
+        let body: Body = try await get(path: path, query: [])
+        guard let data = GmailText.base64URL(body.data) else { throw GmailError.invalidResponse }
+        return data
     }
 
     func archive(threadID: String) async throws {
@@ -225,6 +255,17 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending {
             throw GmailError.invalidResponse
         }
         return "threads/" + id
+    }
+
+    private func messagePath(_ id: String) throws -> String {
+        "messages/" + (try Self.pathComponent(id))
+    }
+
+    private static func pathComponent(_ id: String) throws -> String {
+        guard !id.isEmpty, id.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "-_.".contains($0)) }) else {
+            throw GmailError.invalidResponse
+        }
+        return id
     }
 
     private func get<Value: Decodable & Sendable>(path: String, query: [URLQueryItem]) async throws -> Value {

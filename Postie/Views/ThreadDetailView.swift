@@ -156,6 +156,11 @@ private struct MessageView: View {
             .help(message.senderEmail)
 
             if isExpanded {
+                if !message.attachments.isEmpty {
+                    // Line up with the sender's name, past the avatar.
+                    AttachmentList(attachments: message.attachments)
+                        .padding(.leading, 42)
+                }
                 if let html = message.htmlBody {
                     HTMLMessageBody(html: html, plainText: message.body)
                         .id(message.id)

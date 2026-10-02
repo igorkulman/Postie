@@ -78,7 +78,7 @@ struct GmailHistoryAPITests {
         await #expect(throws: GmailError.http(404)) { try await api.currentHistoryID() }
     }
 
-    @Test("Changed threads are fetched as metadata, never as body downloads")
+    @Test("Changed threads are fetched without body data, never as body downloads")
     func metadata() async throws {
         let transport = HistoryFixtureTransport(data: GmailFixtures.thread("a1"))
         let api = GmailAPI(transport: transport) { "test-token" }
@@ -86,8 +86,10 @@ struct GmailHistoryAPITests {
         #expect(conversation.messages.allSatisfy { !$0.bodyLoaded && $0.body.isEmpty })
         let request = try #require(await transport.requests.first)
         let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        #expect(query.contains(URLQueryItem(name: "format", value: "metadata")))
-        #expect(!query.contains(URLQueryItem(name: "format", value: "full")))
+        // Attachments are only visible in the full format, so a field mask keeps the bodies out.
+        let fields = try #require(query.first { $0.name == "fields" }?.value)
+        #expect(query.contains(URLQueryItem(name: "format", value: "full")))
+        #expect(fields.contains("attachmentId") && !fields.contains("data"))
     }
 }
 

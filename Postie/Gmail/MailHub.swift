@@ -160,6 +160,7 @@ final class MailHub {
             accounts.error = String(localized: "Unable to remove locally cached mail. The account was not removed.")
             return
         }
+        AttachmentFiles.removeAll(accountID: id)
         sessions.first { $0.id == id }?.stop()
         sessions.removeAll { $0.id == id }
         accounts.remove(id)
@@ -313,6 +314,15 @@ final class MailHub {
     var defaultSendingAccount: SendingAccount? {
         let candidates = sendingAccounts
         return candidates.first { $0.id == accounts.defaultAccount?.id } ?? candidates.first
+    }
+
+    /// A local copy of the attachment, downloaded the first time it is needed.
+    func attachmentFile(_ attachment: MailAttachment, accountID: String) async throws -> URL {
+        guard let reader = session(for: accountID)?.reader, reader.canLoadAttachments else { throw GmailError.permissionRequired }
+        let url = AttachmentFiles.url(for: attachment, accountID: accountID)
+        if AttachmentFiles.exists(at: url) { return url }
+        try await AttachmentFiles.store(try await reader.attachmentData(attachment), at: url)
+        return url
     }
 
     func email(for accountID: String) -> String? { session(for: accountID)?.email }
