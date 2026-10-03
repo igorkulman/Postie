@@ -14,9 +14,13 @@ subscriptions, AI features, or workspace bloat.
 - Multiple Gmail accounts, merged into one set of folders. Replies, forwards and
   archive/trash actions always go through the account the conversation belongs to
   and the default account for new messages can be chosen in Settings
-- Inbox, Sent, Archive, Junk, and Trash, plus a read-only view of Drafts
+- Inbox, Drafts, Sent, Archive, Junk, and Trash
 - Conversation view with HTML email rendering
-- Compose, reply, reply all, and forward (plain text)
+- Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
+  underline, lists, links), with attachments and your Gmail signature
+- Drafts are saved in Gmail, so they show up in every Gmail client: closing a
+  message you have written asks whether to keep it, and drafts can be edited
+  later from the Drafts folder
 - Archive, trash, star, and read/unread actions
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
@@ -39,10 +43,8 @@ every feature of Gmail or become a generic IMAP client.
 Planned:
 
 - Search suggestions (people and subjects)
-- Sending attachments and showing CID (embedded) images
-- Saving and syncing drafts (the Drafts folder is view-only for now)
+- Showing CID (embedded) images
 - Gmail labels
-- Rich-text composing (messages are plain text for now)
 - An offline send queue (mail is sent immediately, so the Outbox is always empty)
 - Full offline mailbox downloads
 
@@ -57,8 +59,8 @@ Postie talks to Gmail directly from your Mac. There is no Postie server.
 
 It asks for three Gmail permissions:
 
-- `gmail.modify` to read mail and to archive, trash, star, and mark mail as read
-  or unread
+- `gmail.modify` to read mail, to archive, trash, star, and mark mail as read
+  or unread, and to save and delete your drafts
 - `gmail.send` to send mail
 - `gmail.settings.basic` to read your signature, so new messages can include it.
   Postie never changes your Gmail settings
@@ -85,11 +87,6 @@ More details are in the [privacy policy](https://postie.kulman.sk/privacy).
 
 Open `Postie.xcodeproj`, choose the **Postie** scheme and **My Mac**, and run.
 
-## Screenshots with sample data
-
-Launch Postie with the `-PostieDemoData` argument (Xcode: Scheme > Run >
-Arguments) to start on built-in sample mail instead of a real account.
-
 ## Selection regression without a mailbox
 
 In a Debug build, launch with `-PostieSelectionRegression` to run the real Gmail list/detail UI
@@ -109,7 +106,7 @@ The Regression menu also simulates an external archive of **Thread to open**
 and a rejected next archive/trash. External disappearance clears selection
 without opening unrelated mail; rejection preserves the selected thread.
 
-The policy in both Gmail and sample mode is identity-based: an explicit removal
+The policy is identity-based: an explicit removal
 chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
