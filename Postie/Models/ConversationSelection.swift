@@ -1,6 +1,6 @@
 import Foundation
 
-/// Selection belongs to a conversation, never to a row position. Shared by Gmail and sample mail.
+/// Selection belongs to a conversation, never to a row position.
 struct ConversationSelection<ID: Hashable> {
     private(set) var selectedID: ID?
     private var selectsInitialConversation = true

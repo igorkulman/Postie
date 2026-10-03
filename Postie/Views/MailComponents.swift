@@ -92,19 +92,7 @@ struct MailThreadRow: View {
     }
 }
 
-struct DemoBadge: View {
-    var body: some View {
-        Label("Demo mode", systemImage: "sparkle")
-            .font(.caption.weight(.medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(.quaternary, in: Capsule())
-            .help("Sample mail only. Gmail is not connected and no real email is sent.")
-    }
-}
-
-/// The folder list shared by the demo and the Gmail reader.
+/// The folder list of the Gmail reader.
 struct MailboxSidebar: View {
     @Binding var selection: Mailbox?
     /// Unread or draft counts to show next to a folder.

@@ -59,7 +59,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailSignatureLoading, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailAttachmentLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -282,23 +282,90 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     func send(_ message: OutgoingMessage) async throws {
+        try await post(path: "messages/send", json: try await rawMessage(message))
+    }
+
+    /// The JSON Gmail takes for a message: the encoded text, and the thread it belongs to.
+    private func rawMessage(_ message: OutgoingMessage) async throws -> [String: Any] {
         var inReplyTo: String?
         var references: String?
         if let threadID = message.threadID {
-            // Threading needs the Message-ID chain of the message being answered.
+            // Threading needs the Message-ID chain of the message being answered. A draft in the thread is not that message.
             let resource: GmailThreadResource = try await get(path: try threadPath(threadID), query: [
                 URLQueryItem(name: "format", value: "metadata"),
                 URLQueryItem(name: "metadataHeaders", value: "Message-ID"),
                 URLQueryItem(name: "metadataHeaders", value: "References")
             ])
-            let last = (resource.messages ?? []).max { (Double($0.internalDate ?? "") ?? 0) < (Double($1.internalDate ?? "") ?? 0) }
+            let last = (resource.messages ?? []).filter { !($0.labelIds ?? []).contains("DRAFT") }
+                .max { (Double($0.internalDate ?? "") ?? 0) < (Double($1.internalDate ?? "") ?? 0) }
             inReplyTo = last?.payload?.header("Message-ID").nilIfEmpty
             references = last?.payload?.header("References").nilIfEmpty
         }
         let raw = GmailMessageBuilder.base64URL(GmailMessageBuilder.rfc822(message, inReplyTo: inReplyTo, references: references))
-        var body = ["raw": raw]
+        var body: [String: Any] = ["raw": raw]
         if let threadID = message.threadID { body["threadId"] = threadID }
-        try await post(path: "messages/send", json: body)
+        return body
+    }
+
+    func saveDraft(_ message: OutgoingMessage, draftID: String?) async throws -> GmailDraftRef {
+        let body = ["message": try await rawMessage(message)]
+        let data: Data
+        if let draftID {
+            data = try await request("PUT", path: "drafts/" + (try Self.pathComponent(draftID)), json: body)
+        } else {
+            data = try await request("POST", path: "drafts", json: body)
+        }
+        guard let resource = try? JSONDecoder().decode(GmailDraftResource.self, from: data), let ref = resource.ref
+        else { throw GmailError.invalidResponse }
+        return ref
+    }
+
+    func sendDraft(_ message: OutgoingMessage, draftID: String) async throws {
+        let saved = try await saveDraft(message, draftID: draftID)
+        _ = try await request("POST", path: "drafts/send", json: ["id": saved.id])
+    }
+
+    func draftCount() async throws -> Int {
+        struct Label: Decodable, Sendable { let messagesTotal: Int? }
+        let label: Label = try await get(path: "labels/DRAFT", query: [URLQueryItem(name: "fields", value: "messagesTotal")])
+        guard let total = label.messagesTotal, total >= 0 else { throw GmailError.invalidResponse }
+        return total
+    }
+
+    func deleteDraft(id: String) async throws {
+        do { _ = try await request("DELETE", path: "drafts/" + (try Self.pathComponent(id)), json: nil) }
+        // Already gone, perhaps deleted in another client.
+        catch GmailError.http(404) {}
+    }
+
+    func draftID(forMessage messageID: String) async throws -> String? {
+        var pageToken: String?
+        var seen: Set<String> = []
+        repeat {
+            var query = [URLQueryItem(name: "maxResults", value: "100"),
+                         URLQueryItem(name: "fields", value: "nextPageToken,drafts(id,message(id))")]
+            if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+            let page: GmailDraftList = try await get(path: "drafts", query: query)
+            if let found = page.drafts?.first(where: { $0.message?.id == messageID }) { return found.id }
+            pageToken = page.nextPageToken?.isEmpty == false ? page.nextPageToken : nil
+            if let pageToken, !seen.insert(pageToken).inserted { throw GmailError.invalidResponse }
+        } while pageToken != nil
+        return nil
+    }
+
+    func draftContent(id: String) async throws -> GmailDraftContent {
+        let resource: GmailDraftResource = try await get(path: "drafts/" + (try Self.pathComponent(id)), query: [
+            URLQueryItem(name: "format", value: "full")
+        ])
+        guard resource.id == id, let ref = resource.ref, let message = resource.message else { throw GmailError.invalidResponse }
+        let payload = message.payload
+        let content = try GmailText.content(payload)
+        func header(_ name: String) -> String { GmailText.decodeHeader(payload?.header(name) ?? "") }
+        return GmailDraftContent(
+            ref: ref, subject: header("Subject"), to: header("To"), cc: header("Cc"), bcc: header("Bcc"),
+            text: content.plainText, html: content.html, attachments: payload?.attachments(messageID: message.id) ?? [],
+            isReply: !(payload?.header("In-Reply-To") ?? "").isEmpty
+        )
     }
 
     func signature() async throws -> String {
@@ -317,17 +384,25 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     private func post(path: String, json body: [String: Any]) async throws {
+        _ = try await request("POST", path: path, json: body)
+    }
+
+    /// A write to Gmail. Returns the response body, which is empty for a delete.
+    private func request(_ method: String, path: String, json body: [String: Any]?) async throws -> Data {
         try Task.checkCancellation()
         let token = try await accessToken()
         try Task.checkCancellation()
         guard let url = URL(string: "https://gmail.googleapis.com/gmail/v1/users/me/" + path) else { throw GmailError.invalidResponse }
         var request = URLRequest(url: url)
-        request.httpMethod = "POST"
+        request.httpMethod = method
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        if let body {
+            request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        }
         let response = try await send(request)
         guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
+        return response.data
     }
 
     private func threadPath(_ id: String) throws -> String {

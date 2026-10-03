@@ -94,9 +94,6 @@
     "Add Link" : {
 
     },
-    "Add to the sample Sent mailbox. Does not send real email." : {
-
-    },
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
 
     },
@@ -110,9 +107,6 @@
       "comment" : "Mailbox name"
     },
     "Archive (⌃⌘A)" : {
-
-    },
-    "Attach files" : {
 
     },
     "Attach Files" : {
@@ -169,9 +163,6 @@
     "Contact suggestions" : {
 
     },
-    "Continue Writing" : {
-
-    },
     "Copy" : {
 
     },
@@ -181,32 +172,29 @@
     "Could Not Open Attachment" : {
 
     },
+    "Could not open the draft" : {
+
+    },
     "Default" : {
       "comment" : "Badge on the account that new messages are sent from"
     },
     "Delete" : {
 
     },
-    "Delete Draft" : {
+    "Do you want to keep this draft message?" : {
 
     },
-    "Delete this draft?" : {
-
-    },
-    "Demo mode" : {
-
-    },
-    "Demo only. No email will be sent. Drafts disappear when you quit." : {
-
-    },
-    "Discard Changes" : {
-
-    },
-    "Discard these changes?" : {
+    "Don't Save" : {
 
     },
     "Drafts" : {
       "comment" : "Mailbox name"
+    },
+    "Edit Draft" : {
+
+    },
+    "Edit Draft (⌘E)" : {
+
     },
     "Expanded" : {
       "comment" : "VoiceOver value of a message that is showing its full body"
@@ -259,9 +247,6 @@
     "I" : {
 
     },
-    "Images load automatically and may reveal your IP address and when you opened the message. Email scripts, forms, and external stylesheets remain blocked." : {
-
-    },
     "Inbox" : {
       "comment" : "Mailbox name"
     },
@@ -270,9 +255,6 @@
     },
     "Junk" : {
       "comment" : "Mailbox name"
-    },
-    "Keep Writing" : {
-
     },
     "Last updated: %@" : {
 
@@ -358,12 +340,6 @@
     "No matching mail" : {
 
     },
-    "No recipient" : {
-
-    },
-    "Nothing here yet" : {
-
-    },
     "Numbered List" : {
 
     },
@@ -412,9 +388,6 @@
     "Refresh to check for new mail." : {
 
     },
-    "Remote images enabled" : {
-
-    },
     "Remove %@" : {
 
     },
@@ -445,9 +418,6 @@
     "Reply-To: %@" : {
 
     },
-    "Sample mail only. Gmail is not connected and no real email is sent." : {
-
-    },
     "Save" : {
 
     },
@@ -455,9 +425,6 @@
 
     },
     "Save As…" : {
-
-    },
-    "Save Draft" : {
 
     },
     "Search" : {
@@ -479,9 +446,6 @@
 
     },
     "Send" : {
-
-    },
-    "Send demo message" : {
 
     },
     "Send with Gmail (⌘↩)" : {
@@ -523,19 +487,10 @@
     "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message." : {
 
     },
-    "This draft is saved for the current demo session only." : {
-
-    },
     "This message body has not been downloaded. Connect to Gmail to read it." : {
 
     },
     "This message has no readable text body." : {
-
-    },
-    "This message has not been sent." : {
-
-    },
-    "This removes the saved demo draft. It cannot be undone." : {
 
     },
     "To" : {
@@ -549,9 +504,6 @@
     },
     "Trash" : {
       "comment" : "Mailbox name"
-    },
-    "Try a different name, subject, or phrase." : {
-
     },
     "Try Again" : {
 
@@ -601,23 +553,17 @@
     "Unread" : {
       "comment" : "Swipe action label (mark as unread) and VoiceOver state of an unread conversation"
     },
-    "Untitled draft" : {
-
-    },
-    "Use Save Draft to keep this message for the current demo session." : {
-
-    },
     "Web address" : {
 
     },
     "Welcome to Postie" : {
 
     },
+    "You can choose to save this message as a draft, or delete this message immediately. You can't undo this action." : {
+
+    },
     "You're all set" : {
       "comment" : "Onboarding: shown after the first account is connected"
-    },
-    "Your demo messages will appear here." : {
-
     },
     "Your Google session has expired. Sign out and sign in again." : {
 

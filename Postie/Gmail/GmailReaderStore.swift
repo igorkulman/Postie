@@ -8,6 +8,8 @@ import os
 final class GmailReaderStore {
     private(set) var mailbox: Mailbox
     private(set) var unreadInboxCount: Int?
+    /// How many drafts the account has. Nil until Gmail has been asked.
+    private(set) var draftCount: Int?
     private(set) var conversations: [GmailConversation] = [] {
         didSet { conversationsRevision &+= 1 }
     }
@@ -32,6 +34,7 @@ final class GmailReaderStore {
     @ObservationIgnored private let attachmentLoader: (any GmailAttachmentLoading)?
     @ObservationIgnored private let sender: (any GmailSending)?
     @ObservationIgnored private let signatureLoader: (any GmailSignatureLoading)?
+    @ObservationIgnored private let drafter: (any GmailDrafting)?
     @ObservationIgnored private let cache: GmailCacheSession?
     @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredGeneration: Generation?
@@ -50,6 +53,7 @@ final class GmailReaderStore {
         attachmentLoader = api as? any GmailAttachmentLoading
         sender = api as? any GmailSending
         signatureLoader = api as? any GmailSignatureLoading
+        drafter = api as? any GmailDrafting
         self.mailbox = mailbox
         self.cache = cache
         if let cache, let syncAPI = api as? any GmailSyncReading {
@@ -75,6 +79,7 @@ final class GmailReaderStore {
         resetMailbox()
         mailbox = .inbox
         unreadInboxCount = nil
+        draftCount = nil
         unreadCountGeneration.advance()
         accountGeneration.advance()
     }
@@ -136,10 +141,26 @@ final class GmailReaderStore {
         guard isCurrent(startedFolder) else { return }
         let startedAccount = accountGeneration
         async let unreadCount: Void = refreshUnreadCount(for: startedAccount)
+        async let drafts: Void = refreshDraftCount(for: startedAccount)
         if let synchronizer { await synchronize(using: synchronizer) }
         else { await loadPage(refreshing: true) }
         await unreadCount
+        await drafts
     }
+
+    private func refreshDraftCount(for startedAccount: Generation) async {
+        guard let drafter, accountGeneration == startedAccount, !Task.isCancelled else { return }
+        do {
+            let count = try await drafter.draftCount()
+            guard accountGeneration == startedAccount, !Task.isCancelled else { return }
+            draftCount = count
+        } catch {
+            // The last known count stays.
+            if !(error is CancellationError) { Log.api.error("Could not refresh the draft count: \(error.localizedDescription, privacy: .public)") }
+        }
+    }
+
+    func refreshDraftCount() async { await refreshDraftCount(for: accountGeneration) }
 
     private func synchronize(using synchronizer: GmailSyncCoordinator) async {
         guard !isLoadingMailbox else { return }
@@ -196,6 +217,16 @@ final class GmailReaderStore {
     @discardableResult
     func trash(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
         guard fromAnyFolder ? canModifyLabels : canTrash, let mutator else { return false }
+        // In Drafts, "delete" means the drafts. Trashing the thread would also take a conversation they answer.
+        if mailbox == .drafts, !fromAnyFolder, let drafter {
+            let draftMessages = (conversations.first { $0.id == id } ?? selectedConversation.flatMap { $0.id == id ? $0 : nil })?
+                .messages.filter { $0.labelIDs.contains("DRAFT") }.map(\.id) ?? []
+            return await mutate(id, onRemoved: onRemoved) {
+                for messageID in draftMessages {
+                    if let draftID = try await drafter.draftID(forMessage: messageID) { try await drafter.deleteDraft(id: draftID) }
+                }
+            }
+        }
         return await mutate(id, onRemoved: onRemoved) { try await mutator.trash(threadID: id) }
     }
 
@@ -236,6 +267,35 @@ final class GmailReaderStore {
         guard let sender else { throw GmailError.permissionRequired }
         try await sender.send(message)
         Task { await refresh() }
+    }
+
+    var canDraft: Bool { drafter != nil }
+
+    func saveDraft(_ message: OutgoingMessage, draftID: String?) async throws -> GmailDraftRef {
+        guard let drafter else { throw GmailError.permissionRequired }
+        let saved = try await drafter.saveDraft(message, draftID: draftID)
+        // The Drafts folder and its badge pick the new version up.
+        Task { await refresh() }
+        return saved
+    }
+
+    func sendDraft(_ message: OutgoingMessage, draftID: String) async throws {
+        guard let drafter else { throw GmailError.permissionRequired }
+        try await drafter.sendDraft(message, draftID: draftID)
+        Task { await refresh() }
+    }
+
+    func deleteDraft(id: String) async throws {
+        guard let drafter else { throw GmailError.permissionRequired }
+        try await drafter.deleteDraft(id: id)
+        Task { await refresh() }
+    }
+
+    /// The draft behind a message of the Drafts folder, ready to be edited.
+    func draftContent(forMessage messageID: String) async throws -> GmailDraftContent {
+        guard let drafter else { throw GmailError.permissionRequired }
+        guard let id = try await drafter.draftID(forMessage: messageID) else { throw GmailError.http(404) }
+        return try await drafter.draftContent(id: id)
     }
 
     var canModifyLabels: Bool { mutator != nil }

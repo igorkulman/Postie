@@ -3,7 +3,7 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Downloads an attachment, if needed, and returns the local file. It is a value, not a closure, so the
-/// environment can tell when it changed. Absent when mail isn't connected (demo mode).
+/// environment can tell when it changed.
 nonisolated struct AttachmentLoader: Equatable, Sendable {
     let hub: MailHub
     let accountID: String

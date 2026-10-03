@@ -65,15 +65,20 @@ final class AccountSession: Identifiable {
         self.reader = reader
     }
 
-    /// Refreshes now and then once a minute, for as long as the session lives.
-    func startSyncing(interval: Duration = .seconds(60)) {
+    /// How long to wait between refreshes: two minutes while Postie is the app in front, five otherwise.
+    /// Coming back to the window refreshes at once, so the wait only matters while it is not being looked at.
+    static func defaultInterval() -> Duration { NSApplication.shared.isActive ? .seconds(120) : .seconds(300) }
+
+    /// Refreshes now and then, for as long as the session lives.
+    func startSyncing(interval: @escaping @MainActor () -> Duration = AccountSession.defaultInterval) {
         guard syncTask == nil else { return }
         let reader = reader
         syncTask = Task {
             await reader.refresh()
             while !Task.isCancelled {
                 // After a failure (often Gmail rate limiting) give it room instead of asking again at once.
-                do { try await Task.sleep(for: reader.mailboxError == nil ? interval : interval * 5) } catch { return }
+                let wait = interval()
+                do { try await Task.sleep(for: reader.mailboxError == nil ? wait : wait * 5) } catch { return }
                 await reader.refresh()
             }
         }
@@ -105,6 +110,8 @@ final class MailHub {
     @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
+    /// Drafts being edited, so opening one again brings its window forward.
+    @ObservationIgnored private var openDrafts: [DraftRef: OpenDraftWindow] = [:]
     /// Accounts that needed signing in again when `reconcile` last ran, to notice the ones that have been reconnected.
     @ObservationIgnored private var disconnectedIDs: Set<String> = []
 
@@ -346,6 +353,11 @@ final class MailHub {
         return counts.isEmpty ? nil : counts.reduce(0, +)
     }
 
+    /// Drafts across all accounts, for the badge next to the Drafts folder.
+    var draftCount: Int {
+        sessions.compactMap(\.reader.draftCount).reduce(0, +)
+    }
+
     var isLoadingMailbox: Bool { isSearchActive ? isSearching : sessions.contains { $0.reader.isLoadingMailbox } }
     var isRestoringCache: Bool { sessions.contains { $0.reader.isRestoringCache } }
     var showingCachedMail: Bool { !isSearchActive && sessions.contains { $0.reader.showingCachedMail } }
@@ -515,11 +527,20 @@ final class MailHub {
 
     /// Sends from the draft's account. A reply always goes out from the account that received the mail.
     func send(_ draft: ComposeDraft) async throws {
+        let (session, message) = try await outgoing(draft)
+        if let draftID = draft.gmailDraftID {
+            try await session.reader.sendDraft(message, draftID: draftID)
+        } else {
+            try await session.reader.send(message)
+        }
+    }
+
+    private func outgoing(_ draft: ComposeDraft) async throws -> (AccountSession, OutgoingMessage) {
         guard let id = draft.accountID ?? defaultSendingAccount?.id, let session = session(for: id) else {
             throw GmailError.signInRequired
         }
         let attachments = try await OutgoingAttachments.load(draft.attachments)
-        try await session.reader.send(OutgoingMessage(
+        return (session, OutgoingMessage(
             from: session.email,
             to: draft.recipient.trimmingCharacters(in: .whitespacesAndNewlines),
             cc: draft.cc.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -529,6 +550,87 @@ final class MailHub {
         ))
     }
 
+    // MARK: Drafts
+
+    /// What the composer uses to keep its message in Gmail.
+    var draftStorage: DraftStorage {
+        DraftStorage(
+            save: { [self] in try await saveDraft($0, replacing: $1) },
+            delete: { [self] in try await deleteDraft($0) },
+            claim: { [self] in openDrafts[$0] = OpenDraftWindow(window: $1) },
+            release: { [self] in openDrafts[$0] = nil }
+        )
+    }
+
+    private struct OpenDraftWindow {
+        weak var window: NSWindow?
+    }
+
+    /// Saves the message as a draft in its account, replacing the version saved before.
+    func saveDraft(_ draft: ComposeDraft, replacing existing: DraftRef?) async throws -> DraftRef {
+        // Half-typed addresses stay out of the draft: Gmail would reject the whole thing.
+        var draft = draft
+        draft.recipient = EmailAddresses.wellFormed(draft.recipient)
+        draft.cc = EmailAddresses.wellFormed(draft.cc)
+        draft.bcc = EmailAddresses.wellFormed(draft.bcc)
+        let (session, message) = try await outgoing(draft)
+        var reusable = existing
+        if let existing, existing.accountID != session.id {
+            // Another account was chosen: the draft moves there.
+            try await deleteDraft(existing)
+            reusable = nil
+        }
+        do {
+            return DraftRef(accountID: session.id, draftID: try await session.reader.saveDraft(message, draftID: reusable?.draftID).id)
+        } catch GmailError.http(404) where reusable != nil {
+            // Deleted elsewhere in the meantime, so keep the work as a new draft.
+            return DraftRef(accountID: session.id, draftID: try await session.reader.saveDraft(message, draftID: nil).id)
+        }
+    }
+
+    func deleteDraft(_ ref: DraftRef) async throws {
+        guard let reader = session(for: ref.accountID)?.reader else { return }
+        try await reader.deleteDraft(id: ref.draftID)
+    }
+
+    /// Whether the open conversation has a draft that can be edited.
+    func canEditDraft(_ key: ConversationKey?) -> Bool {
+        guard let key, mailbox == .drafts, !isSearchActive, let reader = session(for: key.accountID)?.reader, reader.canDraft else { return false }
+        return draftMessage(in: key) != nil
+    }
+
+    private func draftMessage(in key: ConversationKey) -> GmailMessage? {
+        conversation(for: key)?.messages.last { $0.labelIDs.contains("DRAFT") }
+    }
+
+    /// The draft of a conversation as a message ready to edit, or nil when its window is already open (and now in front).
+    func openDraft(_ key: ConversationKey) async throws -> ComposeDraft? {
+        guard let message = draftMessage(in: key), let session = session(for: key.accountID) else { throw GmailError.http(404) }
+        let content = try await session.reader.draftContent(forMessage: message.id)
+        let ref = DraftRef(accountID: key.accountID, draftID: content.ref.id)
+        if let open = openDrafts[ref] {
+            if let window = open.window {
+                window.makeKeyAndOrderFront(nil)
+                return nil
+            }
+            openDrafts[ref] = nil
+        }
+        var attachments: [URL] = []
+        for attachment in content.attachments {
+            attachments.append(try await attachmentFile(attachment, accountID: key.accountID))
+        }
+        let text = content.text
+        let html = content.html.map(HTMLText.stripActiveContent)
+            ?? "<div>" + HTMLText.escape(text).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "<br>") + "</div>"
+        var draft = ComposeDraft(
+            recipient: content.to, cc: content.cc, bcc: content.bcc, subject: content.subject, body: text, html: html,
+            attachments: attachments, gmailThreadID: content.isReply ? content.ref.threadID : nil, gmailDraftID: content.ref.id,
+            accountID: key.accountID,
+            kind: content.isReply ? .reply : content.subject.lowercased().hasPrefix("fwd:") ? .forward : .newMessage
+        )
+        draft.updatedAt = message.date
+        return draft
+    }
     /// The editor's markup as a complete document, so the encoding is stated for the reader.
     private static func htmlDocument(_ fragment: String) -> String {
         "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>\(fragment)</body></html>"

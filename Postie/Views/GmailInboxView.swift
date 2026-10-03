@@ -37,7 +37,7 @@ struct GmailInboxView: View {
     var body: some View {
         let actions = model.mailActions
         NavigationSplitView {
-            MailboxSidebar(selection: mailboxSelection, badges: [.inbox: hub.unreadInboxCount ?? 0])
+            MailboxSidebar(selection: mailboxSelection, badges: [.inbox: hub.unreadInboxCount ?? 0, .drafts: hub.draftCount])
                 .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
         } content: {
             ConversationListView(model: model, listIsFocused: $listIsFocused)
@@ -73,6 +73,11 @@ struct GmailInboxView: View {
         }
         .onChange(of: model.conversationKeys, initial: true) {
             model.reconcileSelection()
+        }
+        .alert("Could not open the draft", isPresented: Binding(get: { model.draftError != nil }, set: { if !$0 { model.draftError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(model.draftError ?? "")
         }
         .onChange(of: model.listFocusRequest) {
             if !searchIsFocused, model.composer == nil { listIsFocused = true }

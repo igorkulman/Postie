@@ -13,7 +13,7 @@ nonisolated struct MailAttachment: Identifiable, Equatable, Hashable, Sendable {
     var id: String { messageID + "/" + partID }
 }
 
-// Gmail IDs and labels stay intact; the demo's exclusive Mailbox enum is only a UI projection.
+// Gmail IDs and labels stay intact; the exclusive Mailbox enum is only a UI projection.
 nonisolated struct GmailMessage: Identifiable, Equatable, Sendable {
     let id: String
     let senderName: String
@@ -87,6 +87,26 @@ nonisolated struct GmailSendAsList: Decodable, Sendable {
     }
 }
 
+nonisolated struct GmailDraftList: Decodable, Sendable {
+    struct Entry: Decodable, Sendable {
+        struct Message: Decodable, Sendable { let id: String }
+        let id: String
+        let message: Message?
+    }
+    let drafts: [Entry]?
+    let nextPageToken: String?
+}
+
+nonisolated struct GmailDraftResource: Decodable, Sendable {
+    let id: String
+    let message: GmailThreadResource.Message?
+
+    var ref: GmailDraftRef? {
+        guard let message, let threadID = message.threadId else { return nil }
+        return GmailDraftRef(id: id, messageID: message.id, threadID: threadID)
+    }
+}
+
 nonisolated struct GmailThreadList: Decodable, Sendable {
     struct Reference: Decodable, Sendable { let id: String; let snippet: String? }
     let threads: [Reference]?
@@ -99,6 +119,7 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
 
     struct Message: Decodable, Sendable {
         let id: String
+        let threadId: String?
         let labelIds: [String]?
         let snippet: String?
         let internalDate: String?

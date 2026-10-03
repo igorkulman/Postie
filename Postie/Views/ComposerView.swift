@@ -5,13 +5,12 @@ struct ComposerView: View {
     @State private var draft: ComposeDraft
     /// What the draft looked like when the composer opened, so an untouched reply is not "changed".
     @State private var original: ComposeDraft
-    /// Nil for real accounts: Gmail drafts are not synced yet, so only the demo can keep drafts.
-    private let save: ((ComposeDraft) -> Void)?
+    /// Keeps the message as a Gmail draft while it is written.
+    @State private var session: DraftSession
+    @State private var closeGuard = CloseGuard()
+    @State private var asksToKeep = false
     private let send: (ComposeDraft) async throws -> Void
-    /// Connected Gmail accounts. Empty in the demo, which sends from the sample address.
     private let accounts: [SendingAccount]
-    private let fromAddress: String
-    private let isDemo: Bool
     private let suggestContacts: ContactLookup
     /// The signature for an account's messages as HTML, or nil. Nil account means the default one.
     private let signature: (String?) async -> String?
@@ -22,35 +21,33 @@ struct ComposerView: View {
     @State private var choosesFiles = false
     @State private var isDropTarget = false
     @Environment(\.dismiss) private var dismiss
-    @State private var confirmsDiscard = false
     @State private var editorController = RichTextController()
     @FocusState private var focusedField: Field?
 
-    init(draft: ComposeDraft, save: ((ComposeDraft) -> Void)?, send: @escaping (ComposeDraft) async throws -> Void,
-         accounts: [SendingAccount] = [], fromAddress: String = MailStore.accountEmail, isDemo: Bool = true,
-         suggestContacts: @escaping ContactLookup = { _, _ in [] },
+    init(draft: ComposeDraft, drafts: DraftStorage, send: @escaping (ComposeDraft) async throws -> Void,
+         accounts: [SendingAccount] = [], suggestContacts: @escaping ContactLookup = { _, _ in [] },
          signature: @escaping (String?) async -> String? = { _ in nil }) {
         _draft = State(initialValue: draft)
         _original = State(initialValue: draft)
+        _session = State(initialValue: DraftSession(storage: drafts, existing: draft.gmailDraftID.flatMap { id in
+            draft.accountID.map { DraftRef(accountID: $0, draftID: id) }
+        }))
         _showsCc = State(initialValue: !draft.cc.isEmpty)
         _showsBcc = State(initialValue: !draft.bcc.isEmpty)
-        self.save = save
         self.send = send
         self.accounts = accounts
-        self.fromAddress = fromAddress
-        self.isDemo = isDemo
         self.suggestContacts = suggestContacts
         self.signature = signature
     }
 
     private var senderAddress: String {
-        accounts.first { $0.id == draft.accountID }?.email ?? fromAddress
+        (accounts.first { $0.id == draft.accountID } ?? accounts.first)?.email ?? ""
     }
 
     /// A reply goes out from the account that received the mail, so only new messages can change it.
     private var choosesSender: Bool { accounts.count > 1 && draft.kind == .newMessage }
 
-    /// Whether there is anything worth asking about before closing.
+    /// Whether the person has changed anything since the composer opened.
     private var hasChanges: Bool { draft.hasContent && draft != original }
 
     private enum Field: Hashable {
@@ -59,19 +56,15 @@ struct ComposerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if isDemo {
-                topBar
-                Divider()
-            }
             header.zIndex(1)
             Divider()
             editor
             if !draft.attachments.isEmpty { attachmentStrip }
-            if sendError != nil || isDemo { footer }
+            if sendError != nil { footer }
         }
         .frame(minWidth: 560, idealWidth: 720, minHeight: 440, idealHeight: 600)
         .navigationTitle(draft.subject.isEmpty ? draft.kind.title : draft.subject)
-        .toolbar { if !isDemo { windowToolbar } }
+        .toolbar { windowToolbar }
         .overlay { if isDropTarget { RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 3).padding(4).allowsHitTesting(false) } }
         .dropDestination(for: URL.self) { urls, _ in
             attach(urls.filter(\.isFileURL))
@@ -81,26 +74,33 @@ struct ComposerView: View {
             if case .success(let urls) = result { attach(urls) }
         }
         .background {
-            if !isDemo {
-                Button("Close") { if hasChanges { confirmsDiscard = true } else { dismiss() } }
-                    .keyboardShortcut(.cancelAction).hidden()
+            Button("Close", action: requestClose)
+                .keyboardShortcut(.cancelAction).hidden()
+        }
+        .background(WindowReader(closeGuard: closeGuard) { session.attach(to: $0) })
+        // The red button and ⌘W ask the same question as Esc.
+        .onAppear {
+            closeGuard.shouldClose = {
+                guard hasChanges, !isSending else { return true }
+                asksToKeep = true
+                return false
             }
         }
-        .interactiveDismissDisabled(hasChanges || isSending)
+        .onDisappear { session.finish() }
         // Writing from another account means that account's signature.
         .onChange(of: draft.accountID) {
-            guard !isDemo else { return }
             Task { await editorController.setSignature(await signature(draft.accountID)) }
         }
         .onAppear {
             // The rich editor takes the cursor itself once it has loaded.
-            if draft.recipient.isEmpty { focusedField = .recipient } else if isDemo { focusedField = .body }
+            if draft.recipient.isEmpty { focusedField = .recipient }
         }
-        .alert("Discard these changes?", isPresented: $confirmsDiscard) {
-            Button("Keep Writing", role: .cancel) {}
-            Button("Discard Changes", role: .destructive) { dismiss() }
+        .alert("Do you want to keep this draft message?", isPresented: $asksToKeep) {
+            Button("Save", action: saveAndClose)
+            Button("Don't Save", action: closeNow)
+            Button("Cancel", role: .cancel) {}
         } message: {
-            Text(save == nil ? String(localized: "This message has not been sent.") : String(localized: "Use Save Draft to keep this message for the current demo session."))
+            Text("You can choose to save this message as a draft, or delete this message immediately. You can't undo this action.")
         }
     }
 
@@ -116,48 +116,6 @@ struct ComposerView: View {
         ToolbarItem(placement: .primaryAction) {
             SendButton(canSend: draft.canSend, isSending: isSending, action: sendMessage)
         }
-    }
-
-    private var topBar: some View {
-        HStack(spacing: 10) {
-            Button {
-                choosesFiles = true
-            } label: {
-                Image(systemName: "paperclip").font(.system(size: 15))
-            }
-            .buttonStyle(.borderless)
-            .help("Attach Files")
-            .accessibilityLabel("Attach files")
-            .disabled(isSending)
-
-            if let save {
-                Button("Save Draft") {
-                    save(draft)
-                    dismiss()
-                }
-                .disabled(!draft.hasContent || isSending)
-            }
-            Spacer()
-            if isSending { ProgressView().controlSize(.small).accessibilityLabel("Sending") }
-            Button("Cancel") {
-                if hasChanges { confirmsDiscard = true } else { dismiss() }
-            }
-            .keyboardShortcut(.cancelAction)
-            .disabled(isSending)
-            Button(action: sendMessage) {
-                Image(systemName: "paperplane.fill").font(.system(size: 14, weight: .semibold))
-                    .frame(width: 30, height: 30)
-                    .foregroundStyle(.white)
-                    .background(draft.canSend && !isSending ? Color.accentColor : Color.secondary.opacity(0.4), in: Circle())
-            }
-            .buttonStyle(.plain)
-            .disabled(!draft.canSend || isSending)
-            .keyboardShortcut(.return, modifiers: [.command])
-            .help(isDemo ? String(localized: "Add to the sample Sent mailbox. Does not send real email.") : String(localized: "Send with Gmail (⌘↩)"))
-            .accessibilityLabel(isDemo ? "Send demo message" : "Send")
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     private var header: some View {
@@ -212,7 +170,6 @@ struct ComposerView: View {
                     Text(senderAddress).foregroundStyle(.primary)
                 }
                 Spacer(minLength: 0)
-                if isDemo { DemoBadge() }
             }
         }
         .font(.body)
@@ -220,23 +177,19 @@ struct ComposerView: View {
         .padding(.vertical, 6)
     }
 
-    @ViewBuilder
     private var editor: some View {
-        if isDemo {
-            plainEditor
-        } else {
-            RichTextEditor(
-                html: draft.html ?? "", controller: editorController, focusOnLoad: !draft.recipient.isEmpty,
-                loaded: { content in
-                    // The editor tidies the markup it was given. That is not a change the person made.
-                    apply(content, to: &draft)
-                    apply(content, to: &original)
-                    Task { await addSignature() }
-                },
-                changed: { apply($0, to: &draft) },
-                dropFiles: attach
-            )
-        }
+        RichTextEditor(
+            html: draft.html ?? "", controller: editorController, focusOnLoad: !draft.recipient.isEmpty,
+            loaded: { content in
+                // The editor tidies the markup it was given. That is not a change the person made.
+                apply(content, to: &draft)
+                apply(content, to: &original)
+                // A draft that already exists has its signature, and what was saved is what is on screen.
+                if draft.gmailDraftID == nil { Task { await addSignature() } } else { session.markSaved(draft) }
+            },
+            changed: { apply($0, to: &draft) },
+            dropFiles: attach
+        )
     }
 
     /// Puts the account's Gmail signature in once the editor is ready. Adding it is not an edit the person made.
@@ -252,18 +205,6 @@ struct ComposerView: View {
         draft.html = content.html
         draft.body = content.text
         draft.ownText = content.ownText
-    }
-
-    private var plainEditor: some View {
-        TextEditor(text: $draft.body)
-            .font(.system(size: 14))
-            .scrollContentBackground(.hidden)
-            .scrollIndicators(.never)
-            .focused($focusedField, equals: .body)
-            .accessibilityLabel("Message body")
-            .padding(.horizontal, 15)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     private var attachmentStrip: some View {
@@ -298,19 +239,14 @@ struct ComposerView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 0) {
             Divider()
-            Group {
-                if let sendError {
-                    Label(sendError, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                        .onAppear { AccessibilityNotification.Announcement(sendError).post() }
-                } else {
-                    Text("Demo only. No email will be sent. Drafts disappear when you quit.")
-                        .foregroundStyle(.secondary)
-                }
+            if let sendError {
+                Label(sendError, systemImage: "exclamationmark.triangle")
+                    .foregroundStyle(.red)
+                    .font(.subheadline)
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 10)
+                    .onAppear { AccessibilityNotification.Announcement(sendError).post() }
             }
-            .font(.subheadline)
-            .padding(.horizontal, 20)
-            .padding(.vertical, 10)
         }
     }
 
@@ -320,19 +256,102 @@ struct ComposerView: View {
         for url in urls where !draft.attachments.contains(url) { draft.attachments.append(url) }
     }
 
+    /// Esc: closes right away unless something was written, then asks whether to keep it as a draft.
+    private func requestClose() {
+        if closeGuard.shouldClose() { closeNow() }
+    }
+
+    private func closeNow() {
+        closeGuard.allowsClose = true
+        dismiss()
+    }
+
+    private func saveAndClose() {
+        Task {
+            if let content = await editorController.content() { apply(content, to: &draft) }
+            await session.save(draft)
+            if case .failed(let message) = session.state {
+                sendError = message
+            } else {
+                closeNow()
+            }
+        }
+    }
+
     private func sendMessage() {
         Task {
             isSending = true
             sendError = nil
             do {
                 // The editor reports changes after a short pause; send what is on screen, not what was last reported.
-                if !isDemo, let content = await editorController.content() { apply(content, to: &draft) }
+                if let content = await editorController.content() { apply(content, to: &draft) }
+                // A message that is already a Gmail draft is sent as that draft, so no copy is left behind.
+                draft.gmailDraftID = await session.draftIDForSending(from: draft.accountID)
                 try await send(draft)
-                dismiss()
+                session.finish()
+                closeNow()
             } catch {
                 sendError = error.localizedDescription
             }
             isSending = false
+        }
+    }
+}
+
+/// Lets the window's close button ask first. Everything else the window's delegate does carries on as before.
+@MainActor
+private final class CloseGuard {
+    var shouldClose: () -> Bool = { true }
+    var allowsClose = false
+}
+
+nonisolated private final class CloseDelegate: NSObject, NSWindowDelegate {
+    weak var inner: NSWindowDelegate?
+    let closeGuard: CloseGuard
+
+    init(inner: NSWindowDelegate?, closeGuard: CloseGuard) {
+        self.inner = inner
+        self.closeGuard = closeGuard
+    }
+
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        MainActor.assumeIsolated { closeGuard.allowsClose || closeGuard.shouldClose() }
+    }
+
+    override func responds(to selector: Selector!) -> Bool {
+        super.responds(to: selector) || (inner?.responds(to: selector) ?? false)
+    }
+
+    override func forwardingTarget(for selector: Selector!) -> Any? { inner }
+}
+
+/// Hands over the window a view lives in, which SwiftUI does not otherwise expose.
+private struct WindowReader: NSViewRepresentable {
+    let closeGuard: CloseGuard
+    let onChange: (NSWindow?) -> Void
+
+    func makeNSView(context: Context) -> NSView { WindowView(closeGuard: closeGuard, onChange: onChange) }
+    func updateNSView(_ view: NSView, context: Context) {}
+
+    private final class WindowView: NSView {
+        let closeGuard: CloseGuard
+        let onChange: (NSWindow?) -> Void
+        private var delegate: CloseDelegate?
+
+        init(closeGuard: CloseGuard, onChange: @escaping (NSWindow?) -> Void) {
+            self.closeGuard = closeGuard
+            self.onChange = onChange
+            super.init(frame: .zero)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let window else { return }
+            let delegate = CloseDelegate(inner: window.delegate, closeGuard: closeGuard)
+            self.delegate = delegate
+            window.delegate = delegate
+            DispatchQueue.main.async { [onChange] in onChange(window) }
         }
     }
 }
@@ -422,7 +441,11 @@ private struct RevealButton: View {
 }
 
 #Preview("Compose") {
-    ComposerView(draft: ComposeDraft(), save: { _ in }, send: { _ in })
+    ComposerView(
+        draft: ComposeDraft(), drafts: DraftStorage(save: { _, _ in DraftRef(accountID: "a", draftID: "d") }, delete: { _ in },
+                                                    claim: { _, _ in }, release: { _ in }),
+        send: { _ in }, accounts: [SendingAccount(id: "a", email: "alex@example.com")]
+    )
 }
 
 #Preview("Send button") {

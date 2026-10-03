@@ -12,7 +12,7 @@ enum SampleMail {
         func message(_ name: String, _ email: String, _ minutesAgo: Double, _ body: String) -> MailMessage {
             MailMessage(
                 id: nextID("message"), senderName: name, senderEmail: email,
-                recipient: MailStore.accountEmail,
+                recipient: SampleAccount.email,
                 date: now.addingTimeInterval(-minutesAgo * 60), body: body
             )
         }
@@ -121,7 +121,7 @@ enum SampleMail {
                 id: nextID("thread"),
                 subject: "Thanks for a lovely evening",
                 messages: [MailMessage(
-                    id: nextID("message"), senderName: MailStore.accountName, senderEmail: MailStore.accountEmail,
+                    id: nextID("message"), senderName: SampleAccount.name, senderEmail: SampleAccount.email,
                     recipient: "sophie@example.com", date: now.addingTimeInterval(-86400),
                     body: "Hi Sophie,\n\nThanks for having us over. Such a lovely evening — let's do it again soon.\n\nAlex"
                 )], mailbox: .sent

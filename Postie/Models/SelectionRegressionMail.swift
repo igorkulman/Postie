@@ -23,11 +23,11 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
 
     func makeHub() async throws -> MailHub {
         let cache = try await GmailCache.inMemory()
-        let session = try await cache.session(for: CachedGmailAccount(id: Self.accountID, email: MailStore.accountEmail))
+        let session = try await cache.session(for: CachedGmailAccount(id: Self.accountID, email: SampleAccount.email))
         let inbox = try await mailbox(.inbox, pageToken: nil)
         try await session.applySync(GmailSyncBatch(snapshots: [.inbox: inbox], expectedHistoryID: nil, historyID: String(version)))
         let account = StoredAccount(
-            identity: GoogleIdentity(id: Self.accountID, email: MailStore.accountEmail, name: MailStore.accountName),
+            identity: GoogleIdentity(id: Self.accountID, email: SampleAccount.email, name: SampleAccount.name),
             credentials: GoogleCredentials(refreshToken: "", accessToken: "", expiresAt: .distantFuture,
                                            scopes: Set(GoogleOAuthClient.requiredScopes)),
             addedAt: Date(timeIntervalSince1970: 1_700_000_000)
@@ -128,10 +128,16 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     private static func thread(_ id: String, subject: String, order: Int) -> GmailConversation {
         GmailConversation(id: id, subject: subject, messages: [
             GmailMessage(id: "message-" + id, senderName: "Sample Sender", senderEmail: "sender@example.com",
-                         recipient: MailStore.accountEmail, cc: "", date: Date(timeIntervalSince1970: 1_700_000_000 + Double(order * 60)),
+                         recipient: SampleAccount.email, cc: "", date: Date(timeIntervalSince1970: 1_700_000_000 + Double(order * 60)),
                          snippet: "Selection regression sample", body: "\(subject)\n\nWatch the list highlight, detail pane and keyboard navigation while inserting and archiving mail.",
                          labelIDs: ["INBOX"])
         ])
     }
 }
 #endif
+
+/// The account the previews and the selection regression harness use.
+enum SampleAccount {
+    static let name = "Alex Morgan"
+    static let email = "alex@example.com"
+}

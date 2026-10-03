@@ -10,6 +10,8 @@ final class InboxModel {
     var searchText = ""
     var searchScope: SearchScope = .allMail
     var composer: ComposeDraft?
+    /// Why a draft could not be opened for editing.
+    var draftError: String?
     /// Bumped to ask the conversation to be loaded again after a failure.
     private(set) var selectionRetry = 0
     /// Bumped when an explicit removal should hand keyboard focus back to the list.
@@ -55,7 +57,7 @@ final class InboxModel {
     /// The fully loaded conversation that Reply and Forward act on. Its account is the one that sends the response.
     var openConversation: GmailConversation? {
         guard let selectedID, hub.sendingAccounts.contains(where: { $0.id == selectedID.accountID }),
-              hub.mailbox != .outbox else { return nil }
+              hub.mailbox != .outbox, hub.mailbox != .drafts else { return nil }
         return hub.openConversation(for: selectedID)
     }
 
@@ -185,6 +187,18 @@ final class InboxModel {
         composer = draft
     }
 
+    /// Opens a draft of the Drafts folder in a composer window.
+    func editDraft(_ key: ConversationKey) {
+        guard hub.canEditDraft(key) else { return }
+        Task {
+            do {
+                if let draft = try await hub.openDraft(key) { composer = draft }
+            } catch {
+                draftError = error.localizedDescription
+            }
+        }
+    }
+
     // MARK: Menu and toolbar
 
     var mailActions: MailActions {
@@ -200,6 +214,7 @@ final class InboxModel {
                 ? { [self] in selectedID.map { remove($0, archiving: true) } } : nil,
             trash: canRemoveSelection && hub.canTrash(selectedID)
                 ? { [self] in selectedID.map { remove($0, archiving: false) } } : nil,
+            editDraft: selectedID.flatMap { key in hub.canEditDraft(key) ? { [self] in editDraft(key) } : nil },
             reply: openConversation == nil ? nil : { [self] in respond(.reply) },
             replyAll: openConversation == nil ? nil : { [self] in respond(.replyAll) },
             forward: openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { [self] in respond(.forward) } : nil,

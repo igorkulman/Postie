@@ -65,6 +65,9 @@ struct ConversationListView: View {
                 if let key = keys.first {
                     ConversationContextMenu(model: model, key: key)
                 }
+            } primaryAction: { keys in
+                // Double-click, or Return: a draft opens for editing.
+                if let key = keys.first { model.editDraft(key) }
             }
             .overlay {
                 if hub.conversations.isEmpty {
@@ -94,6 +97,10 @@ private struct ConversationContextMenu: View {
                    systemImage: conversation.isUnread ? "envelope.open" : "envelope.badge") { model.toggleRead(item) }
             Button(conversation.isStarred ? String(localized: "Unflag") : String(localized: "Flag"),
                    systemImage: conversation.isStarred ? "star.slash" : "star") { model.toggleStar(item) }
+            Divider()
+        }
+        if hub.canEditDraft(key) {
+            Button("Edit Draft", systemImage: "pencil") { model.editDraft(key) }
             Divider()
         }
         if key == model.selectedID, let open = model.openConversation {

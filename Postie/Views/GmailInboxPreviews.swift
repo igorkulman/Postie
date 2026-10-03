@@ -45,7 +45,7 @@ private func previewConversation(_ thread: MailThread) -> GmailConversation {
 private func makeGmailPreviewHub(mailbox: Mailbox = .inbox, failsBody: Bool = false) -> MailHub {
     let grouped = Dictionary(grouping: SampleMail.threads(), by: \.mailbox)
     let conversations = grouped.mapValues { $0.map(previewConversation) }
-    let identity = GoogleIdentity(id: "preview", email: MailStore.accountEmail, name: MailStore.accountName)
+    let identity = GoogleIdentity(id: "preview", email: SampleAccount.email, name: SampleAccount.name)
     let credentials = GoogleCredentials(
         refreshToken: "", accessToken: "", expiresAt: .distantFuture, scopes: Set(GoogleOAuthClient.requiredScopes)
     )

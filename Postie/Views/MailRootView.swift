@@ -4,9 +4,6 @@ struct MailRootView: View {
     let hub: MailHub
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
-    // Launch with `-PostieDemoData` to start on sample mail (e.g. for screenshots).
-    @State private var showingDemo = ProcessInfo.processInfo.arguments.contains("-PostieDemoData")
-    @State private var demoUnreadCount: Int?
     // The welcome screen was on screen, so the next account is the first one: finish with the "all set" step.
     @State private var sawWelcome = false
     @State private var isOnboarding = false
@@ -22,7 +19,7 @@ struct MailRootView: View {
     private var accounts: AccountStore { hub.accounts }
 
     private var unreadCount: Int? {
-        hub.sessions.isEmpty ? (showingDemo ? demoUnreadCount : nil) : hub.unreadInboxCount
+        hub.sessions.isEmpty ? nil : hub.unreadInboxCount
     }
 
     var body: some View {
@@ -39,15 +36,13 @@ struct MailRootView: View {
                 } else {
                     GmailInboxView(hub: hub)
                 }
-            } else if showingDemo {
-                ContentView(unreadCountChanged: { demoUnreadCount = $0 })
             } else {
                 WelcomeView(accounts: accounts, storageError: hub.storageError) { sawWelcome = true }
             }
         }
         .task {
             // Accounts first, so a returning person never sees the welcome screen flash by.
-            if restoresSession, !showingDemo { accounts.restore() }
+            if restoresSession { accounts.restore() }
             await hub.prepare()
         }
         .task(id: AccountBinding(
@@ -63,7 +58,6 @@ struct MailRootView: View {
         .onChange(of: showsDockBadge) { _, _ in updateDockBadge() }
         .onChange(of: accounts.accounts.isEmpty) { _, isEmpty in
             guard !isEmpty else { return }
-            showingDemo = false
             if sawWelcome { isOnboarding = true }
             sawWelcome = false
         }

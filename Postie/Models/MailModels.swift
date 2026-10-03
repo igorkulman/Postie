@@ -93,7 +93,7 @@ struct ComposeDraft: Identifiable, Equatable, Hashable, Codable {
     var body = ""
     /// The quoted original that replies start with. It is part of `body`, but not something the person wrote.
     var quote = ""
-    /// The formatted body the rich editor works on. Nil for plain-text drafts, like the demo's.
+    /// The formatted body the rich editor works on.
     /// `body` then holds its plain-text version.
     var html: String?
     /// What the person typed in the rich editor, without the quoted original. Nil until the editor reports it.
@@ -102,7 +102,9 @@ struct ComposeDraft: Identifiable, Equatable, Hashable, Codable {
     var attachments: [URL] = []
     var replyingTo: String?
     var gmailThreadID: String?
-    /// The Gmail account the message is sent from; nil in the demo.
+    /// The Gmail draft this message was opened from; nil for a message that has not been saved yet.
+    var gmailDraftID: String?
+    /// The Gmail account the message is sent from.
     var accountID: String?
     var kind: ComposeKind = .newMessage
     var updatedAt = Date()
@@ -188,11 +190,16 @@ extension ComposeDraft {
     }
 }
 
-// The demo supports comma-separated bare addresses, not full RFC display-name syntax.
+// Only comma-separated bare addresses are supported, not full RFC display-name syntax.
 enum EmailAddresses {
     static func split(_ value: String) -> [String] {
         value.split(separator: ",", omittingEmptySubsequences: false)
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+    }
+
+    /// The well-formed addresses of a list, as a list. Gmail refuses a draft whose recipient headers are malformed.
+    static func wellFormed(_ value: String) -> String {
+        split(value).filter { isValidList($0) }.joined(separator: ", ")
     }
 
     static func isValidList(_ value: String) -> Bool {

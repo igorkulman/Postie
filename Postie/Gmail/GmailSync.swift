@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-// Separate from basic reading so offline/demo/test readers need not simulate history.
+// Separate from basic reading so offline and test readers need not simulate history.
 nonisolated protocol GmailSyncReading: GmailReading {
     func currentHistoryID() async throws -> String
     func history(startHistoryID: String, pageToken: String?) async throws -> GmailHistoryPage

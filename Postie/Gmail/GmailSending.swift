@@ -25,6 +25,41 @@ nonisolated protocol GmailSending: Sendable {
     func send(_ message: OutgoingMessage) async throws
 }
 
+/// A draft kept in Gmail. Saving it again changes `messageID`, so only `id` identifies the draft over time.
+nonisolated struct GmailDraftRef: Sendable, Equatable {
+    let id: String
+    let messageID: String
+    let threadID: String
+}
+
+/// What opening a draft for editing needs: the message as the person left it.
+nonisolated struct GmailDraftContent: Sendable, Equatable {
+    let ref: GmailDraftRef
+    let subject: String
+    let to: String
+    let cc: String
+    let bcc: String
+    let text: String
+    let html: String?
+    let attachments: [MailAttachment]
+    /// Whether the draft answers a message, as opposed to starting a conversation.
+    let isReply: Bool
+}
+
+/// Gmail's drafts: kept on the server, so they follow the person to every client.
+nonisolated protocol GmailDrafting: Sendable {
+    /// Creates the draft, or replaces the content of the one with `draftID`.
+    func saveDraft(_ message: OutgoingMessage, draftID: String?) async throws -> GmailDraftRef
+    /// Replaces the draft's content with `message` and sends it.
+    func sendDraft(_ message: OutgoingMessage, draftID: String) async throws
+    func deleteDraft(id: String) async throws
+    /// How many drafts the account has, for the badge on the Drafts folder.
+    func draftCount() async throws -> Int
+    /// The draft whose current message is `messageID`, if there is one.
+    func draftID(forMessage messageID: String) async throws -> String?
+    func draftContent(id: String) async throws -> GmailDraftContent
+}
+
 /// The signature set up in Gmail for the account's own address, as HTML. Empty when there is none.
 nonisolated protocol GmailSignatureLoading: Sendable {
     func signature() async throws -> String
@@ -35,10 +70,9 @@ nonisolated protocol GmailSignatureLoading: Sendable {
 nonisolated enum GmailMessageBuilder {
     static func rfc822(_ message: OutgoingMessage, inReplyTo: String? = nil, references: String? = nil,
                        date: Date = Date(), messageID: String = "<\(UUID().uuidString)@postie.local>") -> Data {
-        var headers = [
-            "From: " + clean(message.from),
-            "To: " + clean(message.to)
-        ]
+        var headers = ["From: " + clean(message.from)]
+        // A draft may not have a recipient yet.
+        if !message.to.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { headers.append("To: " + clean(message.to)) }
         if !message.cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { headers.append("Cc: " + clean(message.cc)) }
         if !message.bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { headers.append("Bcc: " + clean(message.bcc)) }
         headers.append("Subject: " + encodedSubject(message.subject))

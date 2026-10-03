@@ -8,6 +8,7 @@ struct MailActions {
     var refresh: (() -> Void)?
     var archive: (() -> Void)?
     var trash: (() -> Void)?
+    var editDraft: (() -> Void)?
     var reply: (() -> Void)?
     var replyAll: (() -> Void)?
     var forward: (() -> Void)?
@@ -55,6 +56,9 @@ struct MailCommands: Commands {
         }
 
         CommandMenu("Message") {
+            Button("Edit Draft") { actions?.editDraft?() }
+                .keyboardShortcut("e", modifiers: .command)
+                .disabled(actions?.editDraft == nil)
             Button("Reply") { actions?.reply?() }
                 .keyboardShortcut("r", modifiers: .command)
                 .disabled(actions?.reply == nil)
@@ -82,7 +86,7 @@ struct MailCommands: Commands {
     }
 }
 
-/// Shared toolbar content so the demo and Gmail views stay identical.
+/// The toolbar of the mail window.
 struct MailToolbar: ToolbarContent {
     let actions: MailActions
 
@@ -111,6 +115,9 @@ struct MailToolbar: ToolbarContent {
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItemGroup(placement: .primaryAction) {
+            Button { actions.editDraft?() } label: { Label("Edit Draft", systemImage: "pencil") }
+                .disabled(actions.editDraft == nil)
+                .help("Edit Draft (⌘E)")
             Button { actions.reply?() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
                 .disabled(actions.reply == nil)
                 .help("Reply (⌘R)")
