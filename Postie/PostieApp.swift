@@ -65,6 +65,7 @@ struct PostieApp: App {
             }
         }
         .defaultSize(width: 720, height: 600)
+        .restorationBehavior(.disabled)
 
         Settings {
             SettingsView(hub: hub)
