@@ -25,6 +25,11 @@ nonisolated protocol GmailSending: Sendable {
     func send(_ message: OutgoingMessage) async throws
 }
 
+/// The signature set up in Gmail for the account's own address, as HTML. Empty when there is none.
+nonisolated protocol GmailSignatureLoading: Sendable {
+    func signature() async throws -> String
+}
+
 /// Builds an RFC 5322 message, plain text or plain text with an HTML alternative. Header values are stripped of line breaks so user input
 /// can never inject extra headers.
 nonisolated enum GmailMessageBuilder {

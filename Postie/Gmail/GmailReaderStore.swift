@@ -31,6 +31,7 @@ final class GmailReaderStore {
     @ObservationIgnored private let searcher: (any GmailSearching)?
     @ObservationIgnored private let attachmentLoader: (any GmailAttachmentLoading)?
     @ObservationIgnored private let sender: (any GmailSending)?
+    @ObservationIgnored private let signatureLoader: (any GmailSignatureLoading)?
     @ObservationIgnored private let cache: GmailCacheSession?
     @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredGeneration: Generation?
@@ -48,6 +49,7 @@ final class GmailReaderStore {
         searcher = api as? any GmailSearching
         attachmentLoader = api as? any GmailAttachmentLoading
         sender = api as? any GmailSending
+        signatureLoader = api as? any GmailSignatureLoading
         self.mailbox = mailbox
         self.cache = cache
         if let cache, let syncAPI = api as? any GmailSyncReading {
@@ -205,6 +207,18 @@ final class GmailReaderStore {
     }
 
     var canSend: Bool { sender != nil }
+
+    /// The account's Gmail signature as HTML, or nil when it has none or cannot be read. Composing never waits on it.
+    func signature() async -> String? {
+        guard let signatureLoader else { return nil }
+        do {
+            let html = try await signatureLoader.signature()
+            return html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : html
+        } catch {
+            Log.api.error("Could not read the signature: \(error.localizedDescription)")
+            return nil
+        }
+    }
 
     /// People from this account's cached mail whose name or address matches `query`.
     func contacts(matching query: String, excluding ownEmail: String) async -> [ContactSuggestion] {

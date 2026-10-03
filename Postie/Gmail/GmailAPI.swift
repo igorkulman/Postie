@@ -59,7 +59,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailSignatureLoading, GmailAttachmentLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -299,6 +299,13 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         var body = ["raw": raw]
         if let threadID = message.threadID { body["threadId"] = threadID }
         try await post(path: "messages/send", json: body)
+    }
+
+    func signature() async throws -> String {
+        let list: GmailSendAsList = try await get(path: "settings/sendAs", query: [
+            URLQueryItem(name: "fields", value: "sendAs(sendAsEmail,isPrimary,isDefault,signature)")
+        ])
+        return list.signature
     }
 
     func trash(threadID: String) async throws {

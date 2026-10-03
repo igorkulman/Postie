@@ -364,6 +364,12 @@ final class MailHub {
         return await session.reader.contacts(matching: query, excluding: session.email)
     }
 
+    /// The signature to put under a message sent from this account, cleaned of anything that could run.
+    func signature(for accountID: String?) async -> String? {
+        guard let id = accountID ?? defaultSendingAccount?.id, let html = await session(for: id)?.reader.signature() else { return nil }
+        return HTMLText.stripActiveContent(html)
+    }
+
     /// A local copy of the attachment, downloaded the first time it is needed.
     func attachmentFile(_ attachment: MailAttachment, accountID: String) async throws -> URL {
         guard let reader = session(for: accountID)?.reader, reader.canLoadAttachments else { throw GmailError.permissionRequired }

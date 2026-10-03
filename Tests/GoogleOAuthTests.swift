@@ -25,7 +25,7 @@ actor TokenTransport: GmailTransport {
 
 enum OAuthFixtures {
     static let clientID = "123-abc.apps.googleusercontent.com"
-    static let allScopes = "openid email profile \(GoogleOAuthClient.gmailModifyScope) \(GoogleOAuthClient.gmailSendScope)"
+    static let allScopes = "openid email profile \(GoogleOAuthClient.gmailModifyScope) \(GoogleOAuthClient.gmailSendScope) \(GoogleOAuthClient.gmailSettingsScope)"
 
     static func idToken(sub: String, email: String, name: String? = nil) -> String {
         var claims: [String: Any] = ["sub": sub, "email": email]

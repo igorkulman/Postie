@@ -40,7 +40,9 @@ nonisolated struct GoogleOAuthClient: Sendable {
     // Reading plus archive/trash. Narrower than full mailbox access: no permanent delete.
     static let gmailModifyScope = "https://www.googleapis.com/auth/gmail.modify"
     static let gmailSendScope = "https://www.googleapis.com/auth/gmail.send"
-    static let requiredScopes = [gmailModifyScope, gmailSendScope]
+    // Read-only use: the signature to put under new messages. Postie never changes the account's settings.
+    static let gmailSettingsScope = "https://www.googleapis.com/auth/gmail.settings.basic"
+    static let requiredScopes = [gmailModifyScope, gmailSendScope, gmailSettingsScope]
 
     private static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
     private static let tokenEndpoint = "https://oauth2.googleapis.com/token"

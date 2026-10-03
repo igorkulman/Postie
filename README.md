@@ -55,20 +55,22 @@ Not planned:
 
 Postie talks to Gmail directly from your Mac. There is no Postie server.
 
-It asks for two Gmail permissions:
+It asks for three Gmail permissions:
 
 - `gmail.modify` to read mail and to archive, trash, star, and mark mail as read
   or unread
 - `gmail.send` to send mail
+- `gmail.settings.basic` to read your signature, so new messages can include it.
+  Postie never changes your Gmail settings
 
 Postie never permanently deletes mail. Trash is Gmail's normal, recoverable
 Trash. Sign-in credentials stay in your Mac's Keychain,
 and loaded mail is cached in a local SQLite database on your Mac.
 
-Both permissions are restricted Gmail scopes and Postie has not been verified
+The first two are restricted Gmail scopes and Postie has not been verified
 by Google, so the sign-in screen shows "Google hasn't verified this app". Choose
-**Advanced > Go to Postie (unsafe)**, then tick both Gmail permissions on the
-next screen. Postie needs both to work. Unverified apps are limited to 100
+**Advanced > Go to Postie (unsafe)**, then tick all the Gmail permissions on the
+next screen. Postie needs all of them to work. Unverified apps are limited to 100
 users. If you fork Postie, create your own OAuth client in Google Cloud and put
 it in `Configuration/Google.local.xcconfig` (see the `.example` file).
 

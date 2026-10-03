@@ -70,6 +70,23 @@ nonisolated struct GmailInboxLabel: Decodable, Sendable {
     let messagesUnread: Int
 }
 
+nonisolated struct GmailSendAsList: Decodable, Sendable {
+    struct Address: Decodable, Sendable {
+        let sendAsEmail: String
+        let isPrimary: Bool?
+        let isDefault: Bool?
+        let signature: String?
+    }
+    let sendAs: [Address]?
+
+    /// What Gmail itself puts under new mail: the default address's signature, else the account's own.
+    var signature: String {
+        let addresses = sendAs ?? []
+        let chosen = addresses.first { $0.isDefault == true } ?? addresses.first { $0.isPrimary == true } ?? addresses.first
+        return chosen?.signature ?? ""
+    }
+}
+
 nonisolated struct GmailThreadList: Decodable, Sendable {
     struct Reference: Decodable, Sendable { let id: String; let snippet: String? }
     let threads: [Reference]?

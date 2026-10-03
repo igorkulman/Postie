@@ -14,6 +14,16 @@ private actor ThreadHeaderTransport: GmailTransport {
     }
 }
 
+private actor SignatureTransport: GmailTransport {
+    let json: String
+    private(set) var requests: [URLRequest] = []
+    init(json: String) { self.json = json }
+    func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
+        requests.append(request)
+        return GmailHTTPResponse(data: Data(json.utf8), statusCode: 200)
+    }
+}
+
 private func decode(raw: String) throws -> String {
     var base64 = raw.replacingOccurrences(of: "-", with: "+").replacingOccurrences(of: "_", with: "/")
     base64 += String(repeating: "=", count: (4 - base64.count % 4) % 4)
@@ -140,6 +150,19 @@ struct GmailSendingTests {
         #expect(RichTextController.linkURL(from: "file:///etc/passwd") == nil)
         #expect(RichTextController.linkURL(from: "two words") == nil)
         #expect(RichTextController.linkURL(from: "") == nil)
+    }
+
+    @Test("The default address's signature is read from the sendAs settings")
+    func signature() async throws {
+        let json = #"{"sendAs":[{"sendAsEmail":"alias@x.com","signature":"Alias"},{"sendAsEmail":"me@x.com","isPrimary":true,"signature":"<b>Me</b>"}]}"#
+        let transport = SignatureTransport(json: json)
+        let api = GmailAPI(transport: transport) { "t" }
+        #expect(try await api.signature() == "<b>Me</b>")
+        let request = try #require(await transport.requests.first)
+        #expect(request.url?.path == "/gmail/v1/users/me/settings/sendAs")
+        let preferred = #"{"sendAs":[{"sendAsEmail":"me@x.com","isPrimary":true,"signature":"Me"},{"sendAsEmail":"alias@x.com","isDefault":true,"signature":"Alias"}]}"#
+        #expect(try await GmailAPI(transport: SignatureTransport(json: preferred)) { "t" }.signature() == "Alias")
+        #expect(try await GmailAPI(transport: SignatureTransport(json: "{}")) { "t" }.signature() == "")
     }
 
     @Test("Replies carry In-Reply-To and the accumulated References chain")
