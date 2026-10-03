@@ -60,7 +60,8 @@ struct PostieApp: App {
 
         WindowGroup("New message", id: "composer", for: ComposeDraft.self) { $draft in
             if let draft {
-                ComposerView(draft: draft, save: nil, send: hub.send, accounts: hub.sendingAccounts, isDemo: false)
+                ComposerView(draft: draft, save: nil, send: hub.send,
+                             accounts: hub.sendingAccounts, isDemo: false, suggestContacts: hub.contacts)
             }
         }
         .defaultSize(width: 720, height: 600)

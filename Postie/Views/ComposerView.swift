@@ -12,6 +12,7 @@ struct ComposerView: View {
     private let accounts: [SendingAccount]
     private let fromAddress: String
     private let isDemo: Bool
+    private let suggestContacts: ContactLookup
     @State private var isSending = false
     @State private var sendError: String?
     @State private var showsCc: Bool
@@ -23,7 +24,8 @@ struct ComposerView: View {
     @FocusState private var focusedField: Field?
 
     init(draft: ComposeDraft, save: ((ComposeDraft) -> Void)?, send: @escaping (ComposeDraft) async throws -> Void,
-         accounts: [SendingAccount] = [], fromAddress: String = MailStore.accountEmail, isDemo: Bool = true) {
+         accounts: [SendingAccount] = [], fromAddress: String = MailStore.accountEmail, isDemo: Bool = true,
+         suggestContacts: @escaping ContactLookup = { _, _ in [] }) {
         _draft = State(initialValue: draft)
         original = draft
         _showsCc = State(initialValue: !draft.cc.isEmpty)
@@ -33,6 +35,7 @@ struct ComposerView: View {
         self.accounts = accounts
         self.fromAddress = fromAddress
         self.isDemo = isDemo
+        self.suggestContacts = suggestContacts
     }
 
     private var senderAddress: String {
@@ -55,7 +58,7 @@ struct ComposerView: View {
                 topBar
                 Divider()
             }
-            header
+            header.zIndex(1)
             Divider()
             editor
             if !draft.attachments.isEmpty { attachmentStrip }
@@ -166,6 +169,7 @@ struct ComposerView: View {
                     if !showsBcc { RevealButton("Bcc") { showsBcc = true; focusedField = .bcc } }
                 }
             }
+            .contactSuggestions(for: $draft.recipient, isFocused: focusedField == .recipient, accountID: draft.accountID, lookup: suggestContacts)
             if showsCc {
                 FieldRow("Cc") {
                     TextField("", text: $draft.cc)
@@ -173,6 +177,7 @@ struct ComposerView: View {
                         .focused($focusedField, equals: .cc)
                         .accessibilityLabel("CC email addresses")
                 }
+                .contactSuggestions(for: $draft.cc, isFocused: focusedField == .cc, accountID: draft.accountID, lookup: suggestContacts)
             }
             if showsBcc {
                 FieldRow("Bcc") {
@@ -181,6 +186,7 @@ struct ComposerView: View {
                         .focused($focusedField, equals: .bcc)
                         .accessibilityLabel("BCC email addresses")
                 }
+                .contactSuggestions(for: $draft.bcc, isFocused: focusedField == .bcc, accountID: draft.accountID, lookup: suggestContacts)
             }
             FieldRow("Subject") {
                 TextField("", text: $draft.subject)

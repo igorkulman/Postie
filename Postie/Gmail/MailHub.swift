@@ -358,6 +358,12 @@ final class MailHub {
         return candidates.first { $0.id == accounts.defaultAccount?.id } ?? candidates.first
     }
 
+    /// Address suggestions for the composer, from the mail of the account the message goes out from.
+    func contacts(matching query: String, accountID: String?) async -> [ContactSuggestion] {
+        guard let id = accountID ?? defaultSendingAccount?.id, let session = session(for: id) else { return [] }
+        return await session.reader.contacts(matching: query, excluding: session.email)
+    }
+
     /// A local copy of the attachment, downloaded the first time it is needed.
     func attachmentFile(_ attachment: MailAttachment, accountID: String) async throws -> URL {
         guard let reader = session(for: accountID)?.reader, reader.canLoadAttachments else { throw GmailError.permissionRequired }

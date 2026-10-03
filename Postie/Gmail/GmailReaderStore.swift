@@ -206,6 +206,17 @@ final class GmailReaderStore {
 
     var canSend: Bool { sender != nil }
 
+    /// People from this account's cached mail whose name or address matches `query`.
+    func contacts(matching query: String, excluding ownEmail: String) async -> [ContactSuggestion] {
+        guard let cache, !query.isEmpty else { return [] }
+        do {
+            return ContactBook.suggestions(from: try await cache.contactSources(matching: query), matching: query, excluding: ownEmail)
+        } catch {
+            Log.cache.error("Could not look up contacts: \(error.localizedDescription)")
+            return []
+        }
+    }
+
     /// Sends through Gmail. Sent mail and reply threads are picked up by a background refresh.
     func send(_ message: OutgoingMessage) async throws {
         guard let sender else { throw GmailError.permissionRequired }

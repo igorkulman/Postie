@@ -49,6 +49,10 @@ nonisolated struct GmailCacheSession: Sendable {
     func applySync(_ batch: GmailSyncBatch) async throws { try await cache.applySync(batch, session: self) }
     func unreadCount() async throws -> Int? { try await cache.unreadCount(session: self) }
     func saveUnreadCount(_ count: Int) async throws { try await cache.saveUnreadCount(count, session: self) }
+    /// Cached messages whose address headers mention `query`, newest first.
+    func contactSources(matching query: String, limit: Int = 2000) async throws -> [ContactSource] {
+        try await cache.contactSources(matching: query, limit: limit, session: self)
+    }
     func invalidate() async { await cache.invalidate(self) }
 }
 
@@ -212,6 +216,26 @@ actor GmailCache {
             try Task.checkCancellation()
         }
         try check(session)
+    }
+
+    fileprivate func contactSources(matching query: String, limit: Int, session: GmailCacheSession) async throws -> [ContactSource] {
+        try check(session)
+        let escaped = query.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+        let pattern = "%" + escaped + "%"
+        let sources = try await database.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT senderName, senderEmail, recipient, cc, date FROM messages
+                WHERE accountID = ?1 AND (senderName LIKE ?2 ESCAPE '\\' OR senderEmail LIKE ?2 ESCAPE '\\'
+                    OR recipient LIKE ?2 ESCAPE '\\' OR cc LIKE ?2 ESCAPE '\\')
+                ORDER BY date DESC LIMIT ?3
+                """, arguments: [session.accountID, pattern, limit]).map {
+                ContactSource(senderName: $0["senderName"], senderEmail: $0["senderEmail"], recipient: $0["recipient"],
+                              cc: $0["cc"], date: Date(timeIntervalSince1970: $0["date"]))
+            }
+        }
+        try check(session)
+        return sources
     }
 
     fileprivate func unreadCount(session: GmailCacheSession) async throws -> Int? {
