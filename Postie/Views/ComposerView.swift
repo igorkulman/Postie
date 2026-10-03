@@ -13,6 +13,8 @@ struct ComposerView: View {
     private let fromAddress: String
     private let isDemo: Bool
     private let suggestContacts: ContactLookup
+    /// The signature for an account's messages as HTML, or nil. Nil account means the default one.
+    private let signature: (String?) async -> String?
     @State private var isSending = false
     @State private var sendError: String?
     @State private var showsCc: Bool
@@ -26,7 +28,8 @@ struct ComposerView: View {
 
     init(draft: ComposeDraft, save: ((ComposeDraft) -> Void)?, send: @escaping (ComposeDraft) async throws -> Void,
          accounts: [SendingAccount] = [], fromAddress: String = MailStore.accountEmail, isDemo: Bool = true,
-         suggestContacts: @escaping ContactLookup = { _, _ in [] }) {
+         suggestContacts: @escaping ContactLookup = { _, _ in [] },
+         signature: @escaping (String?) async -> String? = { _ in nil }) {
         _draft = State(initialValue: draft)
         _original = State(initialValue: draft)
         _showsCc = State(initialValue: !draft.cc.isEmpty)
@@ -37,6 +40,7 @@ struct ComposerView: View {
         self.fromAddress = fromAddress
         self.isDemo = isDemo
         self.suggestContacts = suggestContacts
+        self.signature = signature
     }
 
     private var senderAddress: String {
@@ -83,6 +87,11 @@ struct ComposerView: View {
             }
         }
         .interactiveDismissDisabled(hasChanges || isSending)
+        // Writing from another account means that account's signature.
+        .onChange(of: draft.accountID) {
+            guard !isDemo else { return }
+            Task { await editorController.setSignature(await signature(draft.accountID)) }
+        }
         .onAppear {
             // The rich editor takes the cursor itself once it has loaded.
             if draft.recipient.isEmpty { focusedField = .recipient } else if isDemo { focusedField = .body }
@@ -222,10 +231,20 @@ struct ComposerView: View {
                     // The editor tidies the markup it was given. That is not a change the person made.
                     apply(content, to: &draft)
                     apply(content, to: &original)
+                    Task { await addSignature() }
                 },
                 changed: { apply($0, to: &draft) },
                 dropFiles: attach
             )
+        }
+    }
+
+    /// Puts the account's Gmail signature in once the editor is ready. Adding it is not an edit the person made.
+    private func addSignature() async {
+        await editorController.setSignature(await signature(draft.accountID))
+        if let content = await editorController.content() {
+            apply(content, to: &draft)
+            apply(content, to: &original)
         }
     }
 

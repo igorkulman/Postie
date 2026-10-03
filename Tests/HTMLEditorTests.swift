@@ -99,4 +99,35 @@ struct HTMLEditorTests {
         let change = harness.messages.last { $0["type"] as? String == "change" }
         #expect(change?["own"] as? String == "Typed")
     }
+
+    @Test("A signature goes under the typed text and above the quote, and is not counted as typed")
+    func signature() async throws {
+        let quote = HTMLText.emptyLine + "<div class=\"gmail_quote\"><blockquote>Original</blockquote></div>"
+        let harness = EditorHarness(html: quote)
+        await harness.waitUntilReady()
+        _ = try await harness.call("postieEditor.setSignature(html)", ["html": "Alex<br>Postie"])
+        let content = try await harness.snapshot()
+        let signature = try #require(content.html.range(of: "class=\"gmail_signature\""))
+        let original = try #require(content.html.range(of: "class=\"gmail_quote\""))
+        #expect(signature.lowerBound < original.lowerBound)
+        #expect(content.text.contains("\nAlex\nPostie"))
+        #expect(content.ownText.isEmpty)
+
+        _ = try await harness.call("postieEditor.setSignature(html)", ["html": "New"])
+        let replaced = try await harness.snapshot()
+        #expect(replaced.html.components(separatedBy: "class=\"gmail_signature\"").count == 2)
+        #expect(replaced.text.contains("\nNew") && !replaced.text.contains("Alex"))
+
+        _ = try await harness.call("postieEditor.setSignature(html)", ["html": ""])
+        #expect(try await harness.snapshot().html.contains("gmail_signature") == false)
+    }
+
+    @Test("On a new message the signature leaves a line to type on above it")
+    func signatureOnNewMessage() async throws {
+        let harness = EditorHarness(html: "")
+        await harness.waitUntilReady()
+        _ = try await harness.call("postieEditor.setSignature(html)", ["html": "Alex"])
+        let html = try await harness.snapshot().html
+        #expect(html.hasPrefix("<div><br></div><div class=\"gmail_signature\""))
+    }
 }

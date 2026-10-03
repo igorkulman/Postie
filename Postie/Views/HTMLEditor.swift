@@ -48,6 +48,13 @@ final class RichTextController {
 
     func focus() { run("focus()") }
 
+    /// Puts the signature under what the person writes, above any quoted original. Nil or empty removes it.
+    func setSignature(_ html: String?) async {
+        _ = try? await webView?.callAsyncJavaScript(
+            "return postieEditor.setSignature(html)", arguments: ["html": html ?? ""], contentWorld: RichTextPolicy.world
+        )
+    }
+
     /// The editor as it is right now, without waiting for its next change notification.
     func content() async -> EditorContent? {
         guard let webView, let result = try? await webView.callAsyncJavaScript(
@@ -384,7 +391,7 @@ enum RichTextPolicy {
 
         function typed() {
             const copy = editor.cloneNode(true);
-            copy.querySelectorAll('.gmail_quote').forEach(quote => quote.remove());
+            copy.querySelectorAll('.gmail_quote, .gmail_signature').forEach(part => part.remove());
             return text(copy).trim();
         }
         function snapshot() { return { html: editor.innerHTML, text: text(editor), own: typed() }; }
@@ -472,6 +479,31 @@ enum RichTextPolicy {
                     document.execCommand('insertHTML', false, anchor.outerHTML);
                 } else {
                     document.execCommand('createLink', false, url);
+                }
+                changed();
+            },
+            // Gmail's markup for a signature, kept apart from what the person types. The signature is shown exactly as Gmail has it.
+            setSignature(html) {
+                let block = editor.querySelector('.gmail_signature');
+                if (!html) {
+                    if (block) block.remove();
+                    changed();
+                    return;
+                }
+                if (!block) {
+                    block = document.createElement('div');
+                    block.className = 'gmail_signature';
+                    block.setAttribute('data-smartmail', 'gmail_signature');
+                    const quote = editor.querySelector('.gmail_quote');
+                    if (quote) quote.parentNode.insertBefore(block, quote); else editor.appendChild(block);
+                }
+                block.innerHTML = '<br>' + html;
+                // Something to type on above the signature.
+                if (block.previousSibling === null) {
+                    const line = document.createElement('div');
+                    line.appendChild(document.createElement('br'));
+                    editor.insertBefore(line, block);
+                    if (document.activeElement === editor && !typed()) this.focus();
                 }
                 changed();
             },
