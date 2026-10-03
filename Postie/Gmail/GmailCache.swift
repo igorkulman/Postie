@@ -53,6 +53,11 @@ nonisolated struct GmailCacheSession: Sendable {
     func contactSources(matching query: String, limit: Int = 2000) async throws -> [ContactSource] {
         try await cache.contactSources(matching: query, limit: limit, session: self)
     }
+    /// Replaces the account's Google contacts with a fresh copy.
+    func saveContacts(_ contacts: [DirectoryContact]) async throws { try await cache.saveContacts(contacts, session: self) }
+    func contacts(matching query: String, limit: Int = 500) async throws -> [DirectoryContact] {
+        try await cache.contacts(matching: query, limit: limit, session: self)
+    }
     func invalidate() async { await cache.invalidate(self) }
 }
 
@@ -125,6 +130,15 @@ actor GmailCache {
                 accountID TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
                 mailbox TEXT NOT NULL, nextPageToken TEXT, fetchedAt REAL NOT NULL,
                 PRIMARY KEY (accountID, mailbox)
+            );
+            """)
+        }
+        migrator.registerMigration("contacts-v2") { db in
+            try db.execute(sql: """
+            CREATE TABLE contacts (
+                accountID TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                email TEXT NOT NULL, name TEXT NOT NULL, saved BOOLEAN NOT NULL,
+                PRIMARY KEY (accountID, email)
             );
             """)
         }
@@ -236,6 +250,41 @@ actor GmailCache {
         }
         try check(session)
         return sources
+    }
+
+    fileprivate func saveContacts(_ contacts: [DirectoryContact], session: GmailCacheSession) async throws {
+        try check(session)
+        try await database.write { db in
+            try db.execute(sql: "DELETE FROM contacts WHERE accountID = ?", arguments: [session.accountID])
+            for contact in contacts {
+                // A saved contact wins over the same address among the collected ones.
+                try db.execute(sql: """
+                    INSERT INTO contacts (accountID, email, name, saved) VALUES (?1, ?2, ?3, ?4)
+                    ON CONFLICT(accountID, email) DO UPDATE SET
+                        name = CASE WHEN excluded.saved >= saved THEN excluded.name ELSE name END,
+                        saved = MAX(saved, excluded.saved)
+                    """, arguments: [session.accountID, contact.email.lowercased(), contact.name, contact.isSaved])
+            }
+            try Task.checkCancellation()
+        }
+        try check(session)
+    }
+
+    fileprivate func contacts(matching query: String, limit: Int, session: GmailCacheSession) async throws -> [DirectoryContact] {
+        try check(session)
+        let escaped = query.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_")
+        let pattern = "%" + escaped + "%"
+        let found = try await database.read { db in
+            try Row.fetchAll(db, sql: """
+                SELECT name, email, saved FROM contacts
+                WHERE accountID = ?1 AND (name LIKE ?2 ESCAPE '\\' OR email LIKE ?2 ESCAPE '\\') LIMIT ?3
+                """, arguments: [session.accountID, pattern, limit]).map {
+                DirectoryContact(name: $0["name"], email: $0["email"], isSaved: $0["saved"])
+            }
+        }
+        try check(session)
+        return found
     }
 
     fileprivate func unreadCount(session: GmailCacheSession) async throws -> Int? {

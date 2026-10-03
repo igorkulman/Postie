@@ -17,6 +17,18 @@ nonisolated struct ContactSource: Equatable, Sendable {
     let date: Date
 }
 
+/// A person from the account's Google contacts. `isSaved` tells the contacts the person saved from the ones
+/// Google collected by itself from the people they have written to.
+nonisolated struct DirectoryContact: Equatable, Hashable, Sendable {
+    let name: String
+    let email: String
+    let isSaved: Bool
+}
+
+nonisolated protocol GmailContactLoading: Sendable {
+    func contacts() async throws -> [DirectoryContact]
+}
+
 nonisolated enum ContactBook {
     /// Splits an address header like `"Doe, Jo" <jo@x.com>, bob@y.com` into names and addresses.
     static func parse(_ header: String) -> [(name: String, email: String)] {
@@ -55,8 +67,8 @@ nonisolated enum ContactBook {
 
     /// People matching `query`, best first: those you write to beat those who write to you, and
     /// frequent and recent beat rare and old. `ownEmail` is never suggested.
-    static func suggestions(from sources: [ContactSource], matching query: String, excluding ownEmail: String,
-                            limit: Int = 8) -> [ContactSuggestion] {
+    static func suggestions(from sources: [ContactSource], directory: [DirectoryContact] = [], matching query: String,
+                            excluding ownEmail: String, limit: Int = 8) -> [ContactSuggestion] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !needle.isEmpty else { return [] }
         let own = ownEmail.lowercased()
@@ -64,15 +76,22 @@ nonisolated enum ContactBook {
         struct Entry { var name: String; var email: String; var score = 0; var latest = Date.distantPast; var nameDate = Date.distantPast }
         var entries: [String: Entry] = [:]
 
-        func record(name: String, email: String, weight: Int, date: Date) {
+        func record(name: String, email: String, weight: Int, date: Date, nameDate: Date? = nil) {
             let key = email.lowercased()
             guard key != own else { return }
             var entry = entries[key] ?? Entry(name: "", email: email)
             entry.score += weight
             entry.latest = max(entry.latest, date)
             // Prefer the most recent real display name over a bare address.
-            if !name.isEmpty, date >= entry.nameDate { entry.name = name; entry.nameDate = date }
+            let namedAt = nameDate ?? date
+            if !name.isEmpty, namedAt >= entry.nameDate { entry.name = name; entry.nameDate = namedAt }
             entries[key] = entry
+        }
+
+        // Contacts the person saved are the best answer, and the name they gave beats any header's.
+        for contact in directory {
+            record(name: contact.name, email: contact.email, weight: contact.isSaved ? 6 : 2, date: .distantPast,
+                   nameDate: contact.isSaved ? .distantFuture : .distantPast.addingTimeInterval(1))
         }
 
         for source in sources {

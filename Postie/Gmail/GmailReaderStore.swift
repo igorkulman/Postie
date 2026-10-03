@@ -35,6 +35,9 @@ final class GmailReaderStore {
     @ObservationIgnored private let sender: (any GmailSending)?
     @ObservationIgnored private let signatureLoader: (any GmailSignatureLoading)?
     @ObservationIgnored private let drafter: (any GmailDrafting)?
+    @ObservationIgnored private let contactLoader: (any GmailContactLoading)?
+    /// Google's contacts are not asked for again before this, so a failing request is not repeated every refresh.
+    @ObservationIgnored private var nextContactsFetch = Date.distantPast
     @ObservationIgnored private let cache: GmailCacheSession?
     @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredGeneration: Generation?
@@ -54,6 +57,7 @@ final class GmailReaderStore {
         sender = api as? any GmailSending
         signatureLoader = api as? any GmailSignatureLoading
         drafter = api as? any GmailDrafting
+        contactLoader = api as? any GmailContactLoading
         self.mailbox = mailbox
         self.cache = cache
         if let cache, let syncAPI = api as? any GmailSyncReading {
@@ -142,10 +146,26 @@ final class GmailReaderStore {
         let startedAccount = accountGeneration
         async let unreadCount: Void = refreshUnreadCount(for: startedAccount)
         async let drafts: Void = refreshDraftCount(for: startedAccount)
+        async let contacts: Void = refreshContacts(for: startedAccount)
         if let synchronizer { await synchronize(using: synchronizer) }
         else { await loadPage(refreshing: true) }
         await unreadCount
         await drafts
+        await contacts
+    }
+
+    /// Keeps a local copy of the account's Google contacts, fetched again every few hours.
+    private func refreshContacts(for startedAccount: Generation) async {
+        guard let contactLoader, let cache, Date() >= nextContactsFetch, accountGeneration == startedAccount else { return }
+        nextContactsFetch = Date().addingTimeInterval(30 * 60)
+        do {
+            let contacts = try await contactLoader.contacts()
+            guard accountGeneration == startedAccount, !Task.isCancelled else { return }
+            try await cache.saveContacts(contacts)
+            nextContactsFetch = Date().addingTimeInterval(6 * 3600)
+        } catch {
+            if !(error is CancellationError) { Log.api.error("Could not read the contacts: \(error.localizedDescription, privacy: .public)") }
+        }
     }
 
     private func refreshDraftCount(for startedAccount: Generation) async {
@@ -255,7 +275,8 @@ final class GmailReaderStore {
     func contacts(matching query: String, excluding ownEmail: String) async -> [ContactSuggestion] {
         guard let cache, !query.isEmpty else { return [] }
         do {
-            return ContactBook.suggestions(from: try await cache.contactSources(matching: query), matching: query, excluding: ownEmail)
+            return ContactBook.suggestions(from: try await cache.contactSources(matching: query),
+                                           directory: try await cache.contacts(matching: query), matching: query, excluding: ownEmail)
         } catch {
             Log.cache.error("Could not look up contacts: \(error.localizedDescription)")
             return []

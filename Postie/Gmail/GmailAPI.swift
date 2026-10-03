@@ -59,7 +59,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -368,6 +368,41 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         )
     }
 
+    func contacts() async throws -> [DirectoryContact] {
+        struct Page: Decodable, Sendable {
+            struct Person: Decodable, Sendable {
+                struct Name: Decodable, Sendable { let displayName: String? }
+                struct Address: Decodable, Sendable { let value: String? }
+                let names: [Name]?
+                let emailAddresses: [Address]?
+            }
+            let connections: [Person]?
+            let otherContacts: [Person]?
+            let nextPageToken: String?
+        }
+        func fetch(path: String, fields: URLQueryItem, saved: Bool) async throws -> [DirectoryContact] {
+            var result: [DirectoryContact] = []
+            var pageToken: String?
+            var seen: Set<String> = []
+            repeat {
+                var query = [fields, URLQueryItem(name: "pageSize", value: "1000")]
+                if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+                let page: Page = try await get(path: path, query: query, base: "https://people.googleapis.com/v1/")
+                for person in (saved ? page.connections : page.otherContacts) ?? [] {
+                    let name = person.names?.first?.displayName ?? ""
+                    for address in person.emailAddresses ?? [] {
+                        if let email = address.value, !email.isEmpty { result.append(DirectoryContact(name: name, email: email, isSaved: saved)) }
+                    }
+                }
+                pageToken = page.nextPageToken?.isEmpty == false ? page.nextPageToken : nil
+                if let pageToken, !seen.insert(pageToken).inserted { throw GmailError.invalidResponse }
+            } while pageToken != nil
+            return result
+        }
+        return try await fetch(path: "people/me/connections", fields: URLQueryItem(name: "personFields", value: "names,emailAddresses"), saved: true)
+            + fetch(path: "otherContacts", fields: URLQueryItem(name: "readMask", value: "names,emailAddresses"), saved: false)
+    }
+
     func signature() async throws -> String {
         let list: GmailSendAsList = try await get(path: "settings/sendAs", query: [
             URLQueryItem(name: "fields", value: "sendAs(sendAsEmail,isPrimary,isDefault,signature)")
@@ -423,11 +458,12 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         return id
     }
 
-    private func get<Value: Decodable & Sendable>(path: String, query: [URLQueryItem]) async throws -> Value {
+    private func get<Value: Decodable & Sendable>(path: String, query: [URLQueryItem],
+                                                  base: String = "https://gmail.googleapis.com/gmail/v1/users/me/") async throws -> Value {
         try Task.checkCancellation()
         let token = try await accessToken()
         try Task.checkCancellation()
-        var components = URLComponents(string: "https://gmail.googleapis.com/gmail/v1/users/me/" + path)!
+        var components = URLComponents(string: base + path)!
         components.queryItems = query
         // Form-style query decoders treat a literal + as a space.
         components.percentEncodedQuery = components.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")

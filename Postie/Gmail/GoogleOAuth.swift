@@ -42,7 +42,10 @@ nonisolated struct GoogleOAuthClient: Sendable {
     static let gmailSendScope = "https://www.googleapis.com/auth/gmail.send"
     // Read-only use: the signature to put under new messages. Postie never changes the account's settings.
     static let gmailSettingsScope = "https://www.googleapis.com/auth/gmail.settings.basic"
-    static let requiredScopes = [gmailModifyScope, gmailSendScope, gmailSettingsScope]
+    /// People you saved, and the people you have only ever written to, for address suggestions.
+    static let contactsScope = "https://www.googleapis.com/auth/contacts.readonly"
+    static let otherContactsScope = "https://www.googleapis.com/auth/contacts.other.readonly"
+    static let requiredScopes = [gmailModifyScope, gmailSendScope, gmailSettingsScope, contactsScope, otherContactsScope]
 
     private static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
     private static let tokenEndpoint = "https://oauth2.googleapis.com/token"

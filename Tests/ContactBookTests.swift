@@ -67,3 +67,74 @@ struct ContactBookTests {
         #expect(try await session.contactSources(matching: "100%").isEmpty)
     }
 }
+
+@Suite("Google contacts", .timeLimit(.minutes(1)))
+struct GoogleContactsTests {
+    private actor PeopleTransport: GmailTransport {
+        private(set) var urls: [URL] = []
+        func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
+            let url = try #require(request.url)
+            urls.append(url)
+            let query = url.query ?? ""
+            let json: String
+            switch url.path {
+            case "/v1/people/me/connections" where query.contains("pageToken=p2"):
+                json = #"{"connections":[{"names":[{"displayName":"Dana Novak"}],"emailAddresses":[{"value":"dana@x.com"},{"value":"dana@home.org"}]}]}"#
+            case "/v1/people/me/connections":
+                json = #"{"connections":[{"names":[{"displayName":"Sophie Chen"}],"emailAddresses":[{"value":"sophie@example.com"}]},{"emailAddresses":[{"value":"nameless@x.com"}]},{"names":[{"displayName":"No Address"}]}],"nextPageToken":"p2"}"#
+            case "/v1/otherContacts":
+                json = #"{"otherContacts":[{"emailAddresses":[{"value":"seen@x.com"}]}]}"#
+            default:
+                return GmailHTTPResponse(data: Data(), statusCode: 404)
+            }
+            return GmailHTTPResponse(data: Data(json.utf8), statusCode: 200)
+        }
+    }
+
+    @Test("Saved and collected contacts are read across pages, from the People API")
+    func reads() async throws {
+        let transport = PeopleTransport()
+        let contacts = try await GmailAPI(transport: transport) { "t" }.contacts()
+        #expect(contacts == [
+            DirectoryContact(name: "Sophie Chen", email: "sophie@example.com", isSaved: true),
+            DirectoryContact(name: "", email: "nameless@x.com", isSaved: true),
+            DirectoryContact(name: "Dana Novak", email: "dana@x.com", isSaved: true),
+            DirectoryContact(name: "Dana Novak", email: "dana@home.org", isSaved: true),
+            DirectoryContact(name: "", email: "seen@x.com", isSaved: false)
+        ])
+        let urls = await transport.urls
+        #expect(urls.allSatisfy { $0.host == "people.googleapis.com" })
+        #expect(urls.first?.query?.contains("personFields=names,emailAddresses") == true)
+    }
+
+    @Test("Contacts are kept per account, found by name or address, and a saved one wins over a collected duplicate")
+    func cache() async throws {
+        let cache = try await GmailCache.inMemory()
+        let session = try await cache.session(for: CachedGmailAccount(id: "a", email: "a@example.com"))
+        try await session.saveContacts([
+            DirectoryContact(name: "", email: "Sophie@Example.com", isSaved: false),
+            DirectoryContact(name: "Sophie Chen", email: "sophie@example.com", isSaved: true),
+            DirectoryContact(name: "Bob", email: "bob@x.com", isSaved: false)
+        ])
+        let found = try await session.contacts(matching: "soph")
+        #expect(found == [DirectoryContact(name: "Sophie Chen", email: "sophie@example.com", isSaved: true)])
+        #expect(try await session.contacts(matching: "x.com").map(\.email) == ["bob@x.com"])
+        #expect(try await session.contacts(matching: "100%").isEmpty)
+        try await session.saveContacts([])
+        #expect(try await session.contacts(matching: "soph").isEmpty)
+    }
+
+    @Test("A saved contact beats people from mail, keeps its own name and counts for more than a collected one")
+    func ranking() {
+        let mail = [ContactSource(senderName: "Sam S.", senderEmail: "sam@x.com", recipient: "", cc: "", date: Date(timeIntervalSince1970: 100))]
+        let directory = [
+            DirectoryContact(name: "Samantha Stone", email: "sam@x.com", isSaved: true),
+            DirectoryContact(name: "Sam Collected", email: "samuel@x.com", isSaved: false)
+        ]
+        let found = ContactBook.suggestions(from: mail, directory: directory, matching: "sam", excluding: "me@x.com")
+        #expect(found.map(\.email) == ["sam@x.com", "samuel@x.com"])
+        #expect(found.first?.name == "Samantha Stone")
+        // Without mail, contacts alone are offered.
+        #expect(ContactBook.suggestions(from: [], directory: directory, matching: "stone", excluding: "me@x.com").map(\.email) == ["sam@x.com"])
+    }
+}
