@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 struct ComposerView: View {
     @State private var draft: ComposeDraft
     /// What the draft looked like when the composer opened, so an untouched reply is not "changed".
-    private let original: ComposeDraft
+    @State private var original: ComposeDraft
     /// Nil for real accounts: Gmail drafts are not synced yet, so only the demo can keep drafts.
     private let save: ((ComposeDraft) -> Void)?
     private let send: (ComposeDraft) async throws -> Void
@@ -21,13 +21,14 @@ struct ComposerView: View {
     @State private var isDropTarget = false
     @Environment(\.dismiss) private var dismiss
     @State private var confirmsDiscard = false
+    @State private var editorController = RichTextController()
     @FocusState private var focusedField: Field?
 
     init(draft: ComposeDraft, save: ((ComposeDraft) -> Void)?, send: @escaping (ComposeDraft) async throws -> Void,
          accounts: [SendingAccount] = [], fromAddress: String = MailStore.accountEmail, isDemo: Bool = true,
          suggestContacts: @escaping ContactLookup = { _, _ in [] }) {
         _draft = State(initialValue: draft)
-        original = draft
+        _original = State(initialValue: draft)
         _showsCc = State(initialValue: !draft.cc.isEmpty)
         _showsBcc = State(initialValue: !draft.bcc.isEmpty)
         self.save = save
@@ -82,7 +83,10 @@ struct ComposerView: View {
             }
         }
         .interactiveDismissDisabled(hasChanges || isSending)
-        .onAppear { focusedField = draft.recipient.isEmpty ? .recipient : .body }
+        .onAppear {
+            // The rich editor takes the cursor itself once it has loaded.
+            if draft.recipient.isEmpty { focusedField = .recipient } else if isDemo { focusedField = .body }
+        }
         .alert("Discard these changes?", isPresented: $confirmsDiscard) {
             Button("Keep Writing", role: .cancel) {}
             Button("Discard Changes", role: .destructive) { dismiss() }
@@ -101,17 +105,7 @@ struct ComposerView: View {
                 .disabled(isSending)
         }
         ToolbarItem(placement: .primaryAction) {
-            // The button stays in place while sending, so the toolbar item keeps its size.
-            Button(action: sendMessage) {
-                Label("Send", systemImage: "paperplane.fill")
-                    .opacity(isSending ? 0 : 1)
-                    .overlay { if isSending { ProgressView().controlSize(.small).accessibilityLabel("Sending") } }
-            }
-            .buttonStyle(.borderedProminent)
-            .buttonBorderShape(.circle)
-            .disabled(!draft.canSend || isSending)
-            .keyboardShortcut(.return, modifiers: [.command])
-            .help("Send with Gmail (⌘↩)")
+            SendButton(canSend: draft.canSend, isSending: isSending, action: sendMessage)
         }
     }
 
@@ -217,7 +211,31 @@ struct ComposerView: View {
         .padding(.vertical, 6)
     }
 
+    @ViewBuilder
     private var editor: some View {
+        if isDemo {
+            plainEditor
+        } else {
+            RichTextEditor(
+                html: draft.html ?? "", controller: editorController, focusOnLoad: !draft.recipient.isEmpty,
+                loaded: { content in
+                    // The editor tidies the markup it was given. That is not a change the person made.
+                    apply(content, to: &draft)
+                    apply(content, to: &original)
+                },
+                changed: { apply($0, to: &draft) },
+                dropFiles: attach
+            )
+        }
+    }
+
+    private func apply(_ content: EditorContent, to draft: inout ComposeDraft) {
+        draft.html = content.html
+        draft.body = content.text
+        draft.ownText = content.ownText
+    }
+
+    private var plainEditor: some View {
         TextEditor(text: $draft.body)
             .font(.system(size: 14))
             .scrollContentBackground(.hidden)
@@ -288,6 +306,8 @@ struct ComposerView: View {
             isSending = true
             sendError = nil
             do {
+                // The editor reports changes after a short pause; send what is on screen, not what was last reported.
+                if !isDemo, let content = await editorController.content() { apply(content, to: &draft) }
                 try await send(draft)
                 dismiss()
             } catch {
@@ -295,6 +315,49 @@ struct ComposerView: View {
             }
             isSending = false
         }
+    }
+}
+
+/// The window toolbar's send button. It keeps its size while sending, so the toolbar does not shift.
+private struct SendButton: View {
+    let canSend: Bool
+    let isSending: Bool
+    let action: () -> Void
+
+    var body: some View {
+        // Not disabled while sending: the system would dim the spinner. A second tap does nothing instead.
+        Button { if !isSending { action() } } label: {
+            ZStack {
+                Image(systemName: "paperplane.fill")
+                    .foregroundStyle(.white)
+                    .opacity(isSending ? 0 : 1)
+                if isSending {
+                    SendSpinner().accessibilityLabel("Sending")
+                }
+            }
+            .frame(width: 18, height: 18)
+        }
+        .buttonStyle(.borderedProminent)
+        // Prominent buttons do not dim much when disabled, so say "nothing to send yet" with the colour.
+        .tint(canSend || isSending ? Color.accentColor : Color.secondary.opacity(0.5))
+        .disabled(!canSend)
+        .keyboardShortcut(.return, modifiers: [.command])
+        .help("Send with Gmail (⌘↩)")
+        .accessibilityLabel("Send")
+    }
+}
+
+/// A white arc that turns, readable on the button's accent colour where the system spinner is not.
+private struct SendSpinner: View {
+    var body: some View {
+        TimelineView(.animation) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+            Circle()
+                .trim(from: 0, to: 0.7)
+                .stroke(.white, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+                .rotationEffect(.degrees(turn * 360))
+        }
+        .frame(width: 16, height: 16)
     }
 }
 
@@ -341,4 +404,25 @@ private struct RevealButton: View {
 
 #Preview("Compose") {
     ComposerView(draft: ComposeDraft(), save: { _ in }, send: { _ in })
+}
+
+#Preview("Send button") {
+    NavigationStack {
+        Color.clear.frame(width: 360, height: 120)
+            .toolbar { ToolbarItem(placement: .primaryAction) { SendButton(canSend: true, isSending: false) {} } }
+    }
+}
+
+#Preview("Send button · disabled") {
+    NavigationStack {
+        Color.clear.frame(width: 360, height: 120)
+            .toolbar { ToolbarItem(placement: .primaryAction) { SendButton(canSend: false, isSending: false) {} } }
+    }
+}
+
+#Preview("Send button · sending") {
+    NavigationStack {
+        Color.clear.frame(width: 360, height: 120)
+            .toolbar { ToolbarItem(placement: .primaryAction) { SendButton(canSend: true, isSending: true) {} } }
+    }
 }

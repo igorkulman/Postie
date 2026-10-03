@@ -92,6 +92,11 @@ struct ComposeDraft: Identifiable, Equatable, Hashable, Codable {
     var body = ""
     /// The quoted original that replies start with. It is part of `body`, but not something the person wrote.
     var quote = ""
+    /// The formatted body the rich editor works on. Nil for plain-text drafts, like the demo's.
+    /// `body` then holds its plain-text version.
+    var html: String?
+    /// What the person typed in the rich editor, without the quoted original. Nil until the editor reports it.
+    var ownText: String?
     /// Files the person attached; read when the message is sent.
     var attachments: [URL] = []
     var replyingTo: String?
@@ -102,7 +107,9 @@ struct ComposeDraft: Identifiable, Equatable, Hashable, Codable {
     var updatedAt = Date()
 
     /// What the person wrote, without the quoted original.
-    private var written: String { quote.isEmpty ? body : body.replacingOccurrences(of: quote, with: "") }
+    private var written: String {
+        ownText ?? (quote.isEmpty ? body : body.replacingOccurrences(of: quote, with: ""))
+    }
 
     var hasContent: Bool {
         !attachments.isEmpty || [recipient, cc, bcc, subject, written].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -137,14 +144,17 @@ extension ComposeDraft {
         ) : []
         let subject = thread.subject.lowercased().hasPrefix("re:") ? thread.subject : "Re: " + thread.subject
         var quote = ""
+        var html = HTMLText.emptyLine
         if let message {
             let author = message.senderName.isEmpty ? message.senderEmail : "\(message.senderName) <\(message.senderEmail)>"
+            let when = message.date.formatted(date: .abbreviated, time: .shortened)
             let quoted = message.body.components(separatedBy: .newlines).map { $0.isEmpty ? ">" : "> " + $0 }.joined(separator: "\n")
-            quote = "\n\nOn \(message.date.formatted(date: .abbreviated, time: .shortened)), \(author) wrote:\n\(quoted)"
+            quote = "\n\nOn \(when), \(author) wrote:\n\(quoted)"
+            html += HTMLText.quote(attribution: "On \(when), \(author) wrote:", of: message)
         }
         return ComposeDraft(
             recipient: to.joined(separator: ", "), cc: cc.joined(separator: ", "),
-            subject: subject, body: quote, quote: quote, replyingTo: thread.id, kind: allRecipients ? .replyAll : .reply
+            subject: subject, body: quote, quote: quote, html: html, replyingTo: thread.id, kind: allRecipients ? .replyAll : .reply
         )
     }
 
@@ -152,6 +162,7 @@ extension ComposeDraft {
         let hasPrefix = thread.subject.lowercased().hasPrefix("fwd:") || thread.subject.lowercased().hasPrefix("fw:")
         let subject = hasPrefix ? thread.subject : "Fwd: " + thread.subject
         var body = ""
+        var html = HTMLText.emptyLine
         if let message = thread.latestMessage {
             let ccHeader = message.cc.isEmpty ? "" : "\nCc: \(message.cc)"
             body = """
@@ -165,8 +176,14 @@ extension ComposeDraft {
 
             \(message.body)
             """
+            let when = message.date.formatted(date: .abbreviated, time: .shortened)
+            var header = "---------- Forwarded message ---------<br>"
+                + "From: <b>\(HTMLText.escape(message.senderName))</b> &lt;\(HTMLText.escape(message.senderEmail))&gt;<br>"
+                + "Date: \(HTMLText.escape(when))<br>Subject: \(HTMLText.escape(thread.subject))<br>To: \(HTMLText.escape(message.recipient))<br>"
+            if !message.cc.isEmpty { header += "Cc: \(HTMLText.escape(message.cc))<br>" }
+            html += "<div class=\"gmail_quote\"><div class=\"gmail_attr\">\(header)</div><br>\(HTMLText.body(of: message))</div>"
         }
-        return ComposeDraft(subject: subject, body: body, kind: .forward)
+        return ComposeDraft(subject: subject, body: body, html: html, kind: .forward)
     }
 }
 
@@ -188,5 +205,46 @@ enum EmailAddresses {
                 && !parts[1].hasSuffix(".")
                 && !address.contains(where: { $0.isWhitespace || $0.isNewline })
         }
+    }
+}
+
+/// Builds and cleans the HTML that the rich composer starts from.
+nonisolated enum HTMLText {
+    /// A blank line for the person to start typing on, above any quoted text.
+    static let emptyLine = "<div><br></div>"
+
+    static func escape(_ text: String) -> String {
+        text.replacingOccurrences(of: "&", with: "&amp;").replacingOccurrences(of: "<", with: "&lt;")
+            .replacingOccurrences(of: ">", with: "&gt;").replacingOccurrences(of: "\"", with: "&quot;")
+    }
+
+    /// Gmail's own markup for a quoted original, so other clients fold it away like a Gmail reply.
+    static func quote(attribution: String, of message: MailMessage) -> String {
+        "<div class=\"gmail_quote\"><div class=\"gmail_attr\">\(escape(attribution))<br></div>"
+            + "<blockquote class=\"gmail_quote\" style=\"margin:0px 0px 0px 0.8ex;border-left:1px solid rgb(204,204,204);padding-left:1ex\">"
+            + body(of: message) + "</blockquote></div>"
+    }
+
+    /// The original's formatted body when it has one, else its text with line breaks kept.
+    static func body(of message: MailMessage) -> String {
+        if let html = message.htmlBody, !html.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return stripActiveContent(html)
+        }
+        return escape(message.body).replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\n", with: "<br>")
+    }
+
+    /// Removes scripts, embedded content, styles and event handlers. Quoted mail is someone else's HTML,
+    /// and it should neither run in the editor nor travel on in a reply.
+    static func stripActiveContent(_ html: String) -> String {
+        var result = html
+        for tag in ["script", "style", "head", "title", "iframe", "object", "embed", "form", "svg", "math"] {
+            result = result.replacingOccurrences(of: "(?is)<\(tag)\\b[^>]*>.*?</\(tag)\\s*>", with: "", options: .regularExpression)
+        }
+        result = result.replacingOccurrences(of: "(?i)</?(?:html|body|meta|link|base|script|style|iframe|object|embed|form|input|button)\\b[^>]*>",
+                                             with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"(?i)\s+on[a-z]+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)"#, with: "", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"(?i)(href|src)\s*=\s*(["']?)\s*(?:javascript|vbscript):[^"'>\s]*\2"#,
+                                             with: "$1=\"\"", options: .regularExpression)
+        return result
     }
 }

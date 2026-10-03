@@ -511,7 +511,13 @@ final class MailHub {
             to: draft.recipient.trimmingCharacters(in: .whitespacesAndNewlines),
             cc: draft.cc.trimmingCharacters(in: .whitespacesAndNewlines),
             bcc: draft.bcc.trimmingCharacters(in: .whitespacesAndNewlines),
-            subject: draft.subject, body: draft.body, attachments: attachments, threadID: draft.gmailThreadID
+            subject: draft.subject, body: draft.body, htmlBody: draft.html.map(Self.htmlDocument),
+            attachments: attachments, threadID: draft.gmailThreadID
         ))
+    }
+
+    /// The editor's markup as a complete document, so the encoding is stated for the reader.
+    private static func htmlDocument(_ fragment: String) -> String {
+        "<html><head><meta http-equiv=\"Content-Type\" content=\"text/html; charset=UTF-8\"></head><body>\(fragment)</body></html>"
     }
 }

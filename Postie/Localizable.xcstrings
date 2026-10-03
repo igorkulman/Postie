@@ -79,6 +79,9 @@
     "Accounts" : {
       "comment" : "Settings tab and list name"
     },
+    "Add" : {
+
+    },
     "Add a Gmail account to read and send mail." : {
 
     },
@@ -86,6 +89,9 @@
 
     },
     "Add Another Account…" : {
+
+    },
+    "Add Link" : {
 
     },
     "Add to the sample Sent mailbox. Does not send real email." : {
@@ -115,10 +121,19 @@
     "Attachment %@" : {
       "comment" : "VoiceOver label of an attachment; the file name follows"
     },
+    "B" : {
+
+    },
     "Bcc" : {
 
     },
     "BCC email addresses" : {
+
+    },
+    "Bold" : {
+
+    },
+    "Bulleted List" : {
 
     },
     "Cancel" : {
@@ -132,6 +147,9 @@
     },
     "Cc: %@" : {
       "comment" : "Header line in an expanded message: the Cc recipients"
+    },
+    "Clear Formatting" : {
+
     },
     "Close" : {
 
@@ -238,11 +256,17 @@
     "HTML email body" : {
       "comment" : "Accessibility label for the web view showing a formatted email"
     },
+    "I" : {
+
+    },
     "Images load automatically and may reveal your IP address and when you opened the message. Email scripts, forms, and external stylesheets remain blocked." : {
 
     },
     "Inbox" : {
       "comment" : "Mailbox name"
+    },
+    "Italic" : {
+
     },
     "Junk" : {
       "comment" : "Mailbox name"
@@ -338,6 +362,9 @@
 
     },
     "Nothing here yet" : {
+
+    },
+    "Numbered List" : {
 
     },
     "OK" : {
@@ -529,6 +556,9 @@
     "Try other words, or use Gmail search such as from:name or has:attachment." : {
 
     },
+    "U" : {
+
+    },
     "Unable to display HTML. Showing plain text." : {
 
     },
@@ -556,6 +586,9 @@
     "Unable to save this message for offline reading." : {
 
     },
+    "Underline" : {
+
+    },
     "Unflag" : {
 
     },
@@ -569,6 +602,9 @@
 
     },
     "Use Save Draft to keep this message for the current demo session." : {
+
+    },
+    "Web address" : {
 
     },
     "Welcome to Postie" : {

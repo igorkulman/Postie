@@ -67,6 +67,81 @@ struct GmailSendingTests {
         #expect(text.hasSuffix("--\(boundary)--\r\n"))
     }
 
+    @Test("An HTML body is sent as plain text and HTML alternatives, the richer one last")
+    func htmlAlternative() throws {
+        var rich = message
+        rich.htmlBody = "<div>Caf\u{E9} <b>bold</b></div>"
+        let text = String(decoding: GmailMessageBuilder.rfc822(rich), as: UTF8.self)
+        let head = text.components(separatedBy: "\r\n\r\n")[0]
+        #expect(head.contains("Content-Type: multipart/alternative; boundary="))
+        let plain = try #require(text.range(of: "Content-Type: text/plain; charset=UTF-8"))
+        let html = try #require(text.range(of: "Content-Type: text/html; charset=UTF-8"))
+        #expect(plain.lowerBound < html.lowerBound)
+        let encoded = try #require(text.components(separatedBy: "text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64\r\n\r\n").last?
+            .components(separatedBy: "\r\n--").first)
+        let decoded = try #require(Data(base64Encoded: encoded, options: .ignoreUnknownCharacters))
+        #expect(String(decoding: decoded, as: UTF8.self) == "<div>Caf\u{E9} <b>bold</b></div>")
+    }
+
+    @Test("With attachments the alternatives nest inside multipart/mixed")
+    func htmlWithAttachments() throws {
+        var rich = message
+        rich.htmlBody = "<p>Hi</p>"
+        rich.attachments = [OutgoingAttachment(filename: "a.txt", mimeType: "text/plain", data: Data("A".utf8))]
+        let text = String(decoding: GmailMessageBuilder.rfc822(rich), as: UTF8.self)
+        let mixed = try #require(text.range(of: "multipart/mixed"))
+        let alternative = try #require(text.range(of: "multipart/alternative"))
+        let file = try #require(text.range(of: "Content-Disposition: attachment"))
+        #expect(mixed.lowerBound < alternative.lowerBound)
+        #expect(alternative.lowerBound < file.lowerBound)
+    }
+
+    @Test("Replies and forwards start with a blank line above a Gmail-style quote")
+    @MainActor
+    func richDrafts() {
+        let original = MailMessage(id: "m", senderName: "A <b>", senderEmail: "a@example.com", recipient: "me@example.com",
+                                   date: Date(), body: "Hello & <bye>\nSecond")
+        let thread = MailThread(id: "t", subject: "Plans", messages: [original], mailbox: .inbox)
+        let reply = ComposeDraft.reply(to: thread, accountEmail: "me@example.com")
+        let html = reply.html ?? ""
+        #expect(html.hasPrefix(HTMLText.emptyLine + "<div class=\"gmail_quote\">"))
+        #expect(html.contains("Hello &amp; &lt;bye&gt;<br>Second"))
+        #expect(html.contains("A &lt;b&gt; &lt;a@example.com&gt; wrote:"))
+        #expect(!reply.canSend, "A reply with only the quote is not worth sending")
+        var typed = reply
+        typed.ownText = "Thanks"
+        typed.subject = "Re: Plans"
+        #expect(typed.canSend)
+        let forward = ComposeDraft.forward(thread)
+        #expect(forward.html?.contains("Forwarded message") == true)
+        #expect(forward.html?.contains("Hello &amp; &lt;bye&gt;") == true)
+    }
+
+    @Test("Quoted mail loses scripts, styles, embeds and event handlers")
+    func stripsActiveContent() {
+        let dirty = "<html><head><style>p{}</style></head><body onload=\"x()\"><p onclick='x()'>Hi</p>"
+            + "<script>alert(1)</script><iframe src=\"https://e.x\"></iframe><a href=\"javascript:x()\">l</a>"
+            + "<a href=\"https://ok.example\">ok</a><header>kept</header></body></html>"
+        let clean = HTMLText.stripActiveContent(dirty)
+        for forbidden in ["script", "style", "iframe", "onclick", "onload", "javascript:", "<body", "<html", "<head>"] {
+            #expect(!clean.lowercased().contains(forbidden), "\(forbidden) survived in \(clean)")
+        }
+        #expect(clean.contains("<p>Hi</p>"))
+        #expect(clean.contains("href=\"https://ok.example\""))
+        #expect(clean.contains("<header>kept</header>"))
+    }
+
+    @Test("Link addresses are completed or rejected")
+    func linkAddresses() {
+        #expect(RichTextController.linkURL(from: "example.com/a")?.absoluteString == "https://example.com/a")
+        #expect(RichTextController.linkURL(from: " http://example.com ")?.absoluteString == "http://example.com")
+        #expect(RichTextController.linkURL(from: "me@example.com")?.absoluteString == "mailto:me@example.com")
+        #expect(RichTextController.linkURL(from: "javascript:alert(1)") == nil)
+        #expect(RichTextController.linkURL(from: "file:///etc/passwd") == nil)
+        #expect(RichTextController.linkURL(from: "two words") == nil)
+        #expect(RichTextController.linkURL(from: "") == nil)
+    }
+
     @Test("Replies carry In-Reply-To and the accumulated References chain")
     func threadingHeaders() {
         let text = String(decoding: GmailMessageBuilder.rfc822(message, inReplyTo: "<last@x>", references: "<old@x>"), as: UTF8.self)

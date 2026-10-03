@@ -7,7 +7,9 @@ nonisolated struct OutgoingMessage: Sendable, Equatable {
     var cc: String = ""
     var bcc: String = ""
     var subject: String
+    /// The plain-text version. With `htmlBody` it is the alternative for clients that cannot show HTML.
     var body: String
+    var htmlBody: String?
     var attachments: [OutgoingAttachment] = []
     /// Gmail thread to attach a reply to. Forwards and new messages start a new thread.
     var threadID: String?
@@ -23,7 +25,7 @@ nonisolated protocol GmailSending: Sendable {
     func send(_ message: OutgoingMessage) async throws
 }
 
-/// Builds a plain-text RFC 5322 message. Header values are stripped of line breaks so user input
+/// Builds an RFC 5322 message, plain text or plain text with an HTML alternative. Header values are stripped of line breaks so user input
 /// can never inject extra headers.
 nonisolated enum GmailMessageBuilder {
     static func rfc822(_ message: OutgoingMessage, inReplyTo: String? = nil, references: String? = nil,
@@ -43,15 +45,14 @@ nonisolated enum GmailMessageBuilder {
             headers.append("References: " + chain)
         }
         headers.append("MIME-Version: 1.0")
-        let text = encodedBody(message.body)
-        let textHeaders = "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64"
+        let content = contentPart(message)
         guard !message.attachments.isEmpty else {
-            headers.append(textHeaders)
-            return Data((headers.joined(separator: "\r\n") + "\r\n\r\n" + text + "\r\n").utf8)
+            headers.append(content.headers)
+            return Data((headers.joined(separator: "\r\n") + "\r\n\r\n" + content.body + "\r\n").utf8)
         }
         let boundary = "postie-" + UUID().uuidString
         headers.append("Content-Type: multipart/mixed; boundary=\"\(boundary)\"")
-        var out = headers.joined(separator: "\r\n") + "\r\n\r\n--\(boundary)\r\n" + textHeaders + "\r\n\r\n" + text + "\r\n"
+        var out = headers.joined(separator: "\r\n") + "\r\n\r\n--\(boundary)\r\n" + content.headers + "\r\n\r\n" + content.body + "\r\n"
         for attachment in message.attachments {
             let name = headerParameter(attachment.filename)
             out += "--\(boundary)\r\n"
@@ -62,6 +63,19 @@ nonisolated enum GmailMessageBuilder {
         }
         out += "--\(boundary)--\r\n"
         return Data(out.utf8)
+    }
+
+    /// The message text: plain, or plain and HTML as alternatives with the richer version last.
+    private static func contentPart(_ message: OutgoingMessage) -> (headers: String, body: String) {
+        let plainHeaders = "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64"
+        let plain = encodedBody(message.body)
+        guard let html = message.htmlBody else { return (plainHeaders, plain) }
+        let boundary = "postie-alt-" + UUID().uuidString
+        let htmlHeaders = "Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64"
+        let body = "--\(boundary)\r\n" + plainHeaders + "\r\n\r\n" + plain + "\r\n"
+            + "--\(boundary)\r\n" + htmlHeaders + "\r\n\r\n" + encodedBody(html) + "\r\n"
+            + "--\(boundary)--\r\n"
+        return ("Content-Type: multipart/alternative; boundary=\"\(boundary)\"", body)
     }
 
     private static func encodedBody(_ body: String) -> String {
