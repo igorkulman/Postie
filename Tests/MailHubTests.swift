@@ -30,6 +30,22 @@ actor HubAPI: GmailSearching, GmailMutating, GmailSending {
     func send(_ message: OutgoingMessage) async throws { sent.append(message) }
 }
 
+/// An account whose requests fail until it is told sign-in worked.
+actor RecoveringAPI: GmailReading {
+    private let mail: [GmailConversation]
+    private var isSignedIn = false
+
+    init(_ mail: [GmailConversation]) { self.mail = mail }
+
+    func signIn() { isSignedIn = true }
+    func mailbox(_ mailbox: Mailbox, pageToken: String?) async throws -> GmailPage {
+        guard isSignedIn else { throw GmailError.permissionRequired }
+        return GmailPage(conversations: mailbox == .inbox ? mail : [], nextPageToken: nil)
+    }
+    func conversation(id: String) async throws -> GmailConversation { throw GmailError.http(404) }
+    func unreadInboxCount() async throws -> Int { 0 }
+}
+
 @Suite("Merged mailbox", .timeLimit(.minutes(1)))
 @MainActor
 struct MailHubTests {
@@ -130,6 +146,40 @@ struct MailHubTests {
         hub.accounts.setDefault("b")
         #expect(hub.defaultSendingAccount?.id == "b")
         #expect(hub.sendingAccounts.map(\.id) == ["a", "b"])
+    }
+
+    @Test("An account that was reconnected loads its mail at once and drops the old error")
+    func reconnect() async throws {
+        let identity = GoogleIdentity(id: "a", email: "a@example.com", name: nil)
+        let before = StoredAccount(
+            identity: identity,
+            credentials: GoogleCredentials(refreshToken: "r", accessToken: "t", expiresAt: .distantFuture,
+                                           scopes: [GoogleOAuthClient.gmailModifyScope, GoogleOAuthClient.gmailSendScope]),
+            addedAt: Date(timeIntervalSince1970: 0)
+        )
+        let vault = MemoryAccountVault([before])
+        let accounts = AccountStore(
+            vault: vault, oauth: GoogleOAuthClient(clientID: OAuthFixtures.clientID),
+            defaults: UserDefaults(suiteName: "postie-tests-\(UUID().uuidString)")!
+        )
+        accounts.restore()
+        #expect(accounts.accounts.first?.needsReconnect == true)
+        let api = RecoveringAPI([Self.conversation("a1", at: 100)])
+        let hub = MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false) { _ in api }
+        await hub.reconcile()
+        await hub.refresh()
+        #expect(hub.conversations.isEmpty)
+        #expect(hub.sessions.first?.reader.mailboxError != nil)
+
+        await api.signIn()
+        var after = before
+        after.credentials.scopes = Set(GoogleOAuthClient.requiredScopes)
+        try vault.save(after)
+        accounts.restore()
+        await hub.reconcile()
+        #expect(hub.conversations.map(\.key.threadID) == ["a1"])
+        #expect(hub.sessions.first?.reader.mailboxError == nil)
+        #expect(!hub.notices.contains { $0.isError })
     }
 
     @Test("Removing an account drops its mail from the merged list")

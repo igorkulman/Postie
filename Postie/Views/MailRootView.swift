@@ -50,7 +50,9 @@ struct MailRootView: View {
             if restoresSession, !showingDemo { accounts.restore() }
             await hub.prepare()
         }
-        .task(id: AccountBinding(ids: accounts.accounts.map(\.id), ready: !hub.isPreparing)) {
+        .task(id: AccountBinding(
+            ids: accounts.accounts.map(\.id), disconnected: accounts.accounts.filter(\.needsReconnect).map(\.id), ready: !hub.isPreparing
+        )) {
             if !hub.isPreparing { await hub.reconcile() }
         }
         // Looks for new mail whenever the window comes back to the foreground.
@@ -73,6 +75,8 @@ struct MailRootView: View {
 
     private struct AccountBinding: Hashable {
         let ids: [String]
+        /// Accounts that need signing in again; reconnecting one changes this although the IDs stay the same.
+        let disconnected: [String]
         let ready: Bool
     }
 }

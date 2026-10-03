@@ -105,6 +105,8 @@ final class MailHub {
     @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
+    /// Accounts that needed signing in again when `reconcile` last ran, to notice the ones that have been reconnected.
+    @ObservationIgnored private var disconnectedIDs: Set<String> = []
 
     @ObservationIgnored private var cache: GmailCache?
     @ObservationIgnored private let persistsMail: Bool
@@ -138,6 +140,9 @@ final class MailHub {
     /// Makes the sessions match the connected accounts. Cheap to call whenever the accounts change.
     func reconcile() async {
         let connected = accounts.accounts
+        let stillDisconnected = Set(connected.filter(\.needsReconnect).map(\.id))
+        let reconnected = disconnectedIDs.subtracting(stillDisconnected)
+        disconnectedIDs = stillDisconnected
         for session in sessions where !connected.contains(where: { $0.id == session.id }) {
             session.stop()
         }
@@ -152,6 +157,8 @@ final class MailHub {
         // Keep the order the accounts were added in, however long each took to open.
         let order = connected.map(\.id)
         sessions.sort { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
+        // Their readers still hold the error from before signing in; look for mail now instead of at the next slow retry.
+        for id in reconnected { await session(for: id)?.reader.refresh() }
     }
 
     private func makeSession(for identity: GoogleIdentity) async -> AccountSession? {
