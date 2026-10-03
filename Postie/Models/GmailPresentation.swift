@@ -10,7 +10,7 @@ extension GmailConversation {
             subject: subject,
             messages: messages.map {
                 MailMessage(id: $0.id, senderName: $0.senderName, senderEmail: $0.senderEmail,
-                            recipient: $0.recipient, cc: $0.cc, date: $0.date,
+                            recipient: $0.recipient, cc: $0.cc, replyTo: $0.replyTo, date: $0.date,
                             body: includingBodies
                                 ? ($0.bodyLoaded ? $0.body : $0.snippet + "\n\n" + String(localized: "This message body has not been downloaded. Connect to Gmail to read it."))
                                 : $0.snippet,

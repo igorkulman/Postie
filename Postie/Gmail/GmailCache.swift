@@ -97,7 +97,7 @@ actor GmailCache {
             CREATE TABLE messages (
                 accountID TEXT NOT NULL, id TEXT NOT NULL, threadID TEXT NOT NULL,
                 senderName TEXT NOT NULL, senderEmail TEXT NOT NULL, recipient TEXT NOT NULL,
-                cc TEXT NOT NULL, date REAL NOT NULL, snippet TEXT NOT NULL,
+                cc TEXT NOT NULL, replyTo TEXT NOT NULL DEFAULT '', date REAL NOT NULL, snippet TEXT NOT NULL,
                 body TEXT, htmlBody TEXT, bodyLoaded BOOLEAN NOT NULL DEFAULT 0,
                 PRIMARY KEY (accountID, id),
                 FOREIGN KEY (accountID, threadID) REFERENCES threads(accountID, id) ON DELETE CASCADE
@@ -372,7 +372,8 @@ actor GmailCache {
             return GmailMessage(id: messageID, senderName: row["senderName"], senderEmail: row["senderEmail"],
                                 recipient: row["recipient"], cc: row["cc"], date: Date(timeIntervalSince1970: row["date"]),
                                 snippet: row["snippet"], body: (row["body"] as String?) ?? "", bodyLoaded: row["bodyLoaded"],
-                                htmlBody: row["htmlBody"], attachments: attachments, labelIDs: Set(labels))
+                                htmlBody: row["htmlBody"], attachments: attachments, replyTo: row["replyTo"],
+                                labelIDs: Set(labels))
         }
         return GmailConversation(id: id, subject: subject, messages: messages)
     }
@@ -392,18 +393,18 @@ actor GmailCache {
             // Received message bodies are immutable; drafts may change in place.
             let keepBody = !message.bodyLoaded && !message.labelIDs.contains("DRAFT")
             try db.execute(sql: """
-                INSERT INTO messages(accountID, id, threadID, senderName, senderEmail, recipient, cc, date, snippet, body, htmlBody, bodyLoaded)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO messages(accountID, id, threadID, senderName, senderEmail, recipient, cc, date, snippet, body, htmlBody, bodyLoaded, replyTo)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(accountID, id) DO UPDATE SET
                     threadID = excluded.threadID, senderName = excluded.senderName, senderEmail = excluded.senderEmail,
-                    recipient = excluded.recipient, cc = excluded.cc, date = excluded.date, snippet = excluded.snippet,
+                    recipient = excluded.recipient, cc = excluded.cc, replyTo = excluded.replyTo, date = excluded.date, snippet = excluded.snippet,
                     body = CASE WHEN ? THEN messages.body ELSE excluded.body END,
                     htmlBody = CASE WHEN ? THEN messages.htmlBody ELSE excluded.htmlBody END,
                     bodyLoaded = CASE WHEN ? THEN messages.bodyLoaded ELSE excluded.bodyLoaded END
                 """, arguments: [accountID, message.id, conversation.id, message.senderName, message.senderEmail,
                                  message.recipient, message.cc, message.date.timeIntervalSince1970, message.snippet,
                                  message.bodyLoaded ? message.body : nil, message.htmlBody, message.bodyLoaded,
-                                 keepBody, keepBody, keepBody])
+                                 message.replyTo, keepBody, keepBody, keepBody])
             try db.execute(sql: "DELETE FROM attachments WHERE accountID = ? AND messageID = ?", arguments: [accountID, message.id])
             for (position, attachment) in message.attachments.enumerated() {
                 try db.execute(sql: """

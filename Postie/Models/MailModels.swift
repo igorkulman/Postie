@@ -43,6 +43,7 @@ struct MailMessage: Identifiable, Equatable {
     var senderEmail: String
     var recipient: String
     var cc = ""
+    var replyTo = ""
     var date: Date
     var body: String
     var htmlBody: String? = nil

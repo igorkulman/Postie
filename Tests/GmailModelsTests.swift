@@ -22,6 +22,19 @@ struct GmailModelsTests {
         #expect(latest.cc == "james@example.com")
     }
 
+    @Test("Reply-To is decoded and survives the cache")
+    func replyTo() async throws {
+        let json = #"{"id":"t1","messages":[{"id":"m1","internalDate":"1000","labelIds":["INBOX"],"payload":{"mimeType":"text/plain","headers":[{"name":"From","value":"News <news@example.com>"},{"name":"reply-to","value":"=?UTF-8?B?U3VwcG9ydCDinIU=?= <help@example.com>"},{"name":"Subject","value":"Hi"}],"body":{"data":"SGk"}}},{"id":"m2","internalDate":"2000","labelIds":["INBOX"],"payload":{"mimeType":"text/plain","headers":[{"name":"From","value":"b@example.com"}],"body":{"data":"SGk"}}}]}"#
+        let resource = try JSONDecoder().decode(GmailThreadResource.self, from: Data(json.utf8))
+        let conversation = try resource.conversation(includeBody: true)
+        #expect(conversation.messages[0].replyTo == "Support \u{2705} <help@example.com>")
+        #expect(conversation.messages[1].replyTo.isEmpty)
+        let cache = try await GmailCache.inMemory()
+        let session = try await cache.session(for: CachedGmailAccount(id: "a", email: "a@example.com"))
+        try await session.saveConversation(conversation)
+        #expect(try await session.conversation(id: "t1")?.messages.map(\.replyTo) == [conversation.messages[0].replyTo, ""])
+    }
+
     @Test("System and custom labels coexist")
     func labels() throws {
         let conversation = try GmailFixtures.conversation("a1")

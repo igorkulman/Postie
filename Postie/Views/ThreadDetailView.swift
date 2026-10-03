@@ -108,6 +108,14 @@ private struct MessageView: View {
         return to + " · " + String(localized: "Cc: \(message.cc)")
     }
 
+    /// Only worth a line of its own when replies would go somewhere other than back to the sender.
+    private var replyToSummary: String? {
+        let replyTo = message.replyTo.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !replyTo.isEmpty, GmailText.sender(replyTo).email.caseInsensitiveCompare(message.senderEmail) != .orderedSame
+        else { return nil }
+        return String(localized: "Reply-To: \(replyTo)")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Button {
@@ -132,6 +140,12 @@ private struct MessageView: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
+                        if isExpanded, let replyToSummary {
+                            Text(replyToSummary)
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                     }
                     Spacer(minLength: 8)
                     VStack(alignment: .trailing, spacing: 3) {
@@ -180,6 +194,17 @@ private struct MessageView: View {
     ThreadDetailView(thread: thread, toggleStar: {})
         .id(thread.id)
         .frame(width: 680, height: 800)
+}
+
+#Preview("Reply-To") {
+    let message = MailMessage(
+        id: "reply-to", senderName: "Acme News", senderEmail: "news@acme.example", recipient: "me@example.com",
+        cc: "team@example.com", replyTo: "Acme Support <help@acme.example>", date: Date(timeIntervalSince1970: 1_791_000_000),
+        body: "Thanks for subscribing. Reply to this message to reach support."
+    )
+    ThreadDetailView(thread: MailThread(id: "reply-to", subject: "Welcome", messages: [message], mailbox: .inbox),
+                     canToggleStar: false, toggleStar: {})
+        .frame(width: 680, height: 260)
 }
 
 private func longConversationPreview(html: Bool = false) -> MailThread {

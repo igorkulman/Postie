@@ -442,6 +442,9 @@
     "Reply All (⇧⌘R)" : {
 
     },
+    "Reply-To: %@" : {
+
+    },
     "Sample mail only. Gmail is not connected and no real email is sent." : {
 
     },
