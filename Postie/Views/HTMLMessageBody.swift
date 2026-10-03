@@ -27,10 +27,6 @@ struct HTMLMessageBody: View {
                 )
                 .frame(maxWidth: .infinity)
                 .frame(height: height)
-                Text("Remote images enabled")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .help("Images load automatically and may reveal your IP address and when you opened the message. Email scripts, forms, and external stylesheets remain blocked.")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
