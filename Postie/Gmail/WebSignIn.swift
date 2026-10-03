@@ -16,7 +16,8 @@ final class SystemWebSignIn: NSObject, WebAuthenticating, ASWebAuthenticationPre
     func authenticate(url: URL, callbackScheme: String) async throws -> URL {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                let session = ASWebAuthenticationSession(url: url, callback: .customScheme(callbackScheme)) { callback, error in
+                let session = ASWebAuthenticationSession(url: url, callback: .customScheme(callbackScheme)) { @Sendable callback, error in
+                    // AuthenticationServices calls this on its own queue, so it must not be main-actor isolated.
                     if let callback {
                         continuation.resume(returning: callback)
                     } else if let error = error as? ASWebAuthenticationSessionError, error.code == .canceledLogin {
