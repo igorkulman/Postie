@@ -499,11 +499,13 @@ final class MailHub {
         guard let id = draft.accountID ?? defaultSendingAccount?.id, let session = session(for: id) else {
             throw GmailError.signInRequired
         }
+        let attachments = try await OutgoingAttachments.load(draft.attachments)
         try await session.reader.send(OutgoingMessage(
             from: session.email,
             to: draft.recipient.trimmingCharacters(in: .whitespacesAndNewlines),
             cc: draft.cc.trimmingCharacters(in: .whitespacesAndNewlines),
-            subject: draft.subject, body: draft.body, threadID: draft.gmailThreadID
+            bcc: draft.bcc.trimmingCharacters(in: .whitespacesAndNewlines),
+            subject: draft.subject, body: draft.body, attachments: attachments, threadID: draft.gmailThreadID
         ))
     }
 }

@@ -1,6 +1,9 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "" : {
+
+    },
     "& %lld more" : {
       "comment" : "After the first attachment's name in the message list"
     },
@@ -73,9 +76,6 @@
         }
       }
     },
-    "A good subject goes a long way" : {
-
-    },
     "Accounts" : {
       "comment" : "Settings tab and list name"
     },
@@ -106,8 +106,20 @@
     "Archive (⌃⌘A)" : {
 
     },
+    "Attach files" : {
+
+    },
+    "Attach Files" : {
+
+    },
     "Attachment %@" : {
       "comment" : "VoiceOver label of an attachment; the file name follows"
+    },
+    "Bcc" : {
+
+    },
+    "BCC email addresses" : {
+
     },
     "Cancel" : {
 
@@ -120,6 +132,9 @@
     },
     "Cc: %@" : {
       "comment" : "Header line in an expanded message: the Cc recipients"
+    },
+    "Close" : {
+
     },
     "Collapsed" : {
       "comment" : "VoiceOver value of a message that is showing only a summary"
@@ -289,9 +304,6 @@
     "Move to Trash (⌘⌫)" : {
 
     },
-    "name@example.com" : {
-
-    },
     "Needs sign-in" : {
       "comment" : "Shown next to an account whose Google access was revoked or expired"
     },
@@ -337,9 +349,6 @@
     "Opening saved mail…" : {
 
     },
-    "Optional · separate addresses with commas" : {
-
-    },
     "Outbox" : {
       "comment" : "Mailbox name"
     },
@@ -374,6 +383,9 @@
 
     },
     "Remote images enabled" : {
+
+    },
+    "Remove %@" : {
 
     },
     "Remove %@?" : {
@@ -436,7 +448,7 @@
     "Send" : {
 
     },
-    "Send Demo" : {
+    "Send demo message" : {
 
     },
     "Send with Gmail (⌘↩)" : {
@@ -467,6 +479,9 @@
       "comment" : "Onboarding button that closes the setup and opens the inbox"
     },
     "Subject" : {
+
+    },
+    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
 
     },
     "The Keychain could not be accessed (error %d)." : {
@@ -554,9 +569,6 @@
 
     },
     "Welcome to Postie" : {
-
-    },
-    "Write something thoughtful…" : {
 
     },
     "You're all set" : {

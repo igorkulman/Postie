@@ -67,7 +67,7 @@ struct MailThread: Identifiable, Equatable {
     }
 }
 
-enum ComposeKind: String {
+enum ComposeKind: String, Codable, Hashable {
     case newMessage = "New message"
     case reply = "Reply"
     case replyAll = "Reply All"
@@ -83,12 +83,17 @@ enum ComposeKind: String {
     }
 }
 
-struct ComposeDraft: Identifiable, Equatable {
+struct ComposeDraft: Identifiable, Equatable, Hashable, Codable {
     var id = UUID().uuidString
     var recipient = ""
     var cc = ""
+    var bcc = ""
     var subject = ""
     var body = ""
+    /// The quoted original that replies start with. It is part of `body`, but not something the person wrote.
+    var quote = ""
+    /// Files the person attached; read when the message is sent.
+    var attachments: [URL] = []
     var replyingTo: String?
     var gmailThreadID: String?
     /// The Gmail account the message is sent from; nil in the demo.
@@ -96,15 +101,19 @@ struct ComposeDraft: Identifiable, Equatable {
     var kind: ComposeKind = .newMessage
     var updatedAt = Date()
 
+    /// What the person wrote, without the quoted original.
+    private var written: String { quote.isEmpty ? body : body.replacingOccurrences(of: quote, with: "") }
+
     var hasContent: Bool {
-        [recipient, cc, subject, body].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        !attachments.isEmpty || [recipient, cc, bcc, subject, written].contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
     }
 
     var canSend: Bool {
         EmailAddresses.isValidList(recipient)
             && (cc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || EmailAddresses.isValidList(cc))
+            && (bcc.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || EmailAddresses.isValidList(bcc))
             && !subject.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!written.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty)
     }
 }
 
@@ -127,9 +136,15 @@ extension ComposeDraft {
             EmailAddresses.split(message?.recipient ?? "") + EmailAddresses.split(message?.cc ?? "")
         ) : []
         let subject = thread.subject.lowercased().hasPrefix("re:") ? thread.subject : "Re: " + thread.subject
+        var quote = ""
+        if let message {
+            let author = message.senderName.isEmpty ? message.senderEmail : "\(message.senderName) <\(message.senderEmail)>"
+            let quoted = message.body.components(separatedBy: .newlines).map { $0.isEmpty ? ">" : "> " + $0 }.joined(separator: "\n")
+            quote = "\n\nOn \(message.date.formatted(date: .abbreviated, time: .shortened)), \(author) wrote:\n\(quoted)"
+        }
         return ComposeDraft(
             recipient: to.joined(separator: ", "), cc: cc.joined(separator: ", "),
-            subject: subject, replyingTo: thread.id, kind: allRecipients ? .replyAll : .reply
+            subject: subject, body: quote, quote: quote, replyingTo: thread.id, kind: allRecipients ? .replyAll : .reply
         )
     }
 

@@ -3,6 +3,7 @@ import SwiftUI
 /// The Gmail reader: folders, the conversation list and the open conversation.
 /// What it does with them lives in `InboxModel`; the columns are their own views.
 struct GmailInboxView: View {
+    @Environment(\.openWindow) private var openWindow
     @State private var model: InboxModel
     @FocusState private var listIsFocused: Bool
     @FocusState private var searchIsFocused: Bool
@@ -50,8 +51,11 @@ struct GmailInboxView: View {
         .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: actions) }
         .focusedSceneValue(\.mailActions, actions)
-        .sheet(item: $model.composer) { draft in
-            ComposerView(draft: draft, save: nil, send: hub.send, accounts: hub.sendingAccounts, isDemo: false)
+        // Each message gets its own window, so the mailbox stays usable while writing.
+        .onChange(of: model.composer) { _, draft in
+            guard let draft else { return }
+            openWindow(id: "composer", value: draft)
+            model.composer = nil
         }
         // Also runs when an account is added, so its mail appears without choosing a folder again.
         .task(id: MailboxRequest(mailbox: hub.mailbox, accounts: hub.sessions.map(\.id))) {

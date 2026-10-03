@@ -50,6 +50,23 @@ struct GmailSendingTests {
         #expect(String(decoding: decoded, as: UTF8.self) == "Line one\r\nLine two")
     }
 
+    @Test("Bcc is a header, and attachments turn the message into multipart/mixed")
+    func bccAndAttachments() throws {
+        var withFile = message
+        withFile.bcc = "hidden@example.com"
+        withFile.attachments = [OutgoingAttachment(filename: "Plan \"v2\".pdf", mimeType: "application/pdf", data: Data("PDF".utf8))]
+        let text = String(decoding: GmailMessageBuilder.rfc822(withFile), as: UTF8.self)
+        let head = text.components(separatedBy: "\r\n\r\n")[0]
+        #expect(head.contains("Bcc: hidden@example.com"))
+        #expect(head.contains("Content-Type: multipart/mixed; boundary="))
+        #expect(text.contains("Content-Type: text/plain; charset=UTF-8"))
+        #expect(text.contains("Content-Type: application/pdf; name=\"Plan 'v2'.pdf\""))
+        #expect(text.contains("Content-Disposition: attachment; filename=\"Plan 'v2'.pdf\""))
+        #expect(text.contains(Data("PDF".utf8).base64EncodedString()))
+        let boundary = try #require(head.components(separatedBy: "boundary=\"").last?.components(separatedBy: "\"").first)
+        #expect(text.hasSuffix("--\(boundary)--\r\n"))
+    }
+
     @Test("Replies carry In-Reply-To and the accumulated References chain")
     func threadingHeaders() {
         let text = String(decoding: GmailMessageBuilder.rfc822(message, inReplyTo: "<last@x>", references: "<old@x>"), as: UTF8.self)

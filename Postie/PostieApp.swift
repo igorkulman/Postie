@@ -58,6 +58,13 @@ struct PostieApp: App {
         .defaultSize(width: 1200, height: 820)
         .windowResizability(.contentMinSize)
 
+        WindowGroup("New message", id: "composer", for: ComposeDraft.self) { $draft in
+            if let draft {
+                ComposerView(draft: draft, save: nil, send: hub.send, accounts: hub.sendingAccounts, isDemo: false)
+            }
+        }
+        .defaultSize(width: 720, height: 600)
+
         Settings {
             SettingsView(hub: hub)
         }
