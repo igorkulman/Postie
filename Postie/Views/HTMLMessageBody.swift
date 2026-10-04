@@ -40,7 +40,8 @@ struct HTMLMessageBody: View {
 enum EmailHTMLPolicy {
     static let world = WKContentWorld.world(name: "Postie.EmailLayout")
     static let heightHandler = "emailHeight"
-    static let maximumHeight: CGFloat = 30_000
+    // Real threads with long quoted histories reach tens of thousands of points.
+    static let maximumHeight: CGFloat = 500_000
     // WebKit's content-blocker regex dialect does not support alternation (|).
     static let contentRules = #"""
     [
@@ -114,17 +115,62 @@ enum EmailHTMLPolicy {
         }
     }
 
+    static func javaScriptString(_ value: String) -> String {
+        let data = try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "''"
+    }
+
     // App-owned code runs in an isolated content world, not the email's page world.
-    private static let layoutScript = """
+    static let layoutScript = """
     (() => {
         let lastHeight = -1;
+        const root = document.documentElement;
         const report = () => {
-            const height = Math.ceil(document.body.getBoundingClientRect().height);
+            // The body's scrollHeight also counts content overflowing it, which its own rect misses.
+            // Unlike the root's, it never grows to fill the viewport, so the view can still shrink.
+            const body = document.body;
+            const height = Math.ceil(Math.max(body.getBoundingClientRect().height, body.scrollHeight));
+            // The web view is sized to its content, so the conversation scrolls, not the message.
+            // Only a body taller than the cap keeps its own vertical scrolling.
+            root.style.overflowY = height > \(Int(maximumHeight)) ? 'auto' : 'hidden';
             if (height !== lastHeight) {
                 lastHeight = height;
                 window.webkit.messageHandlers.emailHeight.postMessage(height);
             }
         };
+        // Quoted history is collapsed behind a "..." button, as other mail clients do. Only the first,
+        // outermost quote is handled (nested ones stay inside it), and only when the message has
+        // content of its own before it, so a message that is only a quote is shown as is.
+        const quote = document.querySelector('div.gmail_quote, blockquote[type=cite], div.yahoo_quoted');
+        if (quote) {
+            const before = document.createRange();
+            before.setStart(document.body, 0);
+            before.setEndBefore(quote);
+            if (before.toString().trim().length > 0 || before.cloneContents().querySelector('img')) {
+                const previousDisplay = quote.style.display;
+                const toggle = document.createElement('button');
+                toggle.type = 'button';
+                toggle.dataset.quoteToggle = '';
+                toggle.textContent = '···';
+                toggle.title = \(EmailHTMLPolicy.javaScriptString(String(localized: "Show quoted text", comment: "Tooltip of the button that expands the quoted history of an email")));
+                toggle.setAttribute('aria-label', toggle.title);
+                toggle.setAttribute('aria-expanded', 'false');
+                toggle.style.cssText = 'display: block; margin: 8px 0; padding: 0 8px; border: 0; border-radius: 6px; '
+                    + 'font: inherit; line-height: 1.2; color: GrayText; cursor: pointer; '
+                    + 'background: color-mix(in srgb, CanvasText 12%, transparent);';
+                quote.style.display = 'none';
+                quote.parentNode.insertBefore(toggle, quote);
+                toggle.addEventListener('click', () => {
+                    const expanded = toggle.getAttribute('aria-expanded') !== 'true';
+                    toggle.setAttribute('aria-expanded', String(expanded));
+                    toggle.title = expanded
+                        ? \(EmailHTMLPolicy.javaScriptString(String(localized: "Hide quoted text", comment: "Tooltip of the button that collapses the quoted history of an email")))
+                        : \(EmailHTMLPolicy.javaScriptString(String(localized: "Show quoted text", comment: "Tooltip of the button that expands the quoted history of an email")));
+                    toggle.setAttribute('aria-label', toggle.title);
+                    quote.style.display = expanded ? previousDisplay : 'none';
+                });
+            }
+        }
         new ResizeObserver(report).observe(document.body);
         window.addEventListener('resize', report);
         window.addEventListener('load', report);

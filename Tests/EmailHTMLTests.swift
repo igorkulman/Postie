@@ -57,6 +57,13 @@ struct EmailHTMLTests {
         #expect(document.contains("form-action 'none'"))
     }
 
+    @Test("The message only scrolls vertically on its own beyond the height cap")
+    func layoutScriptHidesVerticalOverflow() {
+        let script = EmailHTMLPolicy.layoutScript
+        #expect(script.contains("body.scrollHeight"))
+        #expect(script.contains("height > \(Int(EmailHTMLPolicy.maximumHeight)) ? 'auto' : 'hidden'"))
+    }
+
     @Test("Actual WebKit retains table layout and inline styling, but runs no email scripts")
     func renderedHTML() async throws {
         let page = BrowserFixture()
@@ -92,6 +99,57 @@ struct EmailHTMLTests {
         #expect(result["onloadRan"] as? String == "")
         #expect(result["imageScriptRan"] as? String == "")
         #expect(page.view.url?.absoluteString == "about:blank")
+    }
+
+    @Test("Quoted history is collapsed behind a button that expands it", arguments: [
+        "<div>Thanks!</div><div class=\"gmail_quote\"><div>On Monday, Ann wrote:</div><blockquote>Earlier text</blockquote></div>",
+        "<div>Thanks!</div><blockquote type=\"cite\"><div>On Monday, Ann wrote:</div>Earlier text</blockquote>",
+        "<div>Thanks!</div><div class=\"yahoo_quoted\">On Monday, Ann wrote: Earlier text</div>"
+    ])
+    func quotedHistoryCollapses(html: String) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load(html)
+        let state = """
+        const toggle = document.querySelector('[data-quote-toggle]');
+        return {
+            hasToggle: toggle !== null,
+            expanded: toggle?.getAttribute('aria-expanded') ?? '',
+            text: document.body.innerText
+        };
+        """
+        let collapsed = try await page.inspect(state)
+        #expect(collapsed["hasToggle"] as? Bool == true)
+        #expect(collapsed["expanded"] as? String == "false")
+        #expect((collapsed["text"] as? String)?.contains("Thanks!") == true)
+        #expect((collapsed["text"] as? String)?.contains("Earlier text") == false)
+
+        _ = try await page.inspect("document.querySelector('[data-quote-toggle]').click(); return {};")
+        let expanded = try await page.inspect(state)
+        #expect(expanded["expanded"] as? String == "true")
+        #expect((expanded["text"] as? String)?.contains("Earlier text") == true)
+
+        _ = try await page.inspect("document.querySelector('[data-quote-toggle]').click(); return {};")
+        let again = try await page.inspect(state)
+        #expect((again["text"] as? String)?.contains("Earlier text") == false)
+    }
+
+    @Test("Messages without their own text before the quote are shown as they are", arguments: [
+        "<div class=\"gmail_quote\">Earlier text</div>",
+        "<p>No quote at all</p>"
+    ])
+    func quotedHistoryStaysVisible(html: String) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load(html)
+        let result = try await page.inspect("""
+        return {
+            hasToggle: document.querySelector('[data-quote-toggle]') !== null,
+            text: document.body.innerText
+        };
+        """)
+        #expect(result["hasToggle"] as? Bool == false)
+        #expect(result["text"] as? String != "")
     }
 
     @Test("CSP blocks resource requests, frames, and forms before the scheme handler is reached")

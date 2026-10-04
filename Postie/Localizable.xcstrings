@@ -241,6 +241,9 @@
     "Google sign-in was not completed (%@)." : {
 
     },
+    "Hide quoted text" : {
+      "comment" : "Tooltip of the button that collapses the quoted history of an email"
+    },
     "HTML email body" : {
       "comment" : "Accessibility label for the web view showing a formatted email"
     },
@@ -456,6 +459,9 @@
     },
     "Sent" : {
       "comment" : "Mailbox name"
+    },
+    "Show quoted text" : {
+      "comment" : "Tooltip of the button that expands the quoted history of an email"
     },
     "Show unread count on the Dock icon" : {
 
