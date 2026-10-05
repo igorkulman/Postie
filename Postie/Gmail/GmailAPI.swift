@@ -475,7 +475,9 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         let response = try await send(request)
         try Task.checkCancellation()
         guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
-        do { return try JSONDecoder().decode(Value.self, from: response.data) }
+        // Gmail answers 204 with no body for an empty list, such as the drafts of an account without any.
+        let body = response.data.isEmpty ? Data("{}".utf8) : response.data
+        do { return try JSONDecoder().decode(Value.self, from: body) }
         catch { throw GmailError.invalidResponse }
     }
 }

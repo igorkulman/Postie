@@ -193,9 +193,6 @@
     "Edit Draft" : {
 
     },
-    "Edit Draft (⌘E)" : {
-
-    },
     "Expanded" : {
       "comment" : "VoiceOver value of a message that is showing its full body"
     },
@@ -352,6 +349,9 @@
     "Open" : {
 
     },
+    "Open Draft" : {
+
+    },
     "Opening mailbox…" : {
 
     },
@@ -497,6 +497,9 @@
 
     },
     "This message has no readable text body." : {
+
+    },
+    "This message is an unsent draft." : {
 
     },
     "To" : {

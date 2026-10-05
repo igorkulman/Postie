@@ -111,7 +111,10 @@ final class GmailSyncCoordinator {
                 var batch = GmailSyncBatch(expectedHistoryID: checkpoint, historyID: checkpoint)
                 // Capture history BEFORE initializing a newly visited folder.
                 let changes = try await history(since: checkpoint)
-                if mailbox != .outbox, try await cache.loadMailbox(mailbox) == nil {
+                // Drafts are always re-listed: deleting one elsewhere is easy to miss in history, and the list is short.
+                var needsSnapshot = mailbox == .drafts
+                if !needsSnapshot { needsSnapshot = try await cache.loadMailbox(mailbox) == nil }
+                if mailbox != .outbox, needsSnapshot {
                     batch.snapshots[mailbox] = try await api.mailbox(mailbox, pageToken: nil)
                 }
                 Log.sync.info("Incremental sync: \(changes.ids.count, privacy: .public) changed threads")
