@@ -4,14 +4,16 @@ struct ThreadDetailView: View {
     let thread: MailThread
     var canToggleStar = true
     let toggleStar: () -> Void
+    var openDraft: (() -> Void)?
     @State private var scrollPosition: ScrollPosition
     @State private var viewportHeight: CGFloat = 0
     @State private var followsLatestLayout = true
 
-    init(thread: MailThread, canToggleStar: Bool = true, toggleStar: @escaping () -> Void) {
+    init(thread: MailThread, canToggleStar: Bool = true, toggleStar: @escaping () -> Void, openDraft: (() -> Void)? = nil) {
         self.thread = thread
         self.canToggleStar = canToggleStar
         self.toggleStar = toggleStar
+        self.openDraft = openDraft
         _scrollPosition = State(initialValue: Self.openingScrollPosition(for: thread))
     }
 
@@ -34,6 +36,13 @@ struct ThreadDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                     Spacer(minLength: 0)
+                    if openDraft != nil {
+                        Text("Drafts")
+                            .font(.caption)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+                    }
                     Button(action: toggleStar) {
                         Image(systemName: thread.isStarred ? "star.fill" : "star")
                     }
@@ -44,6 +53,20 @@ struct ThreadDetailView: View {
                           ? (thread.isStarred ? String(localized: "Remove star") : String(localized: "Star conversation"))
                           : String(localized: "Stars cannot be changed yet."))
                     .accessibilityLabel(thread.isStarred ? String(localized: "Remove star") : String(localized: "Star conversation"))
+                }
+
+                if let openDraft {
+                    HStack(spacing: 10) {
+                        Image(systemName: "doc.text")
+                            .foregroundStyle(.secondary)
+                        Text("This message is an unsent draft.")
+                        Spacer(minLength: 8)
+                        Button("Open Draft", action: openDraft)
+                            .controlSize(.small)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                 }
 
                 ForEach(thread.messages) { message in

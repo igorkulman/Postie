@@ -115,9 +115,6 @@ struct MailToolbar: ToolbarContent {
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItemGroup(placement: .primaryAction) {
-            Button { actions.editDraft?() } label: { Label("Edit Draft", systemImage: "pencil") }
-                .disabled(actions.editDraft == nil)
-                .help("Edit Draft (⌘E)")
             Button { actions.reply?() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") }
                 .disabled(actions.reply == nil)
                 .help("Reply (⌘R)")

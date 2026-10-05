@@ -476,7 +476,7 @@ final class MailHub {
         if isSearchActive {
             return searchResult(key)?.labelIDs.contains("INBOX") == true && canModifyLabels(key)
         }
-        return session(for: key.accountID)?.reader.canArchive ?? false
+        return mailbox != .drafts && session(for: key.accountID)?.reader.canArchive ?? false
     }
 
     func canTrash(_ key: ConversationKey?) -> Bool {

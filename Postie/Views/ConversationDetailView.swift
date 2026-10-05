@@ -17,7 +17,8 @@ struct ConversationDetailView: View {
                 GmailConversationView(
                     conversation: conversation, mailbox: hub.mailbox,
                     canToggleStar: hub.canModifyLabels(key),
-                    toggleStar: { model.toggleStar(MergedConversation(key: key, conversation: conversation)) }
+                    toggleStar: { model.toggleStar(MergedConversation(key: key, conversation: conversation)) },
+                    openDraft: hub.canEditDraft(key) ? { model.editDraft(key) } : nil
                 )
                 .id(key)
                 .environment(\.attachmentLoader, AttachmentLoader(hub: hub, accountID: key.accountID))
@@ -50,11 +51,12 @@ private struct GmailConversationView: View {
     let mailbox: Mailbox
     let canToggleStar: Bool
     let toggleStar: () -> Void
+    let openDraft: (() -> Void)?
 
     var body: some View {
         ThreadDetailView(
             thread: conversation.presentation(includingBodies: true, mailbox: mailbox),
-            canToggleStar: canToggleStar, toggleStar: toggleStar
+            canToggleStar: canToggleStar, toggleStar: toggleStar, openDraft: openDraft
         )
     }
 }
