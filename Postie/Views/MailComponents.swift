@@ -29,7 +29,7 @@ struct MailThreadRow: View {
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text(thread.mailbox == .sent ? message.recipient : message.senderName)
+                        Text(thread.mailbox == .sent || thread.mailbox == .outbox ? message.recipient : message.senderName)
                             .font(.callout.weight(.semibold))
                             .lineLimit(1)
                         Spacer(minLength: 8)

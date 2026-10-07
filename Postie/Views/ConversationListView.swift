@@ -40,6 +40,11 @@ struct ConversationListView: View {
                             }
                         }
                         .swipeActions(edge: .trailing) {
+                            if hub.canActOnOutboxItem(item.key) {
+                                Button(role: .destructive) { model.deleteOutboxItem(item.key) } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
                             if hub.canTrash(item.key) {
                                 Button(role: .destructive) { model.remove(item.key, archiving: false) } label: {
                                     Label("Delete", systemImage: "trash")
@@ -59,15 +64,18 @@ struct ConversationListView: View {
             .focused(listIsFocused)
             .accessibilityIdentifier("conversationList")
             .onDeleteCommand {
-                if let key = model.selectedID, hub.canTrash(key) { model.remove(key, archiving: false) }
+                guard let key = model.selectedID else { return }
+                if hub.canActOnOutboxItem(key) { model.deleteOutboxItem(key) }
+                else if hub.canTrash(key) { model.remove(key, archiving: false) }
             }
             .contextMenu(forSelectionType: ConversationKey.self) { keys in
                 if let key = keys.first {
                     ConversationContextMenu(model: model, key: key)
                 }
             } primaryAction: { keys in
-                // Double-click, or Return: a draft opens for editing.
-                if let key = keys.first { model.editDraft(key) }
+                // Double-click, or Return: a draft or a queued message opens for editing.
+                guard let key = keys.first else { return }
+                if hub.canActOnOutboxItem(key) { model.editOutboxItem(key) } else { model.editDraft(key) }
             }
             .overlay {
                 if hub.conversations.isEmpty {
@@ -101,6 +109,13 @@ private struct ConversationContextMenu: View {
         }
         if hub.canEditDraft(key) {
             Button("Edit Draft", systemImage: "pencil") { model.editDraft(key) }
+            Divider()
+        }
+        if hub.canActOnOutboxItem(key) {
+            Button("Send Now", systemImage: "paperplane") { model.retryOutboxItem(key) }
+            Button("Edit", systemImage: "pencil") { model.editOutboxItem(key) }
+            Divider()
+            Button("Delete", systemImage: "trash", role: .destructive) { model.deleteOutboxItem(key) }
             Divider()
         }
         if key == model.selectedID, let open = model.openConversation {
@@ -142,7 +157,7 @@ private struct ListPlaceholder: View {
             ContentUnavailableView {
                 Label("Outbox is empty", systemImage: mailbox.symbol)
             } description: {
-                Text("Messages are sent immediately, so nothing waits here.")
+                Text("Messages that are waiting to be sent, or could not be, appear here.")
             }
         } else {
             ContentUnavailableView {

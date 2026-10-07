@@ -199,6 +199,29 @@ final class InboxModel {
         }
     }
 
+    // MARK: Outbox
+
+    /// Takes a queued message back into a composer window to change it.
+    func editOutboxItem(_ key: ConversationKey) {
+        guard hub.canActOnOutboxItem(key) else { return }
+        Task {
+            do {
+                if let draft = try await hub.editOutboxItem(key) { composer = draft }
+            } catch {
+                draftError = error.localizedDescription
+            }
+        }
+    }
+
+    func retryOutboxItem(_ key: ConversationKey) {
+        hub.retryOutboxItem(key)
+    }
+
+    func deleteOutboxItem(_ key: ConversationKey) {
+        guard hub.canActOnOutboxItem(key) else { return }
+        Task { await hub.deleteOutboxItem(key) }
+    }
+
     // MARK: Menu and toolbar
 
     var mailActions: MailActions {

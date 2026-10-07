@@ -45,7 +45,6 @@ Planned:
 - Search suggestions (people and subjects)
 - Showing CID (embedded) images
 - Gmail labels
-- An offline send queue (mail is sent immediately, so the Outbox is always empty)
 - Full offline mailbox downloads
 
 Not planned:

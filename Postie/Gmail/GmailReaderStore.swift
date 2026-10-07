@@ -290,6 +290,12 @@ final class GmailReaderStore {
         Task { await refresh() }
     }
 
+    /// Whether the account already has the message, for telling if an earlier attempt to send it got through.
+    func hasMessage(withID messageID: String) async throws -> Bool {
+        guard let sender else { throw GmailError.permissionRequired }
+        return try await sender.hasMessage(withID: messageID)
+    }
+
     var canDraft: Bool { drafter != nil }
 
     func saveDraft(_ message: OutgoingMessage, draftID: String?) async throws -> GmailDraftRef {

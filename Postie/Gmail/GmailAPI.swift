@@ -141,7 +141,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     private func threads(in mailbox: Mailbox?, matching search: String?, pageToken: String?) async throws -> GmailPage {
-        // Outbox is a local send queue, not a Gmail label. Sending is not implemented yet.
+        // Outbox is a local send queue, not a Gmail label: the hub lists it.
         guard mailbox != .outbox else { return GmailPage(conversations: [], nextPageToken: nil) }
         var query = [URLQueryItem(name: "maxResults", value: "25")]
         var terms: [String] = []
@@ -285,6 +285,16 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         try await post(path: "messages/send", json: try await rawMessage(message))
     }
 
+    func hasMessage(withID messageID: String) async throws -> Bool {
+        struct Found: Decodable, Sendable { let messages: [Entry]?; struct Entry: Decodable, Sendable { let id: String } }
+        let found: Found = try await get(path: "messages", query: [
+            URLQueryItem(name: "q", value: "rfc822msgid:" + messageID),
+            URLQueryItem(name: "maxResults", value: "1"),
+            URLQueryItem(name: "fields", value: "messages/id")
+        ])
+        return !(found.messages ?? []).isEmpty
+    }
+
     /// The JSON Gmail takes for a message: the encoded text, and the thread it belongs to.
     private func rawMessage(_ message: OutgoingMessage) async throws -> [String: Any] {
         var inReplyTo: String?
@@ -301,7 +311,9 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             inReplyTo = last?.payload?.header("Message-ID").nilIfEmpty
             references = last?.payload?.header("References").nilIfEmpty
         }
-        let raw = GmailMessageBuilder.base64URL(GmailMessageBuilder.rfc822(message, inReplyTo: inReplyTo, references: references))
+        let raw = GmailMessageBuilder.base64URL(message.messageID.map {
+            GmailMessageBuilder.rfc822(message, inReplyTo: inReplyTo, references: references, messageID: "<\($0)>")
+        } ?? GmailMessageBuilder.rfc822(message, inReplyTo: inReplyTo, references: references))
         var body: [String: Any] = ["raw": raw]
         if let threadID = message.threadID { body["threadId"] = threadID }
         return body

@@ -190,6 +190,9 @@
     "Drafts" : {
       "comment" : "Mailbox name"
     },
+    "Edit" : {
+
+    },
     "Edit Draft" : {
 
     },
@@ -304,7 +307,7 @@
     "Message from %@" : {
       "comment" : "VoiceOver label of a message header; the sender follows"
     },
-    "Messages are sent immediately, so nothing waits here." : {
+    "Messages that are waiting to be sent, or could not be, appear here." : {
 
     },
     "Move to Trash" : {
@@ -338,6 +341,9 @@
 
     },
     "No matching mail" : {
+
+    },
+    "Not sent: %@" : {
 
     },
     "Numbered List" : {
@@ -451,11 +457,17 @@
     "Send" : {
 
     },
+    "Send Now" : {
+
+    },
     "Send with Gmail (⌘↩)" : {
 
     },
     "Sending" : {
       "comment" : "VoiceOver label of the progress spinner shown while sending"
+    },
+    "Sending…" : {
+
     },
     "Sent" : {
       "comment" : "Mailbox name"
@@ -561,6 +573,12 @@
     },
     "Unread" : {
       "comment" : "Swipe action label (mark as unread) and VoiceOver state of an unread conversation"
+    },
+    "Waiting to be sent" : {
+
+    },
+    "Waiting to retry: %@" : {
+
     },
     "Web address" : {
 

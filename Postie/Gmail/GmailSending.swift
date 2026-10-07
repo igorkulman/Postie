@@ -13,6 +13,8 @@ nonisolated struct OutgoingMessage: Sendable, Equatable {
     var attachments: [OutgoingAttachment] = []
     /// Gmail thread to attach a reply to. Forwards and new messages start a new thread.
     var threadID: String?
+    /// The Message-ID header, without angle brackets. Queued mail fixes it so a retry can find an earlier attempt.
+    var messageID: String?
 }
 
 nonisolated struct OutgoingAttachment: Sendable, Equatable {
@@ -23,6 +25,12 @@ nonisolated struct OutgoingAttachment: Sendable, Equatable {
 
 nonisolated protocol GmailSending: Sendable {
     func send(_ message: OutgoingMessage) async throws
+    /// Whether a message with this Message-ID (without angle brackets) is already in the account.
+    func hasMessage(withID messageID: String) async throws -> Bool
+}
+
+extension GmailSending {
+    func hasMessage(withID messageID: String) async throws -> Bool { false }
 }
 
 /// A draft kept in Gmail. Saving it again changes `messageID`, so only `id` identifies the draft over time.

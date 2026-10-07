@@ -141,6 +141,7 @@ struct MailHubTests {
         try await hub.send(draft)
         draft.accountID = "b"
         try await hub.send(draft)
+        while hub.outbox.items.count > 0 { try await Task.sleep(for: .milliseconds(10)) }
         #expect(await a.sent.map(\.from) == ["a@example.com"])
         #expect(await b.sent.map(\.from) == ["b@example.com"])
         hub.accounts.setDefault("b")

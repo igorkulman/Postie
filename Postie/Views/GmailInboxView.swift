@@ -37,7 +37,7 @@ struct GmailInboxView: View {
     var body: some View {
         let actions = model.mailActions
         NavigationSplitView {
-            MailboxSidebar(selection: mailboxSelection, badges: [.inbox: hub.unreadInboxCount ?? 0, .drafts: hub.draftCount])
+            MailboxSidebar(selection: mailboxSelection, badges: [.inbox: hub.unreadInboxCount ?? 0, .drafts: hub.draftCount, .outbox: hub.outboxCount])
                 .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
         } content: {
             ConversationListView(model: model, listIsFocused: $listIsFocused)

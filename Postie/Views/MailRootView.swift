@@ -18,8 +18,11 @@ struct MailRootView: View {
 
     private var accounts: AccountStore { hub.accounts }
 
+    /// Unread mail, plus the messages that could not be sent.
     private var unreadCount: Int? {
-        hub.sessions.isEmpty ? nil : hub.unreadInboxCount
+        guard !hub.sessions.isEmpty else { return nil }
+        let total = (hub.unreadInboxCount ?? 0) + hub.outbox.failedCount
+        return hub.unreadInboxCount == nil && total == 0 ? nil : total
     }
 
     var body: some View {

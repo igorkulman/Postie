@@ -107,7 +107,7 @@ final class MailHub {
     private(set) var isSearching = false
     private(set) var searchError: String?
     private var searchVersion = 0
-    @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], list: MergedList)?
+    @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, mailbox: Mailbox, list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
     /// Drafts being edited, so opening one again brings its window forward.
@@ -116,25 +116,34 @@ final class MailHub {
     @ObservationIgnored private var disconnectedIDs: Set<String> = []
 
     @ObservationIgnored private var cache: GmailCache?
+    /// Mail written but not yet sent, kept on disk until Gmail has it.
+    @ObservationIgnored private(set) var outbox: Outbox!
     @ObservationIgnored private let persistsMail: Bool
     @ObservationIgnored private let syncsInBackground: Bool
     @ObservationIgnored private let makeAPI: (@MainActor (String) -> any GmailReading)?
 
     /// `makeAPI` supplies local mail; `cache` lets regression mode/tests use SQLite without opening the real database.
     init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true,
-         cache: GmailCache? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
+         cache: GmailCache? = nil, outboxStore: OutboxStore? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
         self.accounts = accounts
         self.persistsMail = persistsMail
         self.syncsInBackground = syncsInBackground
         self.cache = cache
         self.makeAPI = makeAPI
         isPreparing = persistsMail && cache == nil
+        // Previews and tests must not touch the real outbox.
+        let store = outboxStore ?? (persistsMail ? OutboxStore()
+            : OutboxStore(root: URL.temporaryDirectory.appending(path: "PostieOutbox-" + UUID().uuidString, directoryHint: .isDirectory)))
+        outbox = Outbox(store: store, canSend: { [weak self] in self?.canDeliver(for: $0) ?? false },
+                        deliver: { [weak self] in try await self?.deliver($0) })
     }
 
     // MARK: Lifecycle
 
     func prepare() async {
         defer { isPreparing = false }
+        if persistsMail { outbox.startMonitoringNetwork() }
+        await outbox.load()
         guard persistsMail, cache == nil else { return }
         do {
             cache = try await GmailCache.open()
@@ -166,6 +175,8 @@ final class MailHub {
         sessions.sort { (order.firstIndex(of: $0.id) ?? 0) < (order.firstIndex(of: $1.id) ?? 0) }
         // Their readers still hold the error from before signing in; look for mail now instead of at the next slow retry.
         for id in reconnected { await session(for: id)?.reader.refresh() }
+        // Mail that was waiting for the account to sign in can go out now.
+        outbox.kick()
     }
 
     private func makeSession(for identity: GoogleIdentity) async -> AccountSession? {
@@ -198,6 +209,7 @@ final class MailHub {
         Log.accounts.info("Removed an account and its cached mail")
         sessions.first { $0.id == id }?.stop()
         sessions.removeAll { $0.id == id }
+        await outbox.removeAll(accountID: id)
         accounts.remove(id)
         await AttachmentFiles.removeAll(accountID: id)
     }
@@ -212,6 +224,7 @@ final class MailHub {
 
     /// Shows what is saved for the current folder, then asks Gmail for anything new, for every account at once.
     func refresh() async {
+        outbox.kick()
         await withTaskGroup(of: Void.self) { group in
             for session in sessions {
                 let reader = session.reader
@@ -256,16 +269,47 @@ final class MailHub {
 
     private var folderList: MergedList {
         let revisions = sessions.map { ReaderRevision(accountID: $0.id, revision: $0.reader.conversationsRevision) }
-        if let cache = folderListCache, cache.revisions == revisions { return cache.list }
-        let merged = sessions.flatMap { session in
-            session.reader.conversations.map {
-                MergedConversation(key: ConversationKey(accountID: session.id, threadID: $0.id), conversation: $0)
-            }
+        let outboxRevision = mailbox == .outbox ? outbox.revision : 0
+        if let cache = folderListCache, cache.revisions == revisions, cache.outboxRevision == outboxRevision, cache.mailbox == mailbox {
+            return cache.list
         }
-        .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
+        let merged: [MergedConversation]
+        if mailbox == .outbox {
+            merged = outbox.items.compactMap { item in
+                session(for: item.accountID).map { MergedConversation(key: ConversationKey(accountID: $0.id, threadID: item.id), conversation: outboxConversation(item, from: $0)) }
+            }
+            .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
+        } else {
+            merged = sessions.flatMap { session in
+                session.reader.conversations.map {
+                    MergedConversation(key: ConversationKey(accountID: session.id, threadID: $0.id), conversation: $0)
+                }
+            }
+            .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
+        }
         let list = MergedList(merged)
-        folderListCache = (revisions, list)
+        folderListCache = (revisions, outboxRevision, mailbox, list)
         return list
+    }
+
+    /// A queued message shown like a conversation of one message. Its preview says where it stands.
+    private func outboxConversation(_ item: OutboxItem, from session: AccountSession) -> GmailConversation {
+        let status: String
+        switch item.state {
+        case .sending: status = String(localized: "Sending…")
+        case .failed: status = String(localized: "Not sent: \(item.lastError ?? "")")
+        case .queued:
+            status = item.lastError.map { String(localized: "Waiting to retry: \($0)") } ?? String(localized: "Waiting to be sent")
+        }
+        let html = item.html.map(Self.htmlDocument)
+        return GmailConversation(id: item.id, subject: item.subject, messages: [
+            GmailMessage(id: item.id, senderName: session.email, senderEmail: session.email, recipient: item.recipient, cc: item.cc,
+                         date: item.createdAt, snippet: status, body: item.body, htmlBody: html,
+                         attachments: item.attachments.enumerated().map {
+                             MailAttachment(messageID: item.id, partID: String($0.offset), attachmentID: "", filename: $0.element.filename, mimeType: "", size: 0)
+                         },
+                         labelIDs: ["OUTBOX"])
+        ])
     }
 
     // MARK: Search
@@ -358,6 +402,9 @@ final class MailHub {
         sessions.compactMap(\.reader.draftCount).reduce(0, +)
     }
 
+    /// Messages waiting to be sent or that could not be, for the badge next to the Outbox folder.
+    var outboxCount: Int { outbox.items.count }
+
     var isLoadingMailbox: Bool { isSearchActive ? isSearching : sessions.contains { $0.reader.isLoadingMailbox } }
     var isRestoringCache: Bool { sessions.contains { $0.reader.isRestoringCache } }
     var showingCachedMail: Bool { !isSearchActive && sessions.contains { $0.reader.showingCachedMail } }
@@ -391,6 +438,11 @@ final class MailHub {
 
     /// A local copy of the attachment, downloaded the first time it is needed.
     func attachmentFile(_ attachment: MailAttachment, accountID: String) async throws -> URL {
+        // Attachments of queued mail are already on disk.
+        if let item = outbox.item(attachment.messageID), let index = Int(attachment.partID) {
+            let urls = await outbox.attachmentURLs(for: item)
+            if urls.indices.contains(index) { return urls[index] }
+        }
         guard let reader = session(for: accountID)?.reader, reader.canLoadAttachments else { throw GmailError.permissionRequired }
         let url = AttachmentFiles.url(for: attachment, accountID: accountID)
         if AttachmentFiles.exists(at: url) { return url }
@@ -448,6 +500,7 @@ final class MailHub {
 
     /// The fully loaded conversation, once its owner has opened it.
     func openConversation(for key: ConversationKey?) -> GmailConversation? {
+        if mailbox == .outbox, !isSearchActive { return key.flatMap { folderList[$0]?.conversation } }
         guard let key, let selected = session(for: key.accountID)?.reader.selectedConversation,
               selected.id == key.threadID else { return nil }
         return selected
@@ -462,7 +515,8 @@ final class MailHub {
     }
 
     func canModifyLabels(_ key: ConversationKey?) -> Bool {
-        key.flatMap { session(for: $0.accountID)?.reader.canModifyLabels } ?? false
+        if mailbox == .outbox, !isSearchActive { return false }
+        return key.flatMap { session(for: $0.accountID)?.reader.canModifyLabels } ?? false
     }
 
     /// Search results come from any folder, so what can be done depends on the thread's own labels.
@@ -476,7 +530,7 @@ final class MailHub {
         if isSearchActive {
             return searchResult(key)?.labelIDs.contains("INBOX") == true && canModifyLabels(key)
         }
-        return mailbox != .drafts && session(for: key.accountID)?.reader.canArchive ?? false
+        return mailbox != .drafts && mailbox != .outbox && session(for: key.accountID)?.reader.canArchive ?? false
     }
 
     func canTrash(_ key: ConversationKey?) -> Bool {
@@ -490,8 +544,10 @@ final class MailHub {
 
     /// Opens a conversation in its account and closes whatever another account had open.
     func select(_ key: ConversationKey?) async {
-        for session in sessions where session.id != key?.accountID { await session.reader.select(nil) }
-        guard let key, let session = session(for: key.accountID) else { return }
+        let queued = mailbox == .outbox && !isSearchActive
+        for session in sessions where queued || session.id != key?.accountID { await session.reader.select(nil) }
+        // Queued mail is not in Gmail yet: there is nothing to load.
+        guard !queued, let key, let session = session(for: key.accountID) else { return }
         await session.reader.select(key.threadID)
     }
 
@@ -525,14 +581,58 @@ final class MailHub {
         if reader.mailboxError == nil { updateSearchResult(key) { $0.setting("STARRED", to: starred) } }
     }
 
-    /// Sends from the draft's account. A reply always goes out from the account that received the mail.
+    /// Queues the message to be sent from the draft's account and returns at once; the outbox delivers it, and keeps
+    /// trying when Gmail cannot be reached. A reply always goes out from the account that received the mail.
     func send(_ draft: ComposeDraft) async throws {
-        let (session, message) = try await outgoing(draft)
-        if let draftID = draft.gmailDraftID {
-            try await session.reader.sendDraft(message, draftID: draftID)
+        guard let id = draft.accountID ?? defaultSendingAccount?.id, session(for: id) != nil else { throw GmailError.signInRequired }
+        try await outbox.enqueue(draft, accountID: id)
+    }
+
+    private func canDeliver(for accountID: String) -> Bool {
+        session(for: accountID) != nil && !isDisconnected(accountID)
+    }
+
+    /// One attempt to send a queued message.
+    private func deliver(_ item: OutboxItem) async throws {
+        guard let session = session(for: item.accountID) else { throw GmailError.signInRequired }
+        // An earlier attempt may have reached Gmail without the answer getting back.
+        if item.attempts > 1, (try? await session.reader.hasMessage(withID: item.messageID)) == true { return }
+        let attachments = try await OutgoingAttachments.load(await outbox.attachmentURLs(for: item))
+        let message = OutgoingMessage(
+            from: session.email, to: item.recipient, cc: item.cc, bcc: item.bcc, subject: item.subject, body: item.body,
+            htmlBody: item.html.map(Self.htmlDocument), attachments: attachments, threadID: item.threadID, messageID: item.messageID
+        )
+        if let draftID = item.draftID {
+            do { try await session.reader.sendDraft(message, draftID: draftID) }
+            catch GmailError.http(404) { try await session.reader.send(message) }
         } else {
             try await session.reader.send(message)
         }
+    }
+
+    // MARK: Outbox
+
+    func retryOutboxItem(_ key: ConversationKey) {
+        outbox.retry(key.threadID)
+    }
+
+    func deleteOutboxItem(_ key: ConversationKey) async {
+        await outbox.remove(key.threadID)
+    }
+
+    func canActOnOutboxItem(_ key: ConversationKey?) -> Bool {
+        guard mailbox == .outbox, !isSearchActive, let key, let item = outbox.item(key.threadID) else { return false }
+        return item.state != .sending
+    }
+
+    /// Takes a queued message out of the outbox and back into a draft to edit.
+    func editOutboxItem(_ key: ConversationKey) async throws -> ComposeDraft? {
+        let folder = URL.cachesDirectory.appending(path: "Postie/OutboxEdit/" + key.threadID, directoryHint: .isDirectory)
+        guard let (item, attachments) = try await outbox.take(key.threadID, attachmentsTo: folder) else { return nil }
+        return ComposeDraft(
+            recipient: item.recipient, cc: item.cc, bcc: item.bcc, subject: item.subject, body: item.body, html: item.html,
+            attachments: attachments, gmailThreadID: item.threadID, gmailDraftID: item.draftID, accountID: item.accountID, kind: item.kind
+        )
     }
 
     private func outgoing(_ draft: ComposeDraft) async throws -> (AccountSession, OutgoingMessage) {

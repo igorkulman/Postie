@@ -4,6 +4,15 @@ All notable changes to Postie are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and Postie uses
 [semantic versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- A real Outbox: sent messages are saved on this Mac and delivered in the
+  background, retried when the connection or Gmail is unavailable, and kept
+  across quitting. Messages that cannot be sent stay in the Outbox, where they
+  can be sent again, edited or deleted.
+
 ## [0.1.0] - 2026-10-07
 
 First public release.
