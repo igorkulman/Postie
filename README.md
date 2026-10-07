@@ -81,12 +81,19 @@ it in `Configuration/Google.local.xcconfig` (see the `.example` file).
 
 More details are in the [privacy policy](https://postie.kulman.sk/privacy).
 
+## Download
+
+Download `Postie.zip` from the
+[latest release](https://github.com/igorkulman/Postie/releases/latest), unzip it
+and drag Postie to your Applications folder. The app is signed with a Developer ID
+and notarized by Apple. See [CHANGELOG.md](CHANGELOG.md) for what changed.
+
 ## Requirements
 
 - macOS 26
-- Xcode 27
+- Xcode 27 (only to build it yourself)
 
-## Running Postie
+## Running Postie from source
 
 Open `Postie.xcodeproj`, choose the **Postie** scheme and **My Mac**, and run.
 
