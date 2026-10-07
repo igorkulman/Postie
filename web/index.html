@@ -4,56 +4,179 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Postie - A small native Gmail client for macOS</title>
-    <meta name="description" content="Postie is a small native Gmail client for macOS built with SwiftUI. No Electron, no subscriptions, no AI features." />
+    <meta name="description" content="Postie is a small native Gmail client for macOS built with SwiftUI. No Electron, no subscriptions, no AI features. Free and open source." />
     <link rel="canonical" href="https://postie.kulman.sk/" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Postie - A small native Gmail client for macOS" />
+    <meta property="og:description" content="Native SwiftUI Gmail client for macOS. No Electron, no subscriptions, no AI features." />
+    <meta property="og:url" content="https://postie.kulman.sk/" />
+    <meta property="og:image" content="https://postie.kulman.sk/postie.png" />
+    <meta name="twitter:card" content="summary_large_image" />
     <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
-    <div class="container">
-        <header>
+    <header class="site-header">
+        <div class="container nav">
             <a href="index.html" class="logo">Postie</a>
-        </header>
+            <nav>
+                <a href="#features">Features</a>
+                <a href="#privacy">Privacy</a>
+                <a href="#get-started">Get started</a>
+                <a href="https://github.com/igorkulman/Postie">GitHub</a>
+            </nav>
+        </div>
+    </header>
 
-        <section class="hero">
-            <h1>A small native Gmail client for macOS</h1>
-            <p>
-                Built with SwiftUI for people who want a simple Mac email client without
-                Electron, subscriptions, AI features, or workspace bloat.
+    <main>
+        <section class="hero container">
+            <h1>Gmail on your Mac,<br />the way a Mac app should be</h1>
+            <p class="lead">
+                Postie is a small native Gmail client built with SwiftUI. No Electron, no
+                subscriptions, no AI features, no workspace bloat. Just your mail.
             </p>
-            <a class="button" href="https://github.com/igorkulman/Postie">View on GitHub</a>
+            <div class="actions">
+                <a class="button" href="#get-started">Get started</a>
+                <a class="button secondary" href="https://github.com/igorkulman/Postie">View on GitHub</a>
+            </div>
+            <p class="fineprint">Free and open source under the MIT license. Requires macOS 26.</p>
         </section>
 
-        <img class="screenshot" src="postie.png" alt="Postie showing a Gmail inbox and a conversation" />
+        <div class="container wide">
+            <img class="screenshot" src="postie.png" width="1600" height="1093"
+                alt="Postie showing a Gmail inbox and a conversation" />
+        </div>
 
-        <h2>Features</h2>
-        <ul class="features">
-            <li>Native SwiftUI macOS app</li>
-            <li>Gmail integration using Google Sign-In and the Gmail API</li>
-            <li>Inbox, Drafts, Sent, Archive, Junk, and Trash</li>
-            <li>Conversation view with HTML email rendering</li>
-            <li>Rich-text compose, reply, reply all, and forward, with attachments and your Gmail signature</li>
-            <li>Address suggestions from your Google contacts</li>
-            <li>Drafts saved in Gmail, available in every Gmail client</li>
-            <li>Archive, trash, star, and read/unread actions</li>
-            <li>Local SQLite cache and incremental sync</li>
-            <li>Search powered by Gmail, across all your accounts</li>
-            <li>Light and dark mode</li>
-            <li>Dock badge for unread Inbox mail</li>
-        </ul>
+        <section class="container pills" aria-label="Highlights">
+            <span>Native SwiftUI</span>
+            <span>Multiple accounts</span>
+            <span>Light &amp; dark mode</span>
+            <span>No Postie server</span>
+            <span>No analytics</span>
+        </section>
 
-        <h2>Privacy</h2>
-        <p>
-            Postie talks to Gmail directly from your Mac. There is no Postie server and no
-            analytics. Read the <a href="privacy.html">privacy policy</a>.
-        </p>
+        <section id="features" class="container section">
+            <h2>What it does</h2>
+            <p class="section-intro">Everything you need to read and write mail, and nothing you don't.</p>
+            <div class="cards">
+                <article class="card">
+                    <h3>Multiple accounts, one inbox</h3>
+                    <p>Sign in with Google and merge several Gmail accounts into one set of folders. Replies, forwards and archive actions always go through the account a conversation belongs to.</p>
+                </article>
+                <article class="card">
+                    <h3>Real conversations</h3>
+                    <p>Threaded conversation view with HTML email rendering. Long messages scroll with the conversation and quoted history is collapsed.</p>
+                </article>
+                <article class="card">
+                    <h3>Rich-text compose</h3>
+                    <p>Write, reply, reply all and forward with bold, italic, underline, lists and links. Attachments and your Gmail signature are supported.</p>
+                </article>
+                <article class="card">
+                    <h3>Drafts that follow you</h3>
+                    <p>Drafts are saved in Gmail, so they show up in every Gmail client and can be edited later from the Drafts folder.</p>
+                </article>
+                <article class="card">
+                    <h3>Search powered by Gmail</h3>
+                    <p>Search as you type across all your accounts, in the current folder or All Mail, with operators such as <code>from:</code> and <code>has:attachment</code>.</p>
+                </article>
+                <article class="card">
+                    <h3>Address suggestions</h3>
+                    <p>The composer suggests addresses from your Google contacts and the people you have written to.</p>
+                </article>
+                <article class="card">
+                    <h3>Fast and local</h3>
+                    <p>A local SQLite cache and incremental sync keep previously loaded mail instantly available.</p>
+                </article>
+                <article class="card">
+                    <h3>Feels like a Mac app</h3>
+                    <p>Inbox, Drafts, Sent, Archive, Junk and Trash, star and read/unread actions, a Dock badge for unread Inbox mail, and native light and dark mode.</p>
+                </article>
+            </div>
+        </section>
 
-        <footer>
-            <a href="privacy.html">Privacy Policy</a>
-            <a href="https://github.com/igorkulman/Postie">GitHub</a>
-        </footer>
-    </div>
+        <section id="privacy" class="section band">
+            <div class="container narrow">
+                <h2>Private by design</h2>
+                <p>
+                    Postie talks to Gmail directly from your Mac. There is no Postie server and no
+                    analytics. Sign-in credentials live in your Keychain, and loaded mail is cached
+                    in a local database on your Mac.
+                </p>
+                <p>
+                    Postie never permanently deletes mail: Trash is Gmail's normal, recoverable
+                    Trash. It never changes your Gmail settings or your contacts. Read the full
+                    <a href="privacy.html">privacy policy</a>.
+                </p>
+            </div>
+        </section>
+
+        <section id="get-started" class="container narrow section">
+            <h2>Get started</h2>
+            <ol class="steps">
+                <li>
+                    <strong>Build it.</strong> Postie needs macOS 26 and Xcode 27. Clone the
+                    <a href="https://github.com/igorkulman/Postie">repository</a>, open
+                    <code>Postie.xcodeproj</code>, choose the <strong>Postie</strong> scheme and
+                    <strong>My Mac</strong>, and run.
+                </li>
+                <li>
+                    <strong>Sign in with Google.</strong> The Gmail permissions Postie needs are
+                    restricted, and the app has not been verified by Google, so the sign-in screen
+                    shows "Google hasn't verified this app".
+                </li>
+                <li>
+                    <strong>Allow everything.</strong> Choose <strong>Advanced &gt; Go to Postie
+                    (unsafe)</strong>, then tick all the permissions on the next screen. Postie
+                    needs all of them to work.
+                </li>
+            </ol>
+            <p class="note">
+                Unverified apps are limited to 100 users. If you fork Postie, create your own
+                OAuth client in Google Cloud and use it instead.
+            </p>
+        </section>
+
+        <section class="container narrow section">
+            <h2>Status</h2>
+            <p>
+                Postie is an early project, built primarily as the Gmail client its author wanted
+                to use. It supports Gmail accounts only and is not meant to replace every Gmail
+                feature or become a generic IMAP client.
+            </p>
+            <div class="columns">
+                <div>
+                    <h3>Planned</h3>
+                    <ul>
+                        <li>Search suggestions</li>
+                        <li>Embedded (CID) images</li>
+                        <li>Gmail labels</li>
+                        <li>An offline send queue</li>
+                        <li>Full offline mailbox downloads</li>
+                    </ul>
+                </div>
+                <div>
+                    <h3>Not planned</h3>
+                    <ul>
+                        <li>Generic IMAP / Exchange support</li>
+                        <li>Push notifications while Postie is closed</li>
+                    </ul>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <div class="container footer-inner">
+            <span>Postie, by <a href="https://github.com/igorkulman">Igor Kulman</a>. MIT license.</span>
+            <span class="footer-links">
+                <a href="privacy.html">Privacy Policy</a>
+                <a href="https://github.com/igorkulman/Postie/issues">Issues</a>
+                <a href="https://github.com/igorkulman/Postie">GitHub</a>
+            </span>
+        </div>
+    </footer>
 </body>
 
 </html>
