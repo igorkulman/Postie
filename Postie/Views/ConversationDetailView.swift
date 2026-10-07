@@ -8,7 +8,8 @@ struct ConversationDetailView: View {
 
     var body: some View {
         let key = model.selectedID
-        if let key, let conversation = hub.openConversation(for: key) {
+        if let key, let conversation = hub.openConversation(for: key),
+           !(hub.isLoadingConversation(key) && !conversation.messages.allSatisfy(\.bodyLoaded)) {
             VStack(spacing: 0) {
                 if let error = hub.conversationError(key) {
                     GmailErrorBanner(message: error, retry: model.retrySelection)

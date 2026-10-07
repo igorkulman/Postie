@@ -21,7 +21,7 @@ struct GmailPersistentReaderTests {
             let reader = GmailReaderStore(api: api, cache: session)
             await reader.refresh()
             await reader.select("a1")
-            #expect(api.selected == ["a1"])
+            #expect(Set(api.selected) == ["a1"])
         }
         let database = try await GmailCache.open(at: url)
         let session = try await database.session(for: account)

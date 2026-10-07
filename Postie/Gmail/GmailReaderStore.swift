@@ -42,6 +42,7 @@ final class GmailReaderStore {
     @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredGeneration: Generation?
     @ObservationIgnored private var bodies: [String: GmailConversation] = [:]
+    @ObservationIgnored private var prefetchTask: Task<Void, Never>?
     // Work remembers the generation it started under and checks it again after every await: a changed
     // value means the folder, the open conversation or the whole account was reset in the meantime.
     @ObservationIgnored private var folderGeneration = Generation()
@@ -89,6 +90,8 @@ final class GmailReaderStore {
     }
 
     private func resetMailbox() {
+        prefetchTask?.cancel()
+        prefetchTask = nil
         folderGeneration.advance()
         selectionGeneration.advance()
         restoredGeneration = nil
@@ -202,6 +205,7 @@ final class GmailReaderStore {
             }
             showingCachedMail = false
             cacheError = nil
+            prefetchBodies()
             if changed {
                 selectionGeneration.advance()
                 isLoadingConversation = false
@@ -436,6 +440,7 @@ final class GmailReaderStore {
                     showingCachedMail = false
                     cacheError = nil
                     if refreshing { mailboxVersion += 1 }
+                    prefetchBodies()
                     return
                 } catch GmailCacheError.checkpointChanged {
                     guard isCurrent(startedFolder) else { return }
@@ -525,6 +530,43 @@ final class GmailReaderStore {
             Log.api.error("Loading the conversation failed: \(error.localizedDescription)")
             // Keep cached bodies visible even when a newly added reply cannot be downloaded.
             conversationError = error.localizedDescription
+        }
+    }
+
+    /// Downloads the newest unread-from-network bodies in the background so opening them is instant.
+    /// Cancelled with the folder; the selected thread's own load is never held up by it.
+    private func prefetchBodies(limit: Int = 15, concurrency: Int = 3) {
+        guard let cache else { return }
+        prefetchTask?.cancel()
+        let ids = conversations.prefix(limit).filter { !$0.messages.allSatisfy(\.bodyLoaded) }.map(\.id)
+        guard !ids.isEmpty else { return }
+        let startedFolder = folderGeneration
+        let api = api
+        prefetchTask = Task { [weak self] in
+            await withTaskGroup(of: Void.self) { group in
+                var iterator = ids.makeIterator()
+                func add(_ id: String) {
+                    group.addTask { await Self.prefetch(id, api: api, cache: cache) }
+                }
+                for _ in 0..<concurrency { if let id = iterator.next() { add(id) } }
+                while await group.next() != nil {
+                    guard await self?.folderGeneration == startedFolder, let id = iterator.next() else { continue }
+                    add(id)
+                }
+            }
+        }
+    }
+
+    private nonisolated static func prefetch(_ id: String, api: any GmailReading, cache: GmailCacheSession) async {
+        guard !Task.isCancelled else { return }
+        do {
+            let checkpoint = try? await cache.checkpoint()
+            if let saved = try? await cache.conversation(id: id), saved.messages.allSatisfy(\.bodyLoaded) { return }
+            let conversation = try await api.conversation(id: id)
+            guard !Task.isCancelled else { return }
+            try await cache.saveConversation(conversation, checkpoint: checkpoint)
+        } catch {
+            if !(error is CancellationError) { Log.api.debug("Prefetching a message failed: \(error.localizedDescription, privacy: .public)") }
         }
     }
 }
