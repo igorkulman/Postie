@@ -82,10 +82,10 @@ More details are in the [privacy policy](https://postie.kulman.sk/privacy).
 
 ## Download
 
-Download `Postie.zip` from the
-[latest release](https://github.com/igorkulman/Postie/releases/latest), unzip it
+Download the `.dmg` from the
+[latest release](https://github.com/igorkulman/Postie/releases/latest), open it
 and drag Postie to your Applications folder. The app is signed with a Developer ID
-and notarized by Apple. See [CHANGELOG.md](CHANGELOG.md) for what changed.
+and notarized by Apple, and updates itself from then on. See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
 ## Requirements
 
