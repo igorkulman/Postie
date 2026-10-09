@@ -11,10 +11,10 @@
 # Optional:
 #   BUILD_NUMBER                      defaults to the number of commits
 #
-# The DMG is also signed for Sparkle with the EdDSA key in the login Keychain
-# (created once with Sparkle's generate_keys) and appcast.xml is generated next to it.
+# Packaging (DMG, Sparkle signature, appcast.xml) is done by scripts/package.sh, which can also be
+# run on its own for an app exported from Xcode.
 #
-# Output: build/release/Postie-<version>.dmg, its .sha256 and appcast.xml
+# Output: build/release/Postie-<version>.dmg, its .sha256, appcast.xml and the release notes
 
 set -euo pipefail
 
@@ -43,10 +43,7 @@ OUT="build/release"
 ARCHIVE="$OUT/Postie.xcarchive"
 EXPORT="$OUT/export"
 APP="$EXPORT/Postie.app"
-DMG="$OUT/Postie-$VERSION.dmg"
 PACKAGES="build/SourcePackages"
-SPARKLE_BIN="$PACKAGES/artifacts/sparkle/Sparkle/bin"
-REPO="igorkulman/Postie"
 
 AUTH=(
   -allowProvisioningUpdates
@@ -98,59 +95,4 @@ xcrun notarytool submit "$OUT/Postie.zip" "${NOTARY[@]}" --wait
 xcrun stapler staple "$APP"
 rm "$OUT/Postie.zip"
 
-echo "==> Creating the DMG"
-STAGING="$OUT/dmg"
-mkdir -p "$STAGING"
-cp -R "$APP" "$STAGING/"
-ln -s /Applications "$STAGING/Applications"
-hdiutil create -volname "Postie" -srcfolder "$STAGING" -ov -format UDZO "$DMG" >/dev/null
-rm -rf "$STAGING"
-
-if security find-identity -v -p codesigning | grep -qF "$IDENTITY"; then
-  codesign --sign "$IDENTITY" --timestamp "$DMG"
-else
-  echo "Warning: '$IDENTITY' is not in the local keychain, so the DMG itself is not signed" >&2
-fi
-
-echo "==> Notarizing the DMG"
-xcrun notarytool submit "$DMG" "${NOTARY[@]}" --wait
-xcrun stapler staple "$DMG"
-
-echo "==> Verifying"
-xcrun stapler validate "$DMG"
-spctl --assess --type execute --verbose=2 "$APP"
-
-echo "==> Generating the Sparkle appcast"
-if [[ ! -x "$SPARKLE_BIN/generate_appcast" ]]; then
-  echo "Sparkle tools not found at $SPARKLE_BIN" >&2
-  exit 1
-fi
-# generate_appcast works on a folder of archives; release notes are picked up from a .md next to the DMG
-FEED="$OUT/appcast"
-mkdir -p "$FEED"
-cp "$DMG" "$FEED/"
-awk -v v="$VERSION" '
-  /^## \[/ { printing = index($0, "## [" v "]") == 1; next }
-  printing { print }
-' CHANGELOG.md > "$FEED/Postie-$VERSION.md"
-if [[ ! -s "$FEED/Postie-$VERSION.md" ]]; then
-  echo "Warning: no CHANGELOG.md section for $VERSION, the update dialog will have no release notes" >&2
-  rm "$FEED/Postie-$VERSION.md"
-fi
-"$SPARKLE_BIN/generate_appcast" \
-  --download-url-prefix "https://github.com/$REPO/releases/download/v$VERSION/" \
-  --embed-release-notes \
-  "$FEED"
-cp "$FEED/appcast.xml" "$OUT/appcast.xml"
-rm -rf "$FEED"
-
-(cd "$OUT" && shasum -a 256 "$(basename "$DMG")" > "$(basename "$DMG").sha256")
-
-echo
-echo "Done: $DMG"
-cat "$DMG.sha256"
-
-echo
-echo "Publish with:"
-echo "  gh release create v$VERSION $DMG $OUT/appcast.xml --title v$VERSION"
-echo "The appcast must be attached to every release: Postie looks it up under releases/latest."
+NOTARY_PROFILE="" OUT="$OUT" "$(dirname "$0")/package.sh" "$VERSION" "$APP"
