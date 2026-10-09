@@ -13,5 +13,11 @@
             </array>
         </dict>
     </array>
+    <key>SUFeedURL</key>
+    <string>https://github.com/igorkulman/Postie/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>45YfF31/vj1sY14780PYpTtxspMRa/K5B48DXbbarpM=</string>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
 </dict>
 </plist>

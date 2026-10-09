@@ -140,10 +140,13 @@ private struct AccountRow: View {
 
 private struct GeneralSettings: View {
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
+    @Environment(UpdaterModel.self) private var updater
 
     var body: some View {
+        @Bindable var updater = updater
         Form {
             Toggle("Show unread count on the Dock icon", isOn: $showsDockBadge)
+            Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
         }
         .formStyle(.grouped)
     }

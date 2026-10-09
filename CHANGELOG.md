@@ -12,6 +12,9 @@ All notable changes to Postie are documented here. The format is based on
   background, retried when the connection or Gmail is unavailable, and kept
   across quitting. Messages that cannot be sent stay in the Outbox, where they
   can be sent again, edited or deleted.
+- Automatic updates: Postie checks for new releases in the background and
+  installs them on request. Use Postie > Check for Updates… to check right now,
+  or turn the automatic check off in Settings.
 
 ## [0.1.0] - 2026-10-07
 

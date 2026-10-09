@@ -5,3 +5,4 @@ build/
 xcuserdata/
 .pi/
 Configuration/Google.local.xcconfig
+*.p8

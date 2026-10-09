@@ -39,11 +39,13 @@ private enum LaunchMode {
 @main
 struct PostieApp: App {
     @State private var hub: MailHub
+    @State private var updater: UpdaterModel
     private let launchMode = LaunchMode.current
 
     init() {
         let launchMode = LaunchMode.current
         let accounts = launchMode.usesLocalAccount ? AccountStore(vault: MemoryAccountVault()) : AccountStore()
+        _updater = State(initialValue: UpdaterModel(startingUpdater: !launchMode.usesLocalAccount))
         _hub = State(initialValue: MailHub(
             accounts: accounts, persistsMail: !launchMode.usesLocalAccount, syncsInBackground: !launchMode.usesLocalAccount
         ))
@@ -54,7 +56,7 @@ struct PostieApp: App {
             root
                 .frame(minWidth: 960, minHeight: 640)
         }
-        .commands { MailCommands() }
+        .commands { MailCommands(updater: updater) }
         .defaultSize(width: 1200, height: 820)
         .windowResizability(.contentMinSize)
 
@@ -69,6 +71,7 @@ struct PostieApp: App {
 
         Settings {
             SettingsView(hub: hub)
+                .environment(updater)
         }
     }
 

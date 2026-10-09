@@ -24,6 +24,7 @@ extension FocusedValues {
 
 struct MailCommands: Commands {
     @FocusedValue(\.mailActions) private var actions
+    let updater: UpdaterModel
 
     /// ⌘1…⌘9 pick the first nine folders; any further folder simply has no shortcut.
     private static func shortcut(forMailboxAt index: Int) -> KeyboardShortcut? {
@@ -32,6 +33,11 @@ struct MailCommands: Commands {
     }
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            Button("Check for Updates…") { updater.checkForUpdates() }
+                .disabled(!updater.canCheckForUpdates)
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("New Message") { actions?.newMessage?() }
                 .keyboardShortcut("n", modifiers: .command)
