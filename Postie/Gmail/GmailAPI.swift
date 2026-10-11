@@ -67,9 +67,10 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     // Gmail also limits concurrent requests per user, so only a few run at once.
     private let maximumInFlight = 4
     private var inFlight = 0
+    private var pausedUntil = ContinuousClock.now
     private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
 
-    init(transport: any GmailTransport = GmailURLTransport(), retryDelays: [TimeInterval] = [1, 3, 9],
+    init(transport: any GmailTransport = GmailURLTransport(), retryDelays: [TimeInterval] = [2, 5, 12, 30],
          accessToken: @escaping @MainActor @Sendable () async throws -> String) {
         self.transport = transport
         self.retryDelays = retryDelays
@@ -82,6 +83,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         var retries = retryDelays.makeIterator()
         while true {
             try Task.checkCancellation()
+            try await waitForCooldown()
             try await acquireSlot()
             let result = await Result { try await transport.send(request) }
             releaseSlot()
@@ -101,7 +103,15 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             }
             let wait = min(max(delay, response.retryAfter ?? 0), 60)
             Log.api.warning("Rate limited (HTTP \(response.statusCode, privacy: .public)) on \(endpoint), retrying in \(wait, privacy: .public)s")
-            try await Task.sleep(for: .seconds(wait))
+            // The limit is per user, so every request pauses, not just the one that hit it.
+            pausedUntil = max(pausedUntil, .now + .seconds(wait))
+        }
+    }
+
+    /// Waits out a cooldown another request started.
+    private func waitForCooldown() async throws {
+        while ContinuousClock.now < pausedUntil {
+            try await Task.sleep(until: pausedUntil, clock: .continuous)
         }
     }
 

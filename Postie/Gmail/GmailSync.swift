@@ -30,6 +30,16 @@ nonisolated struct GmailHistoryPage: Decodable, Sendable {
 
     var affectedThreadIDs: Set<String> { Set((history ?? []).flatMap(\.affectedMessages).map(\.threadId)) }
 
+    /// Threads with a message deleted in this page, and threads with any other kind of change.
+    var deletedThreadIDs: Set<String> {
+        Set((history ?? []).flatMap { ($0.messagesDeleted ?? []).map(\.message.threadId) })
+    }
+    var otherwiseChangedThreadIDs: Set<String> {
+        Set((history ?? []).flatMap { record in
+            [record.messagesAdded, record.labelsAdded, record.labelsRemoved].flatMap { ($0 ?? []).map(\.message.threadId) }
+        })
+    }
+
     static func validID(_ id: String) -> Bool {
         !id.isEmpty && id.contains { $0 != "0" } && id.allSatisfy { $0.isASCII && $0.isNumber }
     }
@@ -44,6 +54,12 @@ nonisolated struct GmailHistoryPage: Decodable, Sendable {
 
 nonisolated struct GmailProfile: Decodable, Sendable { let historyId: String }
 nonisolated enum GmailSyncError: Error { case historyExpired }
+
+nonisolated struct HistoryChanges: Sendable {
+    let ids: Set<String>
+    let deletedOnly: Set<String>
+    let checkpoint: String
+}
 
 nonisolated struct GmailSyncBatch: Sendable {
     var snapshots: [Mailbox: GmailPage] = [:]
@@ -111,14 +127,15 @@ final class GmailSyncCoordinator {
                 var batch = GmailSyncBatch(expectedHistoryID: checkpoint, historyID: checkpoint)
                 // Capture history BEFORE initializing a newly visited folder.
                 let changes = try await history(since: checkpoint)
+                let changedIDs = try await relevant(changes)
                 // Drafts are always re-listed: deleting one elsewhere is easy to miss in history, and the list is short.
                 var needsSnapshot = mailbox == .drafts
                 if !needsSnapshot { needsSnapshot = try await cache.loadMailbox(mailbox) == nil }
                 if mailbox != .outbox, needsSnapshot {
                     batch.snapshots[mailbox] = try await api.mailbox(mailbox, pageToken: nil)
                 }
-                Log.sync.info("Incremental sync: \(changes.ids.count, privacy: .public) changed threads")
-                let fetched = try await metadata(ids: changes.ids)
+                Log.sync.info("Incremental sync: \(changedIDs.count, privacy: .public) changed threads (\(changes.ids.count, privacy: .public) in history)")
+                let fetched = try await metadata(ids: changedIDs)
                 batch.conversations = fetched.conversations
                 batch.deletedThreadIDs = fetched.deleted
                 batch.historyID = changes.checkpoint
@@ -152,7 +169,7 @@ final class GmailSyncCoordinator {
         let oldIDs = Set(try await cache.cachedThreadIDs())
         let old = try await metadata(ids: oldIDs)
         let replay = try await history(since: baseline)
-        let changed = try await metadata(ids: replay.ids)
+        let changed = try await metadata(ids: relevant(replay))
         var merged = Dictionary(uniqueKeysWithValues: old.conversations.map { ($0.id, $0) })
         for conversation in changed.conversations { merged[conversation.id] = conversation }
         for id in changed.deleted { merged[id] = nil }
@@ -164,8 +181,10 @@ final class GmailSyncCoordinator {
     }
 
     @concurrent
-    private func history(since checkpoint: String) async throws -> (ids: Set<String>, checkpoint: String) {
+    private func history(since checkpoint: String) async throws -> HistoryChanges {
         var ids: Set<String> = []
+        var deleted: Set<String> = []
+        var changed: Set<String> = []
         var token: String?
         var seen: Set<String> = []
         repeat {
@@ -176,13 +195,23 @@ final class GmailSyncCoordinator {
             guard GmailHistoryPage.validID(page.historyId), GmailHistoryPage.isAtLeast(page.historyId, checkpoint),
                   page.affectedThreadIDs.allSatisfy({ !$0.isEmpty }) else { throw GmailError.invalidResponse }
             ids.formUnion(page.affectedThreadIDs)
+            deleted.formUnion(page.deletedThreadIDs)
+            changed.formUnion(page.otherwiseChangedThreadIDs)
             token = page.nextPageToken?.isEmpty == false ? page.nextPageToken : nil
             if let token {
                 guard seen.insert(token).inserted else { throw GmailError.invalidResponse }
             } else {
-                return (ids, page.historyId)
+                return HistoryChanges(ids: ids, deletedOnly: deleted.subtracting(changed), checkpoint: page.historyId)
             }
         } while true
+    }
+
+    // A thread history only shows being deleted from, and that was never cached, has nothing to show:
+    // fetching it just returns 404. Cached ones are still fetched so they get removed or updated.
+    private func relevant(_ changes: HistoryChanges) async throws -> Set<String> {
+        guard !changes.deletedOnly.isEmpty else { return changes.ids }
+        let cached = Set(try await cache.cachedThreadIDs())
+        return changes.ids.subtracting(changes.deletedOnly.subtracting(cached))
     }
 
     @concurrent
