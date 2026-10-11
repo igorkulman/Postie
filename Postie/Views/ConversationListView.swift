@@ -59,6 +59,12 @@ struct ConversationListView: View {
                         }
                         .onAppear { model.conversationAppeared(item.key) }
                 }
+                if hub.isLoadingMailbox, !hub.conversations.isEmpty {
+                    ProgressView().controlSize(.small)
+                        .frame(maxWidth: .infinity)
+                        .listRowSeparator(.hidden)
+                        .accessibilityLabel("Loading")
+                }
             }
             .listStyle(.inset)
             .focused(listIsFocused)
@@ -84,10 +90,6 @@ struct ConversationListView: View {
                         .allowsHitTesting(false)
                 }
             }
-            Divider()
-            ListFooter(isLoading: hub.isLoadingMailbox, loadedCount: hub.loadedCount,
-                       showingCachedMail: hub.showingCachedMail, lastRefreshed: hub.lastRefreshed,
-                       hasMorePages: hub.hasMorePages, loadMore: model.loadMore)
         }
     }
 }
@@ -166,37 +168,6 @@ private struct ListPlaceholder: View {
                 Text("Refresh to check for new mail.")
             }
         }
-    }
-}
-
-private struct ListFooter: View {
-    let isLoading: Bool
-    let loadedCount: Int
-    let showingCachedMail: Bool
-    let lastRefreshed: Date?
-    let hasMorePages: Bool
-    let loadMore: () -> Void
-
-    var body: some View {
-        HStack {
-            if isLoading {
-                ProgressView().controlSize(.small)
-                    .accessibilityLabel("Loading")
-            }
-            Text(showingCachedMail
-                 ? String(localized: "\(loadedCount) cached", comment: "Conversation count in the list footer; the mail was loaded from the local cache")
-                 : String(localized: "\(loadedCount) loaded", comment: "Conversation count in the list footer; the mail was loaded from Gmail"))
-                .foregroundStyle(.secondary)
-                .help(lastRefreshed.map { String(localized: "Last updated: \($0.formatted())") } ?? String(localized: "No folder refresh yet"))
-            Spacer()
-            if hasMorePages {
-                Button("Load More", action: loadMore)
-                    .disabled(isLoading)
-            }
-        }
-        .font(.subheadline)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 }
 

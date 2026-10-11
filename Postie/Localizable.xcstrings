@@ -9,6 +9,7 @@
     },
     "%lld cached" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from the local cache",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -32,6 +33,7 @@
     },
     "%lld loaded" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from Gmail",
+      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -141,6 +143,12 @@
     },
     "Cc: %@" : {
       "comment" : "Header line in an expanded message: the Cc recipients"
+    },
+    "Check for updates automatically" : {
+
+    },
+    "Check for Updates…" : {
+
     },
     "Clear Formatting" : {
 
@@ -259,12 +267,6 @@
     "Junk" : {
       "comment" : "Mailbox name"
     },
-    "Last updated: %@" : {
-
-    },
-    "Load More" : {
-
-    },
     "Loading" : {
       "comment" : "VoiceOver label of a progress spinner"
     },
@@ -335,9 +337,6 @@
 
     },
     "No conversations" : {
-
-    },
-    "No folder refresh yet" : {
 
     },
     "No matching mail" : {
