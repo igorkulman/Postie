@@ -6,6 +6,19 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-14
+
+### Changed
+
+- The conversation list no longer has a footer; more mail loads as you scroll.
+- When Gmail rate-limits Postie, all requests now pause together and retry on a
+  longer schedule instead of each backing off on its own.
+
+### Fixed
+
+- Conversations that were deleted outright are no longer fetched again and again
+  during sync, which only produced errors.
+
 ## [0.2.0] - 2026-10-09
 
 ### Added
