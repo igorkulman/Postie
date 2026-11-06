@@ -456,6 +456,22 @@ final class MailHub {
         return url
     }
 
+    /// An image embedded in a message. It is kept on disk, so the message shows it offline from then on.
+    func embeddedImage(contentID: String, messageID: String, accountID: String) async throws -> Data {
+        let url = AttachmentFiles.embeddedImageURL(contentID: contentID, messageID: messageID, accountID: accountID)
+        if let saved = await AttachmentFiles.read(url) { return saved }
+        guard let reader = session(for: accountID)?.reader, reader.canLoadAttachments else { throw GmailError.permissionRequired }
+        do {
+            let data = try await reader.embeddedImageData(contentID: contentID, messageID: messageID)
+            // The message can still show an image that could not be saved.
+            try? await AttachmentFiles.store(data, at: url)
+            return data
+        } catch {
+            if !Task.isCancelled { Log.attachments.error("Embedded image download failed: \(error.localizedDescription, privacy: .public)") }
+            throw error
+        }
+    }
+
     func email(for accountID: String) -> String? { session(for: accountID)?.email }
 
     private func isDisconnected(_ id: String) -> Bool {

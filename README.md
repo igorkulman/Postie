@@ -43,7 +43,6 @@ every feature of Gmail or become a generic IMAP client.
 Planned:
 
 - Search suggestions (people and subjects)
-- Showing CID (embedded) images
 - Gmail labels
 - Full offline mailbox downloads
 

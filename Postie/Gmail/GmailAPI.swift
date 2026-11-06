@@ -14,6 +14,7 @@ nonisolated protocol GmailSearching: GmailReading {
 
 nonisolated protocol GmailAttachmentLoading: Sendable {
     func attachmentData(_ attachment: MailAttachment) async throws -> Data
+    func embeddedImageData(contentID: String, messageID: String) async throws -> Data
 }
 
 nonisolated protocol GmailMutating: Sendable {
@@ -255,11 +256,13 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     /// Headers and the MIME tree's shape, without the (possibly huge) body data.
-    private static let listFields: String = {
+    private static let listFields = "id,messages(id,labelIds,snippet,internalDate,payload(\(partFields)))"
+
+    private static let partFields: String = {
         let part = "partId,mimeType,filename,headers,body(attachmentId,size)"
         var tree = part
         for _ in 0..<4 { tree = "\(part),parts(\(tree))" }
-        return "id,messages(id,labelIds,snippet,internalDate,payload(\(tree)))"
+        return tree
     }()
 
     func attachmentData(_ attachment: MailAttachment) async throws -> Data {
@@ -273,6 +276,18 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
                 .first(where: { $0.partID == attachment.partID }) else { throw GmailError.http(code) }
             return try await download(messageID: fresh.messageID, attachmentID: fresh.attachmentID)
         }
+    }
+
+    /// Looks the image up in the message each time, so a reissued attachment ID cannot go stale.
+    func embeddedImageData(contentID: String, messageID: String) async throws -> Data {
+        let message: GmailThreadResource.Message = try await get(path: try messagePath(messageID), query: [
+            URLQueryItem(name: "format", value: "full"),
+            URLQueryItem(name: "fields", value: "id,payload(\(Self.partFields))")
+        ])
+        guard let image = message.payload?.embeddedImage(contentID: contentID, messageID: messageID) else {
+            throw GmailError.http(404)
+        }
+        return try await download(messageID: messageID, attachmentID: image.attachmentID)
     }
 
     private func download(messageID: String, attachmentID: String) async throws -> Data {

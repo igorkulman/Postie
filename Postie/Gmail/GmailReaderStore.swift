@@ -261,6 +261,11 @@ final class GmailReaderStore {
         return try await attachmentLoader.attachmentData(attachment)
     }
 
+    func embeddedImageData(contentID: String, messageID: String) async throws -> Data {
+        guard let attachmentLoader else { throw GmailError.permissionRequired }
+        return try await attachmentLoader.embeddedImageData(contentID: contentID, messageID: messageID)
+    }
+
     var canSend: Bool { sender != nil }
 
     /// The account's Gmail signature as HTML, or nil when it has none or cannot be read. Composing never waits on it.

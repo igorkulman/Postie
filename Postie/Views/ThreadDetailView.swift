@@ -195,7 +195,7 @@ private struct MessageView: View {
                         .padding(.leading, 42)
                 }
                 if let html = message.htmlBody {
-                    HTMLMessageBody(html: html, plainText: message.body)
+                    HTMLMessageBody(messageID: message.id, html: html, plainText: message.body)
                         .id(message.id)
                 } else {
                     Text(message.body)

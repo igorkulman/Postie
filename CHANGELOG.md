@@ -6,6 +6,13 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- Images embedded in an email, such as many signatures and logos, are now shown
+  instead of an empty box. They are downloaded when the message is opened and then
+  also work offline.
+- Email images on servers that use plain HTTP now load.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed

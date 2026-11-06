@@ -1,4 +1,5 @@
 import CoreServices
+import CryptoKit
 import Foundation
 
 /// Downloaded attachments live in the caches folder, one folder per file so names never collide.
@@ -12,6 +13,20 @@ nonisolated enum AttachmentFiles {
         root.appending(path: component(accountID), directoryHint: .isDirectory)
             .appending(path: component(attachment.id), directoryHint: .isDirectory)
             .appending(path: fileName(attachment.filename), directoryHint: .notDirectory)
+    }
+
+    /// Known before asking Gmail anything, so a saved image can be shown offline. A Content-ID comes from
+    /// the sender and can be any text, so its hash names the file.
+    static func embeddedImageURL(contentID: String, messageID: String, accountID: String) -> URL {
+        let name = SHA256.hash(data: Data(contentID.utf8)).map { String(format: "%02x", $0) }.joined()
+        return root.appending(path: component(accountID), directoryHint: .isDirectory)
+            .appending(path: component(messageID + "-embedded"), directoryHint: .isDirectory)
+            .appending(path: name, directoryHint: .notDirectory)
+    }
+
+    @concurrent
+    static func read(_ url: URL) async -> Data? {
+        try? Data(contentsOf: url)
     }
 
     static func exists(at url: URL) -> Bool {
