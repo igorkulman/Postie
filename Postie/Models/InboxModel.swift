@@ -12,13 +12,20 @@ final class InboxModel {
     var composer: ComposeDraft?
     /// Why a draft could not be opened for editing.
     var draftError: String?
+    /// Why the selected conversations could not be forwarded.
+    var forwardError: String?
+    private var isPreparingForward = false
     /// Bumped to ask the conversation to be loaded again after a failure.
     private(set) var selectionRetry = 0
     /// Bumped when an explicit removal should hand keyboard focus back to the list.
     private(set) var listFocusRequest = 0
     private var selection = ConversationSelection<ConversationKey>()
+    /// The window's history, which also backs the Edit menu and undoing typing in the search field.
+    @ObservationIgnored weak var undoManager: UndoManager?
+    /// The undo or redo reaching Gmail last, which the next one waits for.
+    @ObservationIgnored private var undoQueue: Task<Void, Never>?
 
-    @ObservationIgnored private var selectionBeforeSearch: ConversationKey?
+    @ObservationIgnored private var selectionBeforeSearch: Set<ConversationKey> = []
     @ObservationIgnored private var autoReadID: ConversationKey?
 
     init(hub: MailHub) {
@@ -29,17 +36,25 @@ final class InboxModel {
 
     var conversationKeys: [ConversationKey] { hub.conversationKeys }
 
-    /// The selected conversation, as long as it is still in the list.
+    /// The conversation to open: the only selected one, as long as it is still in the list.
     var selectedID: ConversationKey? {
         selection.selectedID.flatMap { hub.list[$0] == nil ? nil : $0 }
     }
+
+    /// Every selected conversation still in the list, in list order.
+    var selectedKeys: [ConversationKey] {
+        conversationKeys.filter(selection.selectedIDs.contains)
+    }
+
+    /// How many conversations are selected, counting those being removed so the count doesn't tick down meanwhile.
+    var selectedCount: Int { selection.selectedIDs.count }
 
     func select(_ key: ConversationKey?) {
         selection.select(key)
     }
 
-    func updateFromList(_ key: ConversationKey?) {
-        selection.updateFromList(key, visibleIDs: conversationKeys)
+    func updateFromList(_ keys: Set<ConversationKey>) {
+        selection.updateFromList(keys, visibleIDs: conversationKeys)
     }
 
     func reconcileSelection() {
@@ -50,7 +65,7 @@ final class InboxModel {
         guard mailbox != hub.mailbox else { return }
         selection.reset()
         searchText = ""
-        selectionBeforeSearch = nil
+        selectionBeforeSearch = []
         hub.changeMailbox(mailbox)
     }
 
@@ -125,13 +140,13 @@ final class InboxModel {
         let willSearch = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !wasSearching, willSearch {
             // Save identity before changing which rows the hub exposes.
-            selectionBeforeSearch = selection.selectedID
+            selectionBeforeSearch = selection.selectedIDs
             selection.select(nil)
         }
         hub.setSearch(searchText, scope: searchScope)
         if wasSearching, !willSearch {
-            if let previous = selectionBeforeSearch { selection.select(previous) }
-            selectionBeforeSearch = nil
+            if !selectionBeforeSearch.isEmpty { selection.select(selectionBeforeSearch) }
+            selectionBeforeSearch = []
             reconcileSelection()
         }
         return hub.isSearchActive
@@ -140,31 +155,156 @@ final class InboxModel {
     // MARK: Actions on a conversation
 
     func toggleRead(_ item: MergedConversation) {
-        Task { await hub.setUnread(item.key, !item.conversation.isUnread) }
+        let unread = !item.conversation.isUnread
+        changeLabel(.setUnread(item.key, unread), named: unread ? String(localized: "Mark as Unread") : String(localized: "Mark as Read"))
     }
 
     func toggleStar(_ item: MergedConversation) {
-        Task { await hub.setStarred(item.key, !item.conversation.isStarred) }
+        let starred = !item.conversation.isStarred
+        changeLabel(.setStarred(item.key, starred), named: starred ? String(localized: "Flag") : String(localized: "Unflag"))
+    }
+
+    private func changeLabel(_ change: MailChange, named name: String) {
+        Task {
+            if await apply(change) { recordUndo(change.opposite, named: name) }
+        }
     }
 
     var canRemoveSelection: Bool {
-        selectedID.map { !selection.isRemoving($0) } ?? false
+        let keys = selectedKeys
+        return !keys.isEmpty && !keys.contains(where: selection.isRemoving)
     }
 
     func remove(_ key: ConversationKey, archiving: Bool) {
-        guard let token = selection.beginRemoval(of: key, visibleIDs: conversationKeys) else { return }
+        remove([key], archiving: archiving)
+    }
+
+    func remove(_ keys: [ConversationKey], archiving: Bool) {
+        guard let token = selection.beginRemoval(of: Set(keys), visibleIDs: conversationKeys) else { return }
+        let snapshots = hub.canUndoRemoval(archiving: archiving) ? hub.removedConversations(keys) : []
         Task {
-            let onRemoved = { [self] in
-                // An explicit selected-thread removal returns keyboard navigation to the list,
-                // including when it is empty. Background sync never steals search focus.
-                if selection.finishRemoval(token, removed: true, visibleIDs: conversationKeys), composer == nil {
-                    listFocusRequest += 1
-                }
+            let removed = await removeRows(keys, archiving: archiving, token: token)
+            let undoable = snapshots.filter { removed.contains($0.key) }
+            if !undoable.isEmpty {
+                recordUndo(.restore(undoable, archived: archiving), named: Self.removalName(count: undoable.count, archiving: archiving))
             }
-            if archiving { _ = await hub.archive(key, onRemoved: onRemoved) }
-            else { _ = await hub.trash(key, onRemoved: onRemoved) }
-            selection.finishRemoval(token, removed: false, visibleIDs: conversationKeys)
+            await hub.refresh(after: keys, succeeded: removed)
         }
+    }
+
+    private func removeRows(_ keys: [ConversationKey], archiving: Bool, anyFolder: Bool = false, token: UUID?) async -> [ConversationKey] {
+        let removed = await hub.remove(keys, archiving: archiving, anyFolder: anyFolder) { [self] in
+            // An explicit selected-thread removal returns keyboard navigation to the list,
+            // including when it is empty. Background sync never steals search focus.
+            if let token, selection.rowRemoved(token, visibleIDs: conversationKeys) { returnFocusToList() }
+        }
+        // Still pending when Gmail refused some of them, and those then stay selected.
+        if let token, selection.finishRemoval(token, removed: !removed.isEmpty, visibleIDs: conversationKeys) { returnFocusToList() }
+        return removed
+    }
+
+    private static func removalName(count: Int, archiving: Bool) -> String {
+        if count == 1 { return archiving ? String(localized: "Archive") : String(localized: "Move to Trash") }
+        return archiving ? String(localized: "Archive \(count) Conversations") : String(localized: "Move \(count) Conversations to Trash")
+    }
+
+    private func returnFocusToList() {
+        if composer == nil { listFocusRequest += 1 }
+    }
+
+    /// The Delete key: queued messages are deleted, anything else goes to the Trash.
+    func deleteSelection() {
+        let keys = selectedKeys
+        let queued = keys.filter(hub.canActOnOutboxItem)
+        if !queued.isEmpty { queued.forEach(deleteOutboxItem) }
+        else if !keys.isEmpty, keys.allSatisfy(hub.canTrash) { remove(keys, archiving: false) }
+    }
+
+    // MARK: Undo
+
+    /// A change to mail that can be taken back. Taking it back records its opposite, which is what Redo then does.
+    private enum MailChange {
+        case remove([RemovedConversation], archiving: Bool)
+        case restore([RemovedConversation], archived: Bool)
+        case setUnread(ConversationKey, Bool)
+        case setStarred(ConversationKey, Bool)
+
+        var opposite: MailChange {
+            switch self {
+            case .remove(let items, let archiving): .restore(items, archived: archiving)
+            case .restore(let items, let archived): .remove(items, archiving: archived)
+            case .setUnread(let key, let unread): .setUnread(key, !unread)
+            case .setStarred(let key, let starred): .setStarred(key, !starred)
+            }
+        }
+    }
+
+    /// Adds a step to the history, named for the Undo and Redo menu items.
+    private func recordUndo(_ undo: MailChange, named name: String) {
+        guard let undoManager else { return }
+        // Gmail answers between input events, and until the next event automatic grouping would make
+        // all its answers a single step. Undo and Redo have a group of their own open already.
+        let needsOwnGroup = !undoManager.isUndoing && !undoManager.isRedoing
+        if needsOwnGroup {
+            undoManager.groupsByEvent = false
+            undoManager.beginUndoGrouping()
+        }
+        undoManager.registerUndo(withTarget: self) { model in
+            MainActor.assumeIsolated { model.perform(undo, named: name) }
+        }
+        undoManager.setActionName(name)
+        if needsOwnGroup {
+            undoManager.endUndoGrouping()
+            undoManager.groupsByEvent = true
+        }
+    }
+
+    /// Runs when Undo or Redo is chosen. Only while it runs does the opposite step go to the other side of
+    /// the history, so that cannot wait for Gmail. Gmail hears about them one at a time, in the order chosen.
+    private func perform(_ change: MailChange, named name: String) {
+        let isUndoing = undoManager?.isUndoing == true
+        recordUndo(change.opposite, named: name)
+        let previous = undoQueue
+        undoQueue = Task {
+            await previous?.value
+            // Offline, say: the error is on screen and Undo can be tried again later.
+            if await !apply(change), isUndoing { recordUndo(change, named: name) }
+        }
+    }
+
+    /// Makes the change in Gmail and on screen. Returns once Gmail has answered, whether or not it took all of it.
+    private func apply(_ change: MailChange) async -> Bool {
+        let keys: [ConversationKey]
+        let succeeded: [ConversationKey]
+        switch change {
+        case .remove(let items, let archiving):
+            keys = items.map(\.key)
+            let token = selection.beginRemoval(of: Set(keys), visibleIDs: conversationKeys)
+            succeeded = await removeRows(keys, archiving: archiving, anyFolder: true, token: token)
+        case .restore(let items, let archived):
+            keys = items.map(\.key)
+            succeeded = await hub.restore(items, archived: archived)
+            selectRestored(succeeded)
+        case .setUnread(let key, let unread):
+            keys = [key]
+            succeeded = await hub.setUnread(key, unread, refreshing: false) ? [key] : []
+        case .setStarred(let key, let starred):
+            keys = [key]
+            succeeded = await hub.setStarred(key, starred, refreshing: false) ? [key] : []
+        }
+        // Not awaited: the next undo should not have to wait for it.
+        Task { await hub.refresh(after: keys, succeeded: succeeded) }
+        return succeeded.count == keys.count
+    }
+
+    /// Like Mail, what comes back is selected, provided it came back to the list on screen.
+    private func selectRestored(_ keys: [ConversationKey]) {
+        let visible = Set(keys).intersection(conversationKeys)
+        guard !visible.isEmpty else { return }
+        // Undo puts things back as they were, so opening one this way must not mark it read.
+        if visible.count == 1 { autoReadID = visible.first }
+        selection.select(visible)
+        returnFocusToList()
     }
 
     // MARK: Composing
@@ -185,6 +325,32 @@ final class InboxModel {
         draft.accountID = key.accountID
         draft.gmailThreadID = kind == .forward ? nil : key.threadID
         composer = draft
+    }
+
+    /// Whether these conversations can go out together. Unlike one open conversation, their bodies load on demand.
+    func canForward(_ keys: [ConversationKey]) -> Bool {
+        !isPreparingForward && !keys.isEmpty && hub.mailbox != .outbox && hub.mailbox != .drafts
+            && keys.allSatisfy { key in hub.sendingAccounts.contains { $0.id == key.accountID } }
+    }
+
+    /// Forwards conversations in one message, from the account of the first of them.
+    func forward(_ keys: [ConversationKey]) {
+        guard canForward(keys) else { return }
+        isPreparingForward = true
+        Task {
+            defer { isPreparingForward = false }
+            do {
+                var threads: [MailThread] = []
+                for key in keys {
+                    threads.append(try await hub.fullConversation(key).presentation(includingBodies: true, mailbox: hub.mailbox))
+                }
+                var draft = ComposeDraft.forward(threads)
+                draft.accountID = keys.first?.accountID
+                composer = draft
+            } catch {
+                forwardError = error.localizedDescription
+            }
+        }
     }
 
     /// Opens a draft of the Drafts folder in a composer window.
@@ -228,19 +394,24 @@ final class InboxModel {
         let selectedID = selectedID
         let openConversation = openConversation
         let selected = selected
+        let selectedKeys = selectedKeys
+        let forwardsSeveral = selectedCount > 1
         return MailActions(
             currentMailbox: hub.mailbox,
             selectMailbox: { [self] in changeMailbox($0) },
             newMessage: canCompose ? { [self] in newMessage() } : nil,
             refresh: hub.isLoadingMailbox || hub.mailbox == .outbox ? nil : { [self] in refresh() },
-            archive: canRemoveSelection && hub.canArchive(selectedID)
-                ? { [self] in selectedID.map { remove($0, archiving: true) } } : nil,
-            trash: canRemoveSelection && hub.canTrash(selectedID)
-                ? { [self] in selectedID.map { remove($0, archiving: false) } } : nil,
+            archive: canRemoveSelection && selectedKeys.allSatisfy(hub.canArchive)
+                ? { [self] in remove(selectedKeys, archiving: true) } : nil,
+            trash: canRemoveSelection && selectedKeys.allSatisfy(hub.canTrash)
+                ? { [self] in remove(selectedKeys, archiving: false) } : nil,
             editDraft: selectedID.flatMap { key in hub.canEditDraft(key) ? { [self] in editDraft(key) } : nil },
+            // Several conversations have no open one to answer, so only Forward stays available.
             reply: openConversation == nil ? nil : { [self] in respond(.reply) },
             replyAll: openConversation == nil ? nil : { [self] in respond(.replyAll) },
-            forward: openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { [self] in respond(.forward) } : nil,
+            forward: forwardsSeveral
+                ? (canForward(selectedKeys) ? { [self] in forward(selectedKeys) } : nil)
+                : (openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { [self] in respond(.forward) } : nil),
             toggleRead: selected.map { item in { [self] in toggleRead(item) } },
             toggleFlag: selected.map { item in { [self] in toggleStar(item) } },
             selectionIsUnread: selected?.conversation.isUnread ?? false,

@@ -19,6 +19,7 @@ nonisolated protocol GmailAttachmentLoading: Sendable {
 nonisolated protocol GmailMutating: Sendable {
     func archive(threadID: String) async throws
     func trash(threadID: String) async throws
+    func untrash(threadID: String) async throws
     func setLabel(_ label: String, on: Bool, threadID: String) async throws
 }
 
@@ -434,6 +435,10 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
 
     func trash(threadID: String) async throws {
         try await post(path: try threadPath(threadID) + "/trash", body: [:])
+    }
+
+    func untrash(threadID: String) async throws {
+        try await post(path: try threadPath(threadID) + "/untrash", body: [:])
     }
 
     private func post(path: String, body: [String: [String]]) async throws {

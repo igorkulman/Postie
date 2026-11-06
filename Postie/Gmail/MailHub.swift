@@ -30,6 +30,14 @@ struct MergedList {
     subscript(key: ConversationKey) -> MergedConversation? { byKey[key] }
 }
 
+/// A conversation as it was before being archived or trashed, which is what putting it back takes.
+struct RemovedConversation {
+    let key: ConversationKey
+    let conversation: GmailConversation
+    /// The search it left, if any. It only returns to those results while they are still on screen.
+    fileprivate let searchGeneration: Generation
+}
+
 /// Where a search looks.
 enum SearchScope: Hashable {
     case folder, allMail
@@ -392,6 +400,15 @@ final class MailHub {
         }
     }
 
+    private func restoreSearchResult(_ removed: RemovedConversation) {
+        guard isSearchActive, searchGeneration == removed.searchGeneration, searchList[removed.key] == nil else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            let restored = MergedConversation(key: removed.key, conversation: removed.conversation)
+            searchList = MergedList((searchResults + [restored]).sorted { $0.conversation.latestDate > $1.conversation.latestDate })
+            searchVersion += 1
+        }
+    }
+
     var unreadInboxCount: Int? {
         let counts = sessions.compactMap(\.reader.unreadInboxCount)
         return counts.isEmpty ? nil : counts.reduce(0, +)
@@ -551,34 +568,102 @@ final class MailHub {
         await session.reader.select(key.threadID)
     }
 
+    /// `anyFolder` is for changing a conversation that may no longer be in the folder on screen.
     @discardableResult
-    func archive(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+    func archive(_ key: ConversationKey, anyFolder: Bool = false, refreshing: Bool = true, onRemoved: () -> Void = {}) async -> Bool {
         let generation = searchGeneration
-        return await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive) {
+        return await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: anyFolder || isSearchActive, refreshing: refreshing) {
             if self.searchGeneration == generation { self.removeSearchResult(key) }
             onRemoved()
         } ?? false
     }
 
     @discardableResult
-    func trash(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+    func trash(_ key: ConversationKey, anyFolder: Bool = false, refreshing: Bool = true, onRemoved: () -> Void = {}) async -> Bool {
         let generation = searchGeneration
-        return await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive) {
+        return await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: anyFolder || isSearchActive, refreshing: refreshing) {
             if self.searchGeneration == generation { self.removeSearchResult(key) }
             onRemoved()
         } ?? false
     }
 
-    func setUnread(_ key: ConversationKey, _ unread: Bool) async {
-        guard let reader = session(for: key.accountID)?.reader else { return }
-        await reader.setUnread(key.threadID, unread)
-        if reader.mailboxError == nil { updateSearchResult(key) { $0.setting("UNREAD", to: unread) } }
+    /// Runs the work for each item, a few at a time. The results come back in the order they finished.
+    private func inBatches<Item: Sendable, Result: Sendable>(
+        _ items: [Item], _ work: @escaping @MainActor @Sendable (Item) async -> Result
+    ) async -> [Result] {
+        await withTaskGroup(of: Result.self) { group in
+            var results: [Result] = []
+            for (index, item) in items.enumerated() {
+                if index >= 4, let result = await group.next() { results.append(result) }
+                group.addTask { await work(item) }
+            }
+            for await result in group { results.append(result) }
+            return results
+        }
     }
 
-    func setStarred(_ key: ConversationKey, _ starred: Bool) async {
-        guard let reader = session(for: key.accountID)?.reader else { return }
-        await reader.setStarred(key.threadID, starred)
-        if reader.mailboxError == nil { updateSearchResult(key) { $0.setting("STARRED", to: starred) } }
+    /// Archives or trashes conversations, leaving the follow-up to `refresh(after:succeeded:)`.
+    /// `onRemoved` runs as each row goes. Returns the conversations that were removed.
+    func remove(_ keys: [ConversationKey], archiving: Bool, anyFolder: Bool = false,
+                onRemoved: @escaping @MainActor @Sendable () -> Void) async -> [ConversationKey] {
+        await inBatches(keys) { key in
+            let removed = archiving
+                ? await self.archive(key, anyFolder: anyFolder, refreshing: false) { onRemoved() }
+                : await self.trash(key, anyFolder: anyFolder, refreshing: false) { onRemoved() }
+            return removed ? key : nil
+        }.compactMap(\.self)
+    }
+
+    /// Whether removing the selection could be taken back. In Drafts, Trash deletes the drafts for good.
+    func canUndoRemoval(archiving: Bool) -> Bool {
+        archiving || isSearchActive || mailbox != .drafts
+    }
+
+    /// What it takes to put these conversations back later. To be read before removing them.
+    func removedConversations(_ keys: [ConversationKey]) -> [RemovedConversation] {
+        keys.compactMap { key in
+            conversation(for: key).map { RemovedConversation(key: key, conversation: $0, searchGeneration: searchGeneration) }
+        }
+    }
+
+    /// Takes back an archive or a trash, leaving the follow-up to `refresh(after:succeeded:)`. Returns the conversations now back.
+    func restore(_ removed: [RemovedConversation], archived: Bool) async -> [ConversationKey] {
+        await inBatches(removed) { item in
+            guard let reader = self.session(for: item.key.accountID)?.reader,
+                  await reader.restore(item.conversation, archived: archived) else { return nil }
+            self.restoreSearchResult(item)
+            return item.key
+        }.compactMap(\.self)
+    }
+
+    /// Brings each account of the changed conversations up to date once, keeping why Gmail refused any of them.
+    func refresh(after keys: [ConversationKey], succeeded: [ConversationKey]) async {
+        let refusedAccounts = Set(Set(keys).subtracting(succeeded).map(\.accountID))
+        for accountID in Set(keys.map(\.accountID)) {
+            await session(for: accountID)?.reader.refresh(keepingError: refusedAccounts.contains(accountID))
+        }
+    }
+
+    /// A conversation with all its bodies, without opening it.
+    func fullConversation(_ key: ConversationKey) async throws -> GmailConversation {
+        guard let reader = session(for: key.accountID)?.reader else { throw GmailError.signInRequired }
+        return try await reader.fullConversation(key.threadID)
+    }
+
+    @discardableResult
+    func setUnread(_ key: ConversationKey, _ unread: Bool, refreshing: Bool = true) async -> Bool {
+        guard let reader = session(for: key.accountID)?.reader,
+              await reader.setUnread(key.threadID, unread, refreshing: refreshing) else { return false }
+        updateSearchResult(key) { $0.setting("UNREAD", to: unread) }
+        return true
+    }
+
+    @discardableResult
+    func setStarred(_ key: ConversationKey, _ starred: Bool, refreshing: Bool = true) async -> Bool {
+        guard let reader = session(for: key.accountID)?.reader,
+              await reader.setStarred(key.threadID, starred, refreshing: refreshing) else { return false }
+        updateSearchResult(key) { $0.setting("STARRED", to: starred) }
+        return true
     }
 
     /// Queues the message to be sent from the draft's account and returns at once; the outbox delivers it, and keeps

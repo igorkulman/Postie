@@ -7,8 +7,8 @@ struct ConversationListView: View {
 
     private var hub: MailHub { model.hub }
 
-    private var listSelection: Binding<ConversationKey?> {
-        Binding(get: { model.selectedID }, set: { model.updateFromList($0) })
+    private var listSelection: Binding<Set<ConversationKey>> {
+        Binding(get: { Set(model.selectedKeys) }, set: { model.updateFromList($0) })
     }
 
     var body: some View {
@@ -69,18 +69,16 @@ struct ConversationListView: View {
             .listStyle(.inset)
             .focused(listIsFocused)
             .accessibilityIdentifier("conversationList")
-            .onDeleteCommand {
-                guard let key = model.selectedID else { return }
-                if hub.canActOnOutboxItem(key) { model.deleteOutboxItem(key) }
-                else if hub.canTrash(key) { model.remove(key, archiving: false) }
-            }
+            .onDeleteCommand(perform: model.deleteSelection)
             .contextMenu(forSelectionType: ConversationKey.self) { keys in
-                if let key = keys.first {
+                if keys.count > 1 {
+                    SeveralConversationsContextMenu(model: model, keys: model.conversationKeys.filter(keys.contains))
+                } else if let key = keys.first {
                     ConversationContextMenu(model: model, key: key)
                 }
             } primaryAction: { keys in
                 // Double-click, or Return: a draft or a queued message opens for editing.
-                guard let key = keys.first else { return }
+                guard keys.count == 1, let key = keys.first else { return }
                 if hub.canActOnOutboxItem(key) { model.editOutboxItem(key) } else { model.editDraft(key) }
             }
             .overlay {
@@ -133,6 +131,31 @@ private struct ConversationContextMenu: View {
         }
         if hub.canTrash(key) {
             Button("Move to Trash", systemImage: "trash", role: .destructive) { model.remove(key, archiving: false) }
+        }
+    }
+}
+
+/// What can be done to several conversations at once.
+private struct SeveralConversationsContextMenu: View {
+    let model: InboxModel
+    let keys: [ConversationKey]
+
+    private var hub: MailHub { model.hub }
+
+    var body: some View {
+        if model.canForward(keys) {
+            Button("Forward", systemImage: "arrowshape.turn.up.right") { model.forward(keys) }
+            Divider()
+        }
+        if keys.allSatisfy(hub.canArchive) {
+            Button("Archive", systemImage: "archivebox") { model.remove(keys, archiving: true) }
+        }
+        if keys.allSatisfy(hub.canTrash) {
+            Button("Move to Trash", systemImage: "trash", role: .destructive) { model.remove(keys, archiving: false) }
+        }
+        let queued = keys.filter(hub.canActOnOutboxItem)
+        if !queued.isEmpty {
+            Button("Delete", systemImage: "trash", role: .destructive) { queued.forEach(model.deleteOutboxItem) }
         }
     }
 }

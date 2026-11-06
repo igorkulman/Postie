@@ -12,6 +12,8 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     private var changes: [(version: Int, id: String)] = []
     private var arrivals = 0
     var rejectNextRemoval = false
+    /// Holds a sync after it has read a conversation, so that it can be overtaken by a change.
+    var afterFetchingMetadata: (@MainActor () async -> Void)?
 
     init(empty: Bool = false) {
         let initial = empty ? [] : [
@@ -58,13 +60,15 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     }
 
     @MainActor func metadata(id: String) async throws -> GmailConversation? {
-        mail[id].map { conversation in
+        let fetched = mail[id].map { conversation in
             GmailConversation(id: conversation.id, subject: conversation.subject, messages: conversation.messages.map {
                 var message = $0
                 message.bodyLoaded = false
                 return message
             })
         }
+        await afterFetchingMetadata?()
+        return fetched
     }
 
     @MainActor func conversation(id: String) async throws -> GmailConversation {
@@ -105,6 +109,13 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     @MainActor func trash(threadID: String) async throws {
         try checkRemoval()
         mail[threadID] = mail[threadID]?.setting("INBOX", to: false).setting("TRASH", to: true)
+        record(threadID)
+    }
+
+    /// Doesn't bring the Inbox label back, so what restores a conversation has to do that itself.
+    @MainActor func untrash(threadID: String) async throws {
+        try checkRemoval()
+        mail[threadID] = mail[threadID]?.setting("TRASH", to: false)
         record(threadID)
     }
 

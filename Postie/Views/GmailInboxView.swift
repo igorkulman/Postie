@@ -4,6 +4,7 @@ import SwiftUI
 /// What it does with them lives in `InboxModel`; the columns are their own views.
 struct GmailInboxView: View {
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.undoManager) private var undoManager
     @State private var model: InboxModel
     @FocusState private var listIsFocused: Bool
     @FocusState private var searchIsFocused: Bool
@@ -78,6 +79,14 @@ struct GmailInboxView: View {
             Button("OK") {}
         } message: {
             Text(model.draftError ?? "")
+        }
+        .alert("Could not forward the conversations", isPresented: Binding(get: { model.forwardError != nil }, set: { if !$0 { model.forwardError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(model.forwardError ?? "")
+        }
+        .onChange(of: undoManager, initial: true) { _, manager in
+            model.undoManager = manager
         }
         .onChange(of: model.listFocusRequest) {
             if !searchIsFocused, model.composer == nil { listIsFocused = true }

@@ -31,6 +31,9 @@
         }
       }
     },
+    "%lld Conversations Selected" : {
+
+    },
     "%lld loaded" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from Gmail",
       "extractionState" : "stale",
@@ -111,6 +114,9 @@
     "Archive (⌃⌘A)" : {
 
     },
+    "Archive %lld Conversations" : {
+
+    },
     "Attach Files" : {
 
     },
@@ -178,6 +184,9 @@
 
     },
     "Could Not Open Attachment" : {
+
+    },
+    "Could not forward the conversations" : {
 
     },
     "Could not open the draft" : {
@@ -310,6 +319,9 @@
       "comment" : "VoiceOver label of a message header; the sender follows"
     },
     "Messages that are waiting to be sent, or could not be, appear here." : {
+
+    },
+    "Move %lld Conversations to Trash" : {
 
     },
     "Move to Trash" : {

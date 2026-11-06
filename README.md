@@ -22,6 +22,10 @@ subscriptions, AI features, or workspace bloat.
   message you have written asks whether to keep it, and drafts can be edited
   later from the Drafts folder
 - Archive, trash, star, and read/unread actions
+- Select several conversations with Shift or Command to archive, trash, or forward
+  them together. They are forwarded in one message
+- Undo and Redo (⌘Z and ⇧⌘Z) for archive, trash, flag, and read/unread, several
+  steps back, until Postie quits. Deleting a draft or a queued message can't be undone
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
   Results are not stored in the local cache
@@ -110,6 +114,9 @@ credentials, network requests, or saved mailbox database.
 4. Archive the remaining threads until the inbox is empty. Both selection and
    detail must clear, Archive/Trash must be disabled, and the empty list must
    retain keyboard focus. Inserting mail again must not automatically open it.
+5. Press **⌘Z** repeatedly. Each archived thread must come back one at a time,
+   newest action first, selected and in its place, and **⇧⌘Z** must archive them
+   again. The Edit menu must name the step each time.
 
 The Regression menu also simulates an external archive of **Thread to open**
 and a rejected next archive/trash. External disappearance clears selection
@@ -120,6 +127,10 @@ chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
 operation after the user changes selection does not choose a new thread.
+
+Several selected threads stay closed and unread. Removing them chooses the next
+neighbor past the oldest of them once they have all gone; threads Gmail refused
+stay selected instead.
 
 ## Tests
 
