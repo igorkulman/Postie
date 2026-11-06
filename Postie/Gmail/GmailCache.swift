@@ -142,6 +142,28 @@ actor GmailCache {
             );
             """)
         }
+        // Loaded bodies are never downloaded again, so ones saved with garbled accents have to be fixed here.
+        migrator.registerMigration("repair-misdecoded-bodies-v3") { db in
+            var repairs: [(accountID: String, id: String, body: String?, htmlBody: String?)] = []
+            // Only text with a character that can start a misdecoded UTF-8 sequence needs a closer look.
+            let rows = try Row.fetchCursor(db, sql: """
+                SELECT accountID, id, body, htmlBody FROM messages
+                WHERE bodyLoaded = 1 AND (body GLOB '*[Â-ô]*' OR htmlBody GLOB '*[Â-ô]*')
+                """)
+            while let row = try rows.next() {
+                let body: String? = row["body"]
+                let htmlBody: String? = row["htmlBody"]
+                let repairedBody = body.map(GmailText.repairingMisdecodedUTF8)
+                let repairedHTML = htmlBody.map(GmailText.repairingMisdecodedUTF8)
+                if repairedBody != body || repairedHTML != htmlBody {
+                    repairs.append((row["accountID"], row["id"], repairedBody, repairedHTML))
+                }
+            }
+            for repair in repairs {
+                try db.execute(sql: "UPDATE messages SET body = ?, htmlBody = ? WHERE accountID = ? AND id = ?",
+                               arguments: [repair.body, repair.htmlBody, repair.accountID, repair.id])
+            }
+        }
         try migrator.migrate(database)
     }
 

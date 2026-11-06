@@ -105,6 +105,54 @@ struct GmailModelsTests {
         #expect(try GmailText.content(part) == GmailText.Content(plainText: "Café", html: html))
     }
 
+    @Test("Text in a single-byte charset still decodes", arguments: [
+        ("iso-8859-1", String.Encoding.isoLatin1), ("latin1", .isoLatin1), ("windows-1252", .windowsCP1252)
+    ])
+    func singleByteCharset(charset: String, encoding: String.Encoding) throws {
+        let data = try #require("Buenos días Jesús".data(using: encoding))
+        #expect(GmailText.decode(data, charset: charset) == "Buenos días Jesús")
+    }
+
+    @Test("UTF-8 text declaring a single-byte charset keeps its accents",
+          arguments: ["iso-8859-1", "ISO-8859-1", "latin1", "windows-1252", "us-ascii"])
+    func mislabeledUTF8(charset: String) throws {
+        let text = "Buenos días Jesús, ¿cómo estás? “Añó” €5"
+        let object: [String: Any] = ["mimeType": "text/plain",
+            "headers": [["name": "Content-Type", "value": "text/plain; charset=\(charset)"]],
+            "body": ["data": Data(text.utf8).base64EncodedString()]]
+        let part = try JSONDecoder().decode(GmailThreadResource.Part.self, from: JSONSerialization.data(withJSONObject: object))
+        #expect(try GmailText.body(part) == text)
+    }
+
+    @Test("Misdecoded UTF-8 is repaired and everything else is left alone")
+    func repairingMisdecodedUTF8() throws {
+        let text = "Buenos días Jesús,\r\n¿Cómo estás? Ángel “Añó” €5"
+        for encoding in [String.Encoding.isoLatin1, .windowsCP1252] {
+            // A byte windows-1252 leaves undefined cannot have come through that charset.
+            guard let garbled = String(data: Data(text.utf8), encoding: encoding) else { continue }
+            #expect(garbled != text)
+            #expect(GmailText.repairingMisdecodedUTF8(garbled) == text)
+        }
+        let correct = ["Buenos días Jesús", "Plain ASCII\r\nonly", "Ünïcödé", "日本語 and días", "Ángel, 5° Ñandú", ""]
+        for value in correct {
+            #expect(GmailText.repairingMisdecodedUTF8(value) == value)
+        }
+    }
+
+    @Test("Message previews run on past line breaks up to the room they are given")
+    @MainActor
+    func messagePreview() {
+        func message(_ body: String) -> MailMessage {
+            MailMessage(id: "m", senderName: "A", senderEmail: "a@example.com", recipient: "b@example.com", date: .distantPast, body: body)
+        }
+        #expect(message("Buenos días,\r\n\r\nComo estás?\n\tBien  ").preview == "Buenos días, Como estás? Bien")
+        let long = String(repeating: "palabra ", count: 50).trimmingCharacters(in: .whitespaces)
+        #expect(message(long).preview == long)
+        #expect(message(String(repeating: "x", count: 100_000)).preview.count == 1000)
+        let thread = MailThread(id: "t", subject: "s", messages: [message("old"), message("New\r\nline")], mailbox: .inbox)
+        #expect(thread.preview == "New line")
+    }
+
     @Test("Malformed optional HTML falls back to valid plain text")
     func malformedHTMLAlternative() throws {
         let json = #"{"mimeType":"multipart/alternative","parts":[{"mimeType":"text/plain","body":{"data":"SGVsbG8="}},{"mimeType":"text/html","body":{"data":"%%%"}}]}"#

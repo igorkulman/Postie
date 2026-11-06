@@ -6,6 +6,13 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- Collapsed messages in a conversation preview as much text as fits on the line
+  instead of stopping at the first line break or after 100 characters.
+- Accented letters in some emails no longer appear garbled, as in "dÃ­as". Mail
+  already saved on your Mac is fixed as well.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed
