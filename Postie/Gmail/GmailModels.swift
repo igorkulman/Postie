@@ -84,13 +84,23 @@ nonisolated struct GmailLabelList: Decodable, Sendable {
         let id: String
         let name: String
         let type: String?
+        let labelListVisibility: String?
     }
     let labels: [Label]?
 
-    /// The labels the person created, by ID. System labels have fixed IDs and names of their own.
-    var userLabels: [String: String] {
-        (labels ?? []).filter { $0.type == "user" }.reduce(into: [:]) { $0[$1.id] = $1.name }
+    /// The labels the person created. System labels have fixed IDs and names of their own.
+    /// The list doesn't say how many threads are unread: that takes asking for each label.
+    var userLabels: [GmailLabel] {
+        (labels ?? []).filter { $0.type == "user" }.map {
+            GmailLabel(id: $0.id, name: $0.name, visibility: $0.labelListVisibility.flatMap(GmailLabel.Visibility.init(rawValue:)) ?? .show)
+        }
     }
+}
+
+nonisolated struct GmailLabelCounts: Decodable, Sendable {
+    let id: String
+    /// Left out when there are none.
+    let threadsUnread: Int?
 }
 
 nonisolated struct GmailSendAsList: Decodable, Sendable {

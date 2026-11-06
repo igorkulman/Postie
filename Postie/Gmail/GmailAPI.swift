@@ -23,8 +23,10 @@ nonisolated protocol GmailMutating: Sendable {
 }
 
 nonisolated protocol GmailLabelLoading: Sendable {
-    /// The names of the labels the person created, by label ID.
-    func userLabels() async throws -> [String: String]
+    /// The labels the person created, without their unread counts.
+    func userLabels() async throws -> [GmailLabel]
+    /// How many conversations with the label are unread. One request per label.
+    func unreadThreads(inLabel id: String) async throws -> Int
 }
 
 nonisolated struct GmailHTTPResponse: Sendable {
@@ -170,6 +172,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         case .archive:
             // Gmail has no ARCHIVE label: use received mail outside the other system folders.
             terms.append("-in:inbox -in:sent -in:drafts -in:spam -in:trash")
+        case .label(let id): query.append(URLQueryItem(name: "labelIds", value: id))
         case .outbox, nil: break
         }
         if let search { terms.append(search) }
@@ -288,9 +291,17 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         return data
     }
 
-    func userLabels() async throws -> [String: String] {
-        let list: GmailLabelList = try await get(path: "labels", query: [URLQueryItem(name: "fields", value: "labels(id,name,type)")])
+    func userLabels() async throws -> [GmailLabel] {
+        let list: GmailLabelList = try await get(path: "labels", query: [URLQueryItem(name: "fields", value: "labels(id,name,type,labelListVisibility)")])
         return list.userLabels
+    }
+
+    func unreadThreads(inLabel id: String) async throws -> Int {
+        let counts: GmailLabelCounts = try await get(path: "labels/" + Self.pathComponent(id), query: [
+            URLQueryItem(name: "fields", value: "id,threadsUnread")
+        ])
+        guard counts.id == id else { throw GmailError.invalidResponse }
+        return counts.threadsUnread ?? 0
     }
 
     func archive(threadID: String) async throws {

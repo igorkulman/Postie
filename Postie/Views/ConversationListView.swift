@@ -20,7 +20,7 @@ struct ConversationListView: View {
                 Divider()
             }
             if hub.isSearchActive {
-                SearchHeader(query: hub.searchQuery, folderTitle: hub.selection.title,
+                SearchHeader(query: hub.searchQuery, folderTitle: hub.selectionTitle,
                              isSearching: hub.isSearching, scope: $model.searchScope)
                 Divider()
             }

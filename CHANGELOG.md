@@ -14,6 +14,10 @@ All notable changes to Postie are documented here. The format is based on
   account's inbox together.
 - A conversation's labels, such as Inbox and the ones you created in Gmail, next
   to its subject.
+- Your Gmail labels in the sidebar, nested as they are in Gmail, with how many
+  conversations are unread. Click one to see its mail. Labels you set to show only
+  when unread, or to hide, are under More. Archiving in a label takes the conversation
+  out of the Inbox and leaves it in the label.
 
 ### Changed
 

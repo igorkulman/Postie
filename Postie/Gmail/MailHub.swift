@@ -109,6 +109,10 @@ final class MailHub {
     private(set) var isSearching = false
     private(set) var searchError: String?
     private var searchVersion = 0
+    /// The account the open label belongs to. Another account may well have a label with the same ID.
+    private var labelOwnerID: String?
+    /// The nested labels collapsed in the sidebar, by account. Anything new starts out expanded.
+    private var collapsedLabelGroups: [String: [String]]
     @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, mailbox: Mailbox, list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
@@ -122,14 +126,18 @@ final class MailHub {
     @ObservationIgnored private(set) var outbox: Outbox!
     @ObservationIgnored private let persistsMail: Bool
     @ObservationIgnored private let syncsInBackground: Bool
+    @ObservationIgnored private let preferences: UserDefaults?
     @ObservationIgnored private let makeAPI: (@MainActor (String) -> any GmailReading)?
 
     /// `makeAPI` supplies local mail; `cache` lets regression mode/tests use SQLite without opening the real database.
-    init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true,
+    /// Without `preferences`, which labels are collapsed is forgotten on quitting.
+    init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true, preferences: UserDefaults? = nil,
          cache: GmailCache? = nil, outboxStore: OutboxStore? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
         self.accounts = accounts
         self.persistsMail = persistsMail
         self.syncsInBackground = syncsInBackground
+        self.preferences = preferences
+        collapsedLabelGroups = preferences?.dictionary(forKey: SettingsKey.collapsedLabelGroups) as? [String: [String]] ?? [:]
         self.cache = cache
         self.makeAPI = makeAPI
         isPreparing = persistsMail && cache == nil
@@ -194,7 +202,7 @@ final class MailHub {
                 storageError = String(localized: "Unable to open the account cache. This session will use online mail only.")
             }
         }
-        let reader = GmailReaderStore(api: api, mailbox: mailbox, cache: savedSession)
+        let reader = GmailReaderStore(api: api, mailbox: mailbox.isLabel ? .inbox : mailbox, cache: savedSession)
         await reader.restoreCachedMailbox()
         return AccountSession(identity: identity, reader: reader)
     }
@@ -213,6 +221,9 @@ final class MailHub {
         sessions.removeAll { $0.id == id }
         await outbox.removeAll(accountID: id)
         accounts.remove(id)
+        if collapsedLabelGroups.removeValue(forKey: id) != nil {
+            preferences?.set(collapsedLabelGroups, forKey: SettingsKey.collapsedLabelGroups)
+        }
         await AttachmentFiles.removeAll(accountID: id)
     }
 
@@ -222,6 +233,37 @@ final class MailHub {
     var canShowAllInboxes: Bool { hasMultipleAccounts }
     var isShowingAllInboxes: Bool { wantsAllInboxes && canShowAllInboxes }
     var selection: MailboxSelection { isShowingAllInboxes ? .allInboxes : .folder(mailbox) }
+
+    /// What to call the folder on screen. Only the account knows what a label is called.
+    var selectionTitle: String {
+        if case .label(let id) = mailbox, let label = selectedSession?.reader.labels.first(where: { $0.id == id }) {
+            return label.shortName
+        }
+        return selection.title
+    }
+
+    /// The selected account's labels, also while All Inboxes is showing. Opening one leaves All Inboxes for that account.
+    var labelTree: LabelTree { selectedSession?.reader.labelTree ?? LabelTree() }
+
+    /// Whether the open label can't be shown anymore: it was deleted in Gmail, or its account was removed.
+    var openLabelIsGone: Bool {
+        guard case .label(let id) = mailbox else { return false }
+        guard let session = selectedSession, session.id == labelOwnerID else { return true }
+        return !session.reader.labels.contains { $0.id == id }
+    }
+
+    func isLabelGroupExpanded(_ path: String) -> Bool {
+        guard let id = selectedSession?.id else { return true }
+        return !(collapsedLabelGroups[id] ?? []).contains(path)
+    }
+
+    func setLabelGroup(_ path: String, expanded: Bool) {
+        guard let id = selectedSession?.id else { return }
+        var collapsed = Set(collapsedLabelGroups[id] ?? [])
+        if expanded { collapsed.remove(path) } else { collapsed.insert(path) }
+        collapsedLabelGroups[id] = collapsed.isEmpty ? nil : collapsed.sorted()
+        preferences?.set(collapsedLabelGroups, forKey: SettingsKey.collapsedLabelGroups)
+    }
 
     func show(_ selection: MailboxSelection) {
         switch selection {
@@ -234,17 +276,25 @@ final class MailHub {
         }
     }
 
-    /// Shows the account's mail: the folder that is open, or its Inbox when coming from All Inboxes.
+    /// Shows the account's mail: the folder that is open, or its Inbox when coming from All Inboxes or a label.
     func selectAccount(_ id: String) {
         accounts.selectAccount(id)
         wantsAllInboxes = false
+        if mailbox.isLabel { changeMailbox(.inbox) }
     }
 
     /// Every reader follows the folder, whichever account is showing, so switching accounts is instant.
+    /// The exception is a label, which only exists in the account on screen. The others stay where they are until the next folder.
     private func changeMailbox(_ mailbox: Mailbox) {
         guard self.mailbox != mailbox else { return }
         self.mailbox = mailbox
-        for session in sessions { session.reader.changeMailbox(mailbox) }
+        if mailbox.isLabel {
+            labelOwnerID = selectedSession?.id
+            selectedSession?.reader.changeMailbox(mailbox)
+        } else {
+            labelOwnerID = nil
+            for session in sessions { session.reader.changeMailbox(mailbox) }
+        }
     }
 
     private var selectedSession: AccountSession? {
@@ -577,6 +627,10 @@ final class MailHub {
         guard let key else { return false }
         if isSearchActive {
             return searchResult(key)?.labelIDs.contains("INBOX") == true && canModifyLabels(key)
+        }
+        // A label holds conversations from anywhere, and not all of them are in the Inbox to be archived.
+        if mailbox.isLabel {
+            return folderList[key]?.conversation.labelIDs.contains("INBOX") == true && canModifyLabels(key)
         }
         return mailbox != .drafts && mailbox != .outbox && session(for: key.accountID)?.reader.canArchive ?? false
     }

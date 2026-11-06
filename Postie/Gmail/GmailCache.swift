@@ -58,9 +58,9 @@ nonisolated struct GmailCacheSession: Sendable {
     func contacts(matching query: String, limit: Int = 500) async throws -> [DirectoryContact] {
         try await cache.contacts(matching: query, limit: limit, session: self)
     }
-    /// Replaces the names of the account's own labels with a fresh copy.
-    func saveLabelNames(_ names: [String: String]) async throws { try await cache.saveLabelNames(names, session: self) }
-    func labelNames() async throws -> [String: String] { try await cache.labelNames(session: self) }
+    /// Replaces the account's own labels with a fresh copy.
+    func saveLabels(_ labels: [GmailLabel]) async throws { try await cache.saveLabels(labels, session: self) }
+    func labels() async throws -> [GmailLabel] { try await cache.labels(session: self) }
     func invalidate() async { await cache.invalidate(self) }
 }
 
@@ -152,6 +152,12 @@ actor GmailCache {
                 labelID TEXT NOT NULL, name TEXT NOT NULL,
                 PRIMARY KEY (accountID, labelID)
             );
+            """)
+        }
+        migrator.registerMigration("label-details-v5") { db in
+            try db.execute(sql: """
+            ALTER TABLE labelNames ADD COLUMN visibility TEXT NOT NULL DEFAULT 'labelShow';
+            ALTER TABLE labelNames ADD COLUMN unreadThreads INTEGER NOT NULL DEFAULT 0;
             """)
         }
         try migrator.migrate(database)
@@ -299,26 +305,29 @@ actor GmailCache {
         return found
     }
 
-    fileprivate func saveLabelNames(_ names: [String: String], session: GmailCacheSession) async throws {
+    fileprivate func saveLabels(_ labels: [GmailLabel], session: GmailCacheSession) async throws {
         try check(session)
         try await database.write { db in
             try db.execute(sql: "DELETE FROM labelNames WHERE accountID = ?", arguments: [session.accountID])
-            for (id, name) in names {
-                try db.execute(sql: "INSERT INTO labelNames (accountID, labelID, name) VALUES (?, ?, ?)",
-                               arguments: [session.accountID, id, name])
+            for label in labels {
+                try db.execute(sql: "INSERT INTO labelNames (accountID, labelID, name, visibility, unreadThreads) VALUES (?, ?, ?, ?, ?)",
+                               arguments: [session.accountID, label.id, label.name, label.visibility.rawValue, label.unreadThreads])
             }
         }
         try check(session)
     }
 
-    fileprivate func labelNames(session: GmailCacheSession) async throws -> [String: String] {
+    fileprivate func labels(session: GmailCacheSession) async throws -> [GmailLabel] {
         try check(session)
-        let names = try await database.read { db in
-            try Row.fetchAll(db, sql: "SELECT labelID, name FROM labelNames WHERE accountID = ?", arguments: [session.accountID])
-                .reduce(into: [String: String]()) { $0[$1["labelID"]] = $1["name"] }
+        let labels = try await database.read { db in
+            try Row.fetchAll(db, sql: "SELECT labelID, name, visibility, unreadThreads FROM labelNames WHERE accountID = ?",
+                             arguments: [session.accountID]).map { row in
+                GmailLabel(id: row["labelID"], name: row["name"],
+                           visibility: GmailLabel.Visibility(rawValue: row["visibility"]) ?? .show, unreadThreads: row["unreadThreads"])
+            }
         }
         try check(session)
-        return names
+        return labels
     }
 
     fileprivate func unreadCount(session: GmailCacheSession) async throws -> Int? {
@@ -371,6 +380,10 @@ actor GmailCache {
             let accountID = session.accountID
             try Self.checkCheckpoint(db, accountID: accountID, expected: batch.expectedHistoryID)
             guard GmailHistoryPage.validID(batch.historyID) else { throw GmailError.invalidResponse }
+            for folder in batch.droppedFolders {
+                try db.execute(sql: "DELETE FROM folderEntries WHERE accountID = ? AND mailbox = ?", arguments: [accountID, folder.rawValue])
+                try db.execute(sql: "DELETE FROM folderState WHERE accountID = ? AND mailbox = ?", arguments: [accountID, folder.rawValue])
+            }
             var affected = Set(batch.conversations.map(\.id))
             for (folder, page) in batch.snapshots {
                 try db.execute(sql: "DELETE FROM folderEntries WHERE accountID = ? AND mailbox = ?", arguments: [accountID, folder.rawValue])

@@ -5,7 +5,7 @@ import Observation
 /// A deterministic, entirely local Gmail account. Uses real SQLite/history sync, never real credentials.
 @MainActor
 @Observable
-final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearching {
+final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearching, GmailLabelLoading {
     static let accountID = "selection-regression"
     private var mail: [String: GmailConversation]
     private var version = 100
@@ -13,11 +13,31 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     private var arrivals = 0
     var rejectNextRemoval = false
 
-    init(empty: Bool = false) {
-        let initial = empty ? [] : [
+    private let labels: [GmailLabel]
+
+    /// `hasLabels` adds nested labels and mail for them, such as with -PostieLabels.
+    init(empty: Bool = false, hasLabels: Bool = false) {
+        labels = hasLabels ? [
+            GmailLabel(id: "Label_1", name: "Invoices"),
+            GmailLabel(id: "Label_2", name: "Work"),
+            GmailLabel(id: "Label_3", name: "Work/Infra"),
+            GmailLabel(id: "Label_4", name: "Work/Sentry"),
+            GmailLabel(id: "Label_5", name: "Projects/Website"),
+            GmailLabel(id: "Label_6", name: "Quiet", visibility: .showIfUnread),
+            GmailLabel(id: "Label_7", name: "Old receipts", visibility: .hide),
+            GmailLabel(id: "Label_8", name: "Work/Old clients", visibility: .hide)
+        ] : []
+        var initial = empty ? [] : [
             Self.thread("open", subject: "Thread to open", order: 2),
             Self.thread("older", subject: "Next older thread", order: 1)
         ]
+        if hasLabels, !empty {
+            initial += [
+                Self.thread("infra", subject: "Unread infra alert", order: 0, labels: ["Label_3", "UNREAD"]),
+                Self.thread("sentry", subject: "Archived Sentry digest", order: -1, labels: ["Label_4", "UNREAD"]).setting("INBOX", to: false),
+                Self.thread("invoice", subject: "Invoice in the Inbox", order: -2, labels: ["Label_1"])
+            ]
+        }
         mail = Dictionary(uniqueKeysWithValues: initial.map { ($0.id, $0) })
     }
 
@@ -79,6 +99,7 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
             case .inbox: return labels.contains("INBOX") && !labels.contains("TRASH")
             case .archive: return !labels.contains("INBOX") && !labels.contains("TRASH")
             case .trash: return labels.contains("TRASH")
+            case .label(let id): return labels.contains(id) && !labels.contains("TRASH")
             default: return false
             }
         }.sorted { $0.latestDate > $1.latestDate }
@@ -95,6 +116,12 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     }
 
     @MainActor func unreadInboxCount() async throws -> Int { 0 }
+
+    @MainActor func userLabels() async throws -> [GmailLabel] { labels }
+
+    @MainActor func unreadThreads(inLabel id: String) async throws -> Int {
+        mail.values.filter { $0.labelIDs.isSuperset(of: [id, "UNREAD"]) && !$0.labelIDs.contains("TRASH") }.count
+    }
 
     @MainActor func archive(threadID: String) async throws {
         try checkRemoval()
@@ -125,12 +152,12 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         changes.append((version, id))
     }
 
-    private static func thread(_ id: String, subject: String, order: Int) -> GmailConversation {
+    private static func thread(_ id: String, subject: String, order: Int, labels: Set<String> = []) -> GmailConversation {
         GmailConversation(id: id, subject: subject, messages: [
             GmailMessage(id: "message-" + id, senderName: "Sample Sender", senderEmail: "sender@example.com",
                          recipient: SampleAccount.email, cc: "", date: Date(timeIntervalSince1970: 1_700_000_000 + Double(order * 60)),
                          snippet: "Selection regression sample", body: "\(subject)\n\nWatch the list highlight, detail pane and keyboard navigation while inserting and archiving mail.",
-                         labelIDs: ["INBOX"])
+                         labelIDs: labels.union(["INBOX"]))
         ])
     }
 }

@@ -39,7 +39,11 @@ struct GmailInboxView: View {
         NavigationSplitView {
             MailboxSidebar(
                 selection: mailboxSelection, showsAllInboxes: hub.canShowAllInboxes, allInboxesBadge: hub.unreadInboxCount ?? 0,
-                badges: [.inbox: hub.selectedUnreadInboxCount ?? 0, .drafts: hub.draftCount, .outbox: hub.outboxCount]
+                badges: [.inbox: hub.selectedUnreadInboxCount ?? 0, .drafts: hub.draftCount, .outbox: hub.outboxCount],
+                labels: hub.labelTree,
+                labelGroupExpansion: { path in
+                    Binding(get: { hub.isLabelGroupExpanded(path) }, set: { hub.setLabelGroup(path, expanded: $0) })
+                }
             )
             .safeAreaBar(edge: .bottom) { AccountSwitcher(model: model) }
             .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
@@ -50,7 +54,10 @@ struct GmailInboxView: View {
             ConversationDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
         }
-        .navigationTitle(hub.selection.title)
+        .navigationTitle(hub.selectionTitle)
+        .onChange(of: hub.openLabelIsGone) { _, isGone in
+            if isGone { model.show(.folder(.inbox)) }
+        }
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search")
         .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: actions) }

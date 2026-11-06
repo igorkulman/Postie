@@ -100,6 +100,10 @@ struct MailboxSidebar: View {
     let allInboxesBadge: Int
     /// Unread or draft counts to show next to a folder.
     let badges: [Mailbox: Int]
+    let labels: LabelTree
+    /// Whether a nested label shows what is inside it, by its path.
+    let labelGroupExpansion: (String) -> Binding<Bool>
+    @State private var showsMoreLabels = false
 
     var body: some View {
         List(selection: $selection) {
@@ -115,7 +119,58 @@ struct MailboxSidebar: View {
                         .tag(MailboxSelection.folder(mailbox))
                 }
             }
+            if !labels.isEmpty {
+                Section("Labels") {
+                    ForEach(labels.roots) { LabelRow(node: $0, expansion: labelGroupExpansion) }
+                    if !labels.more.isEmpty {
+                        DisclosureGroup("More", isExpanded: $showsMoreLabels) {
+                            ForEach(labels.more) { LabelRow(node: $0, expansion: labelGroupExpansion) }
+                        }
+                    }
+                }
+            }
         }
         .listStyle(.sidebar)
+    }
+}
+
+/// A label in the sidebar, with the labels nested in it.
+private struct LabelRow: View {
+    let node: LabelNode
+    let expansion: (String) -> Binding<Bool>
+
+    var body: some View {
+        if node.children.isEmpty {
+            title(unreadThreads: node.unreadThreads)
+        } else {
+            let isExpanded = expansion(node.path)
+            DisclosureGroup(isExpanded: isExpanded) {
+                ForEach(node.children) { LabelRow(node: $0, expansion: expansion) }
+            } label: {
+                let row = title(unreadThreads: isExpanded.wrappedValue ? node.unreadThreads : node.unreadThreadsIncludingChildren)
+                if node.label == nil {
+                    // A parent that is only part of its children's names has nothing to open, so a click expands it instead.
+                    row.contentShape(.rect).onTapGesture { isExpanded.wrappedValue.toggle() }
+                } else {
+                    row
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func title(unreadThreads: Int) -> some View {
+        // The sidebar ignores a weight set on the whole Label.
+        let row = Label {
+            Text(node.title).fontWeight(unreadThreads > 0 ? .semibold : nil).lineLimit(1)
+        } icon: {
+            Image(systemName: "tag")
+        }
+        .badge(unreadThreads)
+        if let label = node.label {
+            row.tag(MailboxSelection.folder(.label(label.id)))
+        } else {
+            row
+        }
     }
 }

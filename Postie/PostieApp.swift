@@ -47,7 +47,8 @@ struct PostieApp: App {
         let accounts = launchMode.usesLocalAccount ? AccountStore(vault: MemoryAccountVault()) : AccountStore()
         _updater = State(initialValue: UpdaterModel(startingUpdater: !launchMode.usesLocalAccount))
         _hub = State(initialValue: MailHub(
-            accounts: accounts, persistsMail: !launchMode.usesLocalAccount, syncsInBackground: !launchMode.usesLocalAccount
+            accounts: accounts, persistsMail: !launchMode.usesLocalAccount, syncsInBackground: !launchMode.usesLocalAccount,
+            preferences: launchMode.usesLocalAccount ? nil : .standard
         ))
     }
 

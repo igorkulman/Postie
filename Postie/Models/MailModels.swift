@@ -1,17 +1,53 @@
 import Foundation
 
-nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
-    case inbox = "Inbox"
-    case drafts = "Drafts"
-    case outbox = "Outbox"
-    case sent = "Sent"
-    case archive = "Archive"
-    case junk = "Junk"
-    case trash = "Trash"
+nonisolated enum Mailbox: Hashable, CaseIterable, Identifiable, RawRepresentable, Sendable {
+    case inbox
+    case drafts
+    case outbox
+    case sent
+    case archive
+    case junk
+    case trash
+    /// One of the person's own Gmail labels. Its ID only means something in the account it came from.
+    case label(String)
+
+    /// The folders every account has, in the order they are shown. Labels differ per account.
+    static let allCases: [Mailbox] = [.inbox, .drafts, .outbox, .sent, .archive, .junk, .trash]
+
+    private static let labelPrefix = "label:"
 
     var id: Self { self }
 
+    var isLabel: Bool {
+        if case .label = self { true } else { false }
+    }
+
     /// The raw value is persisted and must stay stable; the title is what people read.
+    var rawValue: String {
+        switch self {
+        case .inbox: "Inbox"
+        case .drafts: "Drafts"
+        case .outbox: "Outbox"
+        case .sent: "Sent"
+        case .archive: "Archive"
+        case .junk: "Junk"
+        case .trash: "Trash"
+        case .label(let id): Self.labelPrefix + id
+        }
+    }
+
+    init?(rawValue: String) {
+        if rawValue.hasPrefix(Self.labelPrefix) {
+            let id = rawValue.dropFirst(Self.labelPrefix.count)
+            guard !id.isEmpty else { return nil }
+            self = .label(String(id))
+        } else {
+            guard let folder = Self.allCases.first(where: { $0.rawValue == rawValue }) else { return nil }
+            self = folder
+        }
+    }
+
+    /// A label's own name is known to its account: see `MailHub.selectionTitle`.
     var title: String {
         switch self {
         case .inbox: String(localized: "Inbox", comment: "Mailbox name")
@@ -21,6 +57,7 @@ nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
         case .archive: String(localized: "Archive", comment: "Mailbox name")
         case .junk: String(localized: "Junk", comment: "Mailbox name")
         case .trash: String(localized: "Trash", comment: "Mailbox name")
+        case .label: String(localized: "Label", comment: "Title of a Gmail label whose name is not known")
         }
     }
 
@@ -33,6 +70,7 @@ nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
         case .archive: "archivebox"
         case .junk: "xmark.bin"
         case .trash: "trash"
+        case .label: "tag"
         }
     }
 }

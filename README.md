@@ -17,6 +17,9 @@ subscriptions, AI features, or workspace bloat.
   belongs to. New messages come from the account on screen, and in All Inboxes from
   the default account chosen in Settings
 - Inbox, Drafts, Sent, Archive, Junk, and Trash
+- Your Gmail labels in the sidebar, nested as in Gmail with their unread counts, for
+  the selected account, including in All Inboxes. Labels Gmail is set not to list are
+  under More
 - Conversation view with HTML email rendering, and the conversation's Gmail labels
   next to its subject
 - Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
@@ -47,7 +50,7 @@ Planned:
 
 - Search suggestions (people and subjects)
 - Showing CID (embedded) images
-- Browsing and changing Gmail labels
+- Changing Gmail labels
 - Full offline mailbox downloads
 
 Not planned:
@@ -123,6 +126,8 @@ chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
 operation after the user changes selection does not choose a new thread.
+
+Add `-PostieLabels` to try the same mail with nested labels in the sidebar.
 
 ## Tests
 
