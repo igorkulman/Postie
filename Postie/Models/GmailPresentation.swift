@@ -4,7 +4,7 @@ extension GmailConversation {
     /// The display model for a conversation. IDs come from Gmail, so the same mail keeps the same identity
     /// each time it is projected and views keep their state (such as which messages are expanded).
     @MainActor
-    func presentation(includingBodies: Bool, mailbox: Mailbox = .inbox) -> MailThread {
+    func presentation(includingBodies: Bool, mailbox: Mailbox = .inbox, labelNames: [String: String] = [:]) -> MailThread {
         MailThread(
             id: id,
             subject: subject,
@@ -16,7 +16,7 @@ extension GmailConversation {
                                 : $0.snippet,
                             htmlBody: includingBodies ? $0.htmlBody : nil, attachments: $0.attachments)
             },
-            mailbox: mailbox, isUnread: isUnread, isStarred: isStarred
+            mailbox: mailbox, isUnread: isUnread, isStarred: isStarred, labels: visibleLabels(named: labelNames)
         )
     }
 }
