@@ -8,7 +8,8 @@ struct GmailSelectionRegressionView: View {
     @State private var error: String?
 
     init(empty: Bool = false) {
-        _mail = State(initialValue: SelectionRegressionMail(empty: empty))
+        let usesPriorityInbox = ProcessInfo.processInfo.arguments.contains("-PostiePriorityInbox")
+        _mail = State(initialValue: SelectionRegressionMail(empty: empty, usesPriorityInbox: usesPriorityInbox))
     }
 
     fileprivate init(mail: SelectionRegressionMail, hub: MailHub) {

@@ -2,6 +2,8 @@ import SwiftUI
 
 enum SettingsKey {
     static let showsDockBadge = "showsDockBadge"
+    static let usesPriorityInbox = "usesPriorityInbox"
+    static let collapsedInboxSections = "collapsedInboxSections"
 }
 
 struct SettingsView: View {
@@ -13,7 +15,7 @@ struct SettingsView: View {
                 AccountSettings(hub: hub)
             }
             Tab("General", systemImage: "gearshape") {
-                GeneralSettings()
+                GeneralSettings(hub: hub)
             }
         }
         .scenePadding()
@@ -139,12 +141,17 @@ private struct AccountRow: View {
 }
 
 private struct GeneralSettings: View {
+    @Bindable var hub: MailHub
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
     @Environment(UpdaterModel.self) private var updater
 
     var body: some View {
         @Bindable var updater = updater
         Form {
+            Toggle(isOn: $hub.usesPriorityInbox) {
+                Text("Priority Inbox")
+                Text("Group the Inbox into Important and unread, Starred, and Everything else.")
+            }
             Toggle("Show unread count on the Dock icon", isOn: $showsDockBadge)
             Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
         }

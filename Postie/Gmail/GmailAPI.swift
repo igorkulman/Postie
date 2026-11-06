@@ -12,6 +12,11 @@ nonisolated protocol GmailSearching: GmailReading {
     func search(_ query: String, in mailbox: Mailbox?, pageToken: String?) async throws -> GmailPage
 }
 
+nonisolated protocol GmailPriorityLoading: Sendable {
+    /// The newest important-and-unread and starred Inbox threads, however old they are, leaving out those in `known`.
+    func priorityInboxThreads(excluding known: Set<String>) async throws -> [GmailConversation]
+}
+
 nonisolated protocol GmailAttachmentLoading: Sendable {
     func attachmentData(_ attachment: MailAttachment) async throws -> Data
 }
@@ -59,7 +64,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailPriorityLoading, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -173,7 +178,30 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         let page: GmailThreadList = try await get(path: "threads", query: query)
         var seen: Set<String> = []
         let references = (page.threads ?? []).filter { seen.insert($0.id).inserted }
-        let conversations = try await withThrowingTaskGroup(of: GmailConversation?.self) { group in
+        // Gmail search is message-based; don't show a still-in-Inbox thread in Archive
+        // just because another message in that thread matched the archive query.
+        let excludedArchiveLabels: Set<String> = ["INBOX", "DRAFT", "SPAM", "TRASH"]
+        let conversations = try await conversations(for: references).filter {
+            mailbox != .archive || $0.labelIDs.isDisjoint(with: excludedArchiveLabels)
+        }
+        try Task.checkCancellation()
+        return GmailPage(conversations: conversations, nextPageToken: page.nextPageToken?.isEmpty == false ? page.nextPageToken : nil)
+    }
+
+    func priorityInboxThreads(excluding known: Set<String>) async throws -> [GmailConversation] {
+        var seen = known
+        var references: [GmailThreadList.Reference] = []
+        for labels in [["INBOX", "IMPORTANT", "UNREAD"], ["INBOX", "STARRED"]] {
+            let query = labels.map { URLQueryItem(name: "labelIds", value: $0) } + [URLQueryItem(name: "maxResults", value: "25")]
+            let page: GmailThreadList = try await get(path: "threads", query: query)
+            references += (page.threads ?? []).filter { seen.insert($0.id).inserted }
+        }
+        return try await conversations(for: references).filter { $0.labelIDs.contains("INBOX") }
+    }
+
+    /// Reads the threads a few at a time, newest first. Those deleted in the meantime are left out.
+    private func conversations(for references: [GmailThreadList.Reference]) async throws -> [GmailConversation] {
+        try await withThrowingTaskGroup(of: GmailConversation?.self) { group in
             var iterator = references.makeIterator()
             for _ in 0..<min(6, references.count) {
                 if let reference = iterator.next() {
@@ -182,22 +210,13 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             }
             var results: [GmailConversation] = []
             while let result = try await group.next() {
-                if let result {
-                    // Gmail search is message-based; don't show a still-in-Inbox thread in Archive
-                    // just because another message in that thread matched the archive query.
-                    let excludedArchiveLabels: Set<String> = ["INBOX", "DRAFT", "SPAM", "TRASH"]
-                    if mailbox != .archive || result.labelIDs.isDisjoint(with: excludedArchiveLabels) {
-                        results.append(result)
-                    }
-                }
+                if let result { results.append(result) }
                 if let reference = iterator.next() {
                     group.addTask { try await self.metadata(id: reference.id, fallbackSnippet: reference.snippet) }
                 }
             }
             return results.sorted { $0.latestDate > $1.latestDate }
         }
-        try Task.checkCancellation()
-        return GmailPage(conversations: conversations, nextPageToken: page.nextPageToken?.isEmpty == false ? page.nextPageToken : nil)
     }
 
     func unreadInboxCount() async throws -> Int {

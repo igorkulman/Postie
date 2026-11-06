@@ -15,6 +15,10 @@ subscriptions, AI features, or workspace bloat.
   archive/trash actions always go through the account the conversation belongs to
   and the default account for new messages can be chosen in Settings
 - Inbox, Drafts, Sent, Archive, Junk, and Trash
+- Priority Inbox, optional in Settings: groups the Inbox into Important and unread,
+  Starred, and Everything else, each of which can be collapsed. Older important and
+  starred mail shows up there without scrolling to it. This is Postie's own setting,
+  as Gmail doesn't let apps read yours
 - Conversation view with HTML email rendering
 - Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
   underline, lists, links), with attachments and your Gmail signature
@@ -120,6 +124,10 @@ chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
 operation after the user changes selection does not choose a new thread.
+
+Add `-PostiePriorityInbox` to try the same mail in a Priority Inbox, with an
+important unread thread and a starred one. Open **Important unread thread**: once
+it is marked read it must stay in its section until another thread is selected.
 
 ## Tests
 

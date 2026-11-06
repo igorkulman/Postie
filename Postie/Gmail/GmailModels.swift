@@ -38,6 +38,7 @@ nonisolated struct GmailConversation: Identifiable, Equatable, Sendable {
     var labelIDs: Set<String> { messages.reduce(into: []) { $0.formUnion($1.labelIDs) } }
     var isUnread: Bool { labelIDs.contains("UNREAD") }
     var isStarred: Bool { labelIDs.contains("STARRED") }
+    var isImportant: Bool { labelIDs.contains("IMPORTANT") }
     var latestDate: Date { messages.last?.date ?? .distantPast }
 
     /// A copy with a label added to or removed from every message, mirroring Gmail's thread-level modify.
