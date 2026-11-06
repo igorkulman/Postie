@@ -24,6 +24,8 @@ subscriptions, AI features, or workspace bloat.
 - Archive, trash, star, and read/unread actions
 - Select several conversations with Shift or Command to archive, trash, or forward
   them together. They are forwarded in one message
+- Undo and Redo (⌘Z and ⇧⌘Z) for archive, trash, flag, and read/unread, several
+  steps back, until Postie quits. Deleting a draft or a queued message can't be undone
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
   Results are not stored in the local cache
@@ -112,6 +114,9 @@ credentials, network requests, or saved mailbox database.
 4. Archive the remaining threads until the inbox is empty. Both selection and
    detail must clear, Archive/Trash must be disabled, and the empty list must
    retain keyboard focus. Inserting mail again must not automatically open it.
+5. Press **⌘Z** repeatedly. Each archived thread must come back one at a time,
+   newest action first, selected and in its place, and **⇧⌘Z** must archive them
+   again. The Edit menu must name the step each time.
 
 The Regression menu also simulates an external archive of **Thread to open**
 and a rejected next archive/trash. External disappearance clears selection

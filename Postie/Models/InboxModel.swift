@@ -20,6 +20,10 @@ final class InboxModel {
     /// Bumped when an explicit removal should hand keyboard focus back to the list.
     private(set) var listFocusRequest = 0
     private var selection = ConversationSelection<ConversationKey>()
+    /// The window's history, which also backs the Edit menu and undoing typing in the search field.
+    @ObservationIgnored weak var undoManager: UndoManager?
+    /// The undo or redo reaching Gmail last, which the next one waits for.
+    @ObservationIgnored private var undoQueue: Task<Void, Never>?
 
     @ObservationIgnored private var selectionBeforeSearch: Set<ConversationKey> = []
     @ObservationIgnored private var autoReadID: ConversationKey?
@@ -151,11 +155,19 @@ final class InboxModel {
     // MARK: Actions on a conversation
 
     func toggleRead(_ item: MergedConversation) {
-        Task { await hub.setUnread(item.key, !item.conversation.isUnread) }
+        let unread = !item.conversation.isUnread
+        changeLabel(.setUnread(item.key, unread), named: unread ? String(localized: "Mark as Unread") : String(localized: "Mark as Read"))
     }
 
     func toggleStar(_ item: MergedConversation) {
-        Task { await hub.setStarred(item.key, !item.conversation.isStarred) }
+        let starred = !item.conversation.isStarred
+        changeLabel(.setStarred(item.key, starred), named: starred ? String(localized: "Flag") : String(localized: "Unflag"))
+    }
+
+    private func changeLabel(_ change: MailChange, named name: String) {
+        Task {
+            if await apply(change) { recordUndo(change.opposite, named: name) }
+        }
     }
 
     var canRemoveSelection: Bool {
@@ -169,15 +181,31 @@ final class InboxModel {
 
     func remove(_ keys: [ConversationKey], archiving: Bool) {
         guard let token = selection.beginRemoval(of: Set(keys), visibleIDs: conversationKeys) else { return }
+        let snapshots = hub.canUndoRemoval(archiving: archiving) ? hub.removedConversations(keys) : []
         Task {
-            let anyRemoved = await hub.remove(keys, archiving: archiving) { [self] in
-                // An explicit selected-thread removal returns keyboard navigation to the list,
-                // including when it is empty. Background sync never steals search focus.
-                if selection.rowRemoved(token, visibleIDs: conversationKeys) { returnFocusToList() }
+            let removed = await removeRows(keys, archiving: archiving, token: token)
+            let undoable = snapshots.filter { removed.contains($0.key) }
+            if !undoable.isEmpty {
+                recordUndo(.restore(undoable, archived: archiving), named: Self.removalName(count: undoable.count, archiving: archiving))
             }
-            // Still pending when Gmail refused some of them, and those then stay selected.
-            if selection.finishRemoval(token, removed: anyRemoved, visibleIDs: conversationKeys) { returnFocusToList() }
+            await hub.refresh(after: keys, succeeded: removed)
         }
+    }
+
+    private func removeRows(_ keys: [ConversationKey], archiving: Bool, anyFolder: Bool = false, token: UUID?) async -> [ConversationKey] {
+        let removed = await hub.remove(keys, archiving: archiving, anyFolder: anyFolder) { [self] in
+            // An explicit selected-thread removal returns keyboard navigation to the list,
+            // including when it is empty. Background sync never steals search focus.
+            if let token, selection.rowRemoved(token, visibleIDs: conversationKeys) { returnFocusToList() }
+        }
+        // Still pending when Gmail refused some of them, and those then stay selected.
+        if let token, selection.finishRemoval(token, removed: !removed.isEmpty, visibleIDs: conversationKeys) { returnFocusToList() }
+        return removed
+    }
+
+    private static func removalName(count: Int, archiving: Bool) -> String {
+        if count == 1 { return archiving ? String(localized: "Archive") : String(localized: "Move to Trash") }
+        return archiving ? String(localized: "Archive \(count) Conversations") : String(localized: "Move \(count) Conversations to Trash")
     }
 
     private func returnFocusToList() {
@@ -190,6 +218,93 @@ final class InboxModel {
         let queued = keys.filter(hub.canActOnOutboxItem)
         if !queued.isEmpty { queued.forEach(deleteOutboxItem) }
         else if !keys.isEmpty, keys.allSatisfy(hub.canTrash) { remove(keys, archiving: false) }
+    }
+
+    // MARK: Undo
+
+    /// A change to mail that can be taken back. Taking it back records its opposite, which is what Redo then does.
+    private enum MailChange {
+        case remove([RemovedConversation], archiving: Bool)
+        case restore([RemovedConversation], archived: Bool)
+        case setUnread(ConversationKey, Bool)
+        case setStarred(ConversationKey, Bool)
+
+        var opposite: MailChange {
+            switch self {
+            case .remove(let items, let archiving): .restore(items, archived: archiving)
+            case .restore(let items, let archived): .remove(items, archiving: archived)
+            case .setUnread(let key, let unread): .setUnread(key, !unread)
+            case .setStarred(let key, let starred): .setStarred(key, !starred)
+            }
+        }
+    }
+
+    /// Adds a step to the history, named for the Undo and Redo menu items.
+    private func recordUndo(_ undo: MailChange, named name: String) {
+        guard let undoManager else { return }
+        // Gmail answers between input events, and until the next event automatic grouping would make
+        // all its answers a single step. Undo and Redo have a group of their own open already.
+        let needsOwnGroup = !undoManager.isUndoing && !undoManager.isRedoing
+        if needsOwnGroup {
+            undoManager.groupsByEvent = false
+            undoManager.beginUndoGrouping()
+        }
+        undoManager.registerUndo(withTarget: self) { model in
+            MainActor.assumeIsolated { model.perform(undo, named: name) }
+        }
+        undoManager.setActionName(name)
+        if needsOwnGroup {
+            undoManager.endUndoGrouping()
+            undoManager.groupsByEvent = true
+        }
+    }
+
+    /// Runs when Undo or Redo is chosen. Only while it runs does the opposite step go to the other side of
+    /// the history, so that cannot wait for Gmail. Gmail hears about them one at a time, in the order chosen.
+    private func perform(_ change: MailChange, named name: String) {
+        let isUndoing = undoManager?.isUndoing == true
+        recordUndo(change.opposite, named: name)
+        let previous = undoQueue
+        undoQueue = Task {
+            await previous?.value
+            // Offline, say: the error is on screen and Undo can be tried again later.
+            if await !apply(change), isUndoing { recordUndo(change, named: name) }
+        }
+    }
+
+    /// Makes the change in Gmail and on screen. Returns once Gmail has answered, whether or not it took all of it.
+    private func apply(_ change: MailChange) async -> Bool {
+        let keys: [ConversationKey]
+        let succeeded: [ConversationKey]
+        switch change {
+        case .remove(let items, let archiving):
+            keys = items.map(\.key)
+            let token = selection.beginRemoval(of: Set(keys), visibleIDs: conversationKeys)
+            succeeded = await removeRows(keys, archiving: archiving, anyFolder: true, token: token)
+        case .restore(let items, let archived):
+            keys = items.map(\.key)
+            succeeded = await hub.restore(items, archived: archived)
+            selectRestored(succeeded)
+        case .setUnread(let key, let unread):
+            keys = [key]
+            succeeded = await hub.setUnread(key, unread, refreshing: false) ? [key] : []
+        case .setStarred(let key, let starred):
+            keys = [key]
+            succeeded = await hub.setStarred(key, starred, refreshing: false) ? [key] : []
+        }
+        // Not awaited: the next undo should not have to wait for it.
+        Task { await hub.refresh(after: keys, succeeded: succeeded) }
+        return succeeded.count == keys.count
+    }
+
+    /// Like Mail, what comes back is selected, provided it came back to the list on screen.
+    private func selectRestored(_ keys: [ConversationKey]) {
+        let visible = Set(keys).intersection(conversationKeys)
+        guard !visible.isEmpty else { return }
+        // Undo puts things back as they were, so opening one this way must not mark it read.
+        if visible.count == 1 { autoReadID = visible.first }
+        selection.select(visible)
+        returnFocusToList()
     }
 
     // MARK: Composing

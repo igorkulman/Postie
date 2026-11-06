@@ -24,6 +24,8 @@ private final class MutatingStubAPI: GmailReading, GmailMutating {
     @MainActor
     func trash(threadID: String) async throws { try record("trash \(threadID)") }
     @MainActor
+    func untrash(threadID: String) async throws { try record("untrash \(threadID)") }
+    @MainActor
     func setLabel(_ label: String, on: Bool, threadID: String) async throws {
         try record("\(on ? "add" : "remove") \(label) \(threadID)")
     }
@@ -62,6 +64,16 @@ struct GmailMutationTests {
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "POST")
         #expect(request.url?.path == "/gmail/v1/users/me/threads/a1/trash")
+    }
+
+    @Test("Untrash uses the thread's untrash endpoint")
+    func untrashRequest() async throws {
+        let transport = FixtureTransport()
+        let api = GmailAPI(transport: transport) { "fixture-token" }
+        try await api.untrash(threadID: "a1")
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/gmail/v1/users/me/threads/a1/untrash")
     }
 
     @Test("Labels are added and removed through thread modify", arguments: [

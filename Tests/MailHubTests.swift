@@ -7,6 +7,10 @@ actor HubAPI: GmailSearching, GmailMutating, GmailSending {
     private(set) var mail: [GmailConversation]
     private(set) var archived: [String] = []
     private(set) var trashed: [String] = []
+    private(set) var labelChanges: [String] = []
+    /// What archive and trash took out of the list, ready to come back.
+    private var removed: [String: GmailConversation] = [:]
+    private var failure: GmailError?
     private(set) var sent: [OutgoingMessage] = []
     private(set) var searches: [(query: String, mailbox: Mailbox?)] = []
 
@@ -24,9 +28,24 @@ actor HubAPI: GmailSearching, GmailMutating, GmailSending {
         return GmailPage(conversations: mail.filter { $0.subject.localizedCaseInsensitiveContains(query) }, nextPageToken: nil)
     }
     func unreadInboxCount() async throws -> Int { mail.filter(\.isUnread).count }
-    func archive(threadID: String) async throws { archived.append(threadID); mail.removeAll { $0.id == threadID } }
-    func trash(threadID: String) async throws { trashed.append(threadID); mail.removeAll { $0.id == threadID } }
-    func setLabel(_ label: String, on: Bool, threadID: String) async throws {}
+    func failRequests(with failure: GmailError?) { self.failure = failure }
+    private func take(_ threadID: String) throws {
+        if let failure { throw failure }
+        removed[threadID] = mail.first { $0.id == threadID }
+        mail.removeAll { $0.id == threadID }
+    }
+    func archive(threadID: String) async throws { try take(threadID); archived.append(threadID) }
+    func trash(threadID: String) async throws { try take(threadID); trashed.append(threadID) }
+    func untrash(threadID: String) async throws {
+        if let failure { throw failure }
+        labelChanges.append("untrash \(threadID)")
+    }
+    func setLabel(_ label: String, on: Bool, threadID: String) async throws {
+        if let failure { throw failure }
+        labelChanges.append("\(on ? "add" : "remove") \(label) \(threadID)")
+        if let index = mail.firstIndex(where: { $0.id == threadID }) { mail[index] = mail[index].setting(label, to: on) }
+        if on, label == "INBOX", let conversation = removed.removeValue(forKey: threadID) { mail.append(conversation) }
+    }
     func send(_ message: OutgoingMessage) async throws { sent.append(message) }
 }
 
@@ -115,7 +134,7 @@ struct MailHubTests {
         model.updateFromList(Set(selected))
         let removed = await hub.remove(selected, archiving: true, onRemoved: {})
         model.reconcileSelection()
-        #expect(removed)
+        #expect(Set(removed) == Set(selected))
         #expect(await api.archived.sorted() == ["a1", "a2"])
         #expect(hub.conversations.map(\.key.threadID) == ["a3"])
     }
@@ -127,7 +146,7 @@ struct MailHubTests {
         let hub = await makeHub(["a": a, "b": b])
         let keys = [ConversationKey(accountID: "a", threadID: "a1"), ConversationKey(accountID: "b", threadID: "b1")]
         let removed = await hub.remove(keys, archiving: false, onRemoved: {})
-        #expect(removed)
+        #expect(Set(removed) == Set(keys))
         #expect(await a.trashed == ["a1"])
         #expect(await b.trashed == ["b1"])
         #expect(hub.conversations.isEmpty)

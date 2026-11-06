@@ -114,6 +114,9 @@
     "Archive (⌃⌘A)" : {
 
     },
+    "Archive %lld Conversations" : {
+
+    },
     "Attach Files" : {
 
     },
@@ -316,6 +319,9 @@
       "comment" : "VoiceOver label of a message header; the sender follows"
     },
     "Messages that are waiting to be sent, or could not be, appear here." : {
+
+    },
+    "Move %lld Conversations to Trash" : {
 
     },
     "Move to Trash" : {

@@ -11,6 +11,9 @@ All notable changes to Postie are documented here. The format is based on
 - Select several conversations with Shift or Command to archive them, move them to
   the Trash, or forward them together in one message. Reply and Reply All are
   disabled while several are selected.
+- Undo and Redo (⌘Z and ⇧⌘Z) for archiving, moving to the Trash, flagging and
+  marking as read or unread, back through as many steps as you like, like Mail. What
+  comes back is selected again. The Edit menu names the step to undo.
 
 ## [0.3.0] - 2026-10-14
 
