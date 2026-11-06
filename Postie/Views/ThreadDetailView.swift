@@ -30,19 +30,18 @@ struct ThreadDetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(thread.subject)
-                        .font(.title3.weight(.semibold))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 0)
-                    if openDraft != nil {
-                        Text("Drafts")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+                    SubjectLayout {
+                        Text(thread.subject)
+                            .font(.title3.weight(.semibold))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        if openDraft != nil {
+                            LabelChip(name: Mailbox.drafts.title)
+                        }
+                        ForEach(thread.labels, id: \.self) { LabelChip(name: $0) }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     Button(action: toggleStar) {
                         Image(systemName: thread.isStarred ? "star.fill" : "star")
                     }
@@ -108,6 +107,74 @@ struct ThreadDetailView: View {
             scrollPosition = Self.openingScrollPosition(for: thread)
         }
         .background(Color(nsColor: .textBackgroundColor))
+    }
+}
+
+private struct LabelChip: View {
+    let name: String
+
+    var body: some View {
+        Text(name)
+            .font(.caption)
+            .lineLimit(1)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
+    }
+}
+
+/// The subject followed by its labels on the same line, moving on to the next line for whatever does not fit.
+private struct SubjectLayout: Layout {
+    private let spacing: CGFloat = 6
+    private let lineSpacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) -> CGSize {
+        let frames = frames(of: subviews, width: proposal.width)
+        return CGSize(width: frames.map(\.maxX).max() ?? 0, height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Void) {
+        for (subview, frame) in zip(subviews, frames(of: subviews, width: bounds.width)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          proposal: ProposedViewSize(frame.size))
+        }
+    }
+
+    /// Whatever sits beside this layout lines up with the subject's first line, not with the last label.
+    func explicitAlignment(of guide: VerticalAlignment, in bounds: CGRect, proposal: ProposedViewSize,
+                           subviews: Subviews, cache: inout Void) -> CGFloat? {
+        guard guide == .firstTextBaseline, let subject = subviews.first,
+              let frame = frames(of: subviews, width: bounds.width).first else { return nil }
+        return bounds.minY + frame.minY + subject.dimensions(in: ProposedViewSize(frame.size))[.firstTextBaseline]
+    }
+
+    private func frames(of subviews: Subviews, width: CGFloat?) -> [CGRect] {
+        var frames: [CGRect] = []
+        var lineStart = 0
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var lineHeight: CGFloat = 0
+        // A label is shorter than the subject, so it sits in the middle of the line.
+        func centerLine() {
+            for index in lineStart..<frames.count {
+                frames[index].origin.y += (lineHeight - frames[index].height) / 2
+            }
+        }
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
+            if x > 0, x + size.width > width ?? .infinity {
+                centerLine()
+                lineStart = frames.count
+                x = 0
+                y += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+            frames.append(CGRect(origin: CGPoint(x: x, y: y), size: size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+        centerLine()
+        return frames
     }
 }
 
@@ -198,11 +265,8 @@ private struct MessageView: View {
                     HTMLMessageBody(html: html, plainText: message.body)
                         .id(message.id)
                 } else {
-                    Text(message.body)
-                        .font(.body)
-                        .lineSpacing(3)
+                    PlainMessageText(text: message.body)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
                 }
             }
         }
@@ -228,6 +292,18 @@ private struct MessageView: View {
     ThreadDetailView(thread: MailThread(id: "reply-to", subject: "Welcome", messages: [message], mailbox: .inbox),
                      canToggleStar: false, toggleStar: {})
         .frame(width: 680, height: 260)
+}
+
+#Preview("Labels and links") {
+    let message = MailMessage(
+        id: "labels", senderName: "Acme News", senderEmail: "news@acme.example", recipient: "me@example.com",
+        date: Date(timeIntervalSince1970: 1_791_000_000),
+        body: "Review it at https://example.com/review/42, or write to help@acme.example."
+    )
+    ThreadDetailView(thread: MailThread(id: "labels", subject: "A subject long enough that the labels have to move on to the next line",
+                                        messages: [message], mailbox: .inbox, labels: ["Inbox", "Follow up", "Work/Clients"]),
+                     canToggleStar: false, toggleStar: {})
+        .frame(width: 520, height: 260)
 }
 
 private func longConversationPreview(html: Bool = false) -> MailThread {

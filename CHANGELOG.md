@@ -6,6 +6,15 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- A conversation's labels, such as Inbox and the ones you created in Gmail, next
+  to its subject.
+
+### Fixed
+
+- Web and email addresses written out as text in an email are now clickable.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed

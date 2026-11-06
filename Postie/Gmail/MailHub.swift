@@ -506,6 +506,10 @@ final class MailHub {
         return selected
     }
 
+    func labelNames(for accountID: String) -> [String: String] {
+        session(for: accountID)?.reader.labelNames ?? [:]
+    }
+
     func isLoadingConversation(_ key: ConversationKey?) -> Bool {
         key.flatMap { session(for: $0.accountID)?.reader.isLoadingConversation } ?? false
     }

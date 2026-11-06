@@ -15,7 +15,8 @@ subscriptions, AI features, or workspace bloat.
   archive/trash actions always go through the account the conversation belongs to
   and the default account for new messages can be chosen in Settings
 - Inbox, Drafts, Sent, Archive, Junk, and Trash
-- Conversation view with HTML email rendering
+- Conversation view with HTML email rendering, and the conversation's Gmail labels
+  next to its subject
 - Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
   underline, lists, links), with attachments and your Gmail signature
 - Drafts are saved in Gmail, so they show up in every Gmail client: closing a
@@ -44,7 +45,7 @@ Planned:
 
 - Search suggestions (people and subjects)
 - Showing CID (embedded) images
-- Gmail labels
+- Browsing and changing Gmail labels
 - Full offline mailbox downloads
 
 Not planned:

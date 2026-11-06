@@ -58,6 +58,9 @@ nonisolated struct GmailCacheSession: Sendable {
     func contacts(matching query: String, limit: Int = 500) async throws -> [DirectoryContact] {
         try await cache.contacts(matching: query, limit: limit, session: self)
     }
+    /// Replaces the names of the account's own labels with a fresh copy.
+    func saveLabelNames(_ names: [String: String]) async throws { try await cache.saveLabelNames(names, session: self) }
+    func labelNames() async throws -> [String: String] { try await cache.labelNames(session: self) }
     func invalidate() async { await cache.invalidate(self) }
 }
 
@@ -139,6 +142,15 @@ actor GmailCache {
                 accountID TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
                 email TEXT NOT NULL, name TEXT NOT NULL, saved BOOLEAN NOT NULL,
                 PRIMARY KEY (accountID, email)
+            );
+            """)
+        }
+        migrator.registerMigration("label-names-v3") { db in
+            try db.execute(sql: """
+            CREATE TABLE labelNames (
+                accountID TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+                labelID TEXT NOT NULL, name TEXT NOT NULL,
+                PRIMARY KEY (accountID, labelID)
             );
             """)
         }
@@ -285,6 +297,28 @@ actor GmailCache {
         }
         try check(session)
         return found
+    }
+
+    fileprivate func saveLabelNames(_ names: [String: String], session: GmailCacheSession) async throws {
+        try check(session)
+        try await database.write { db in
+            try db.execute(sql: "DELETE FROM labelNames WHERE accountID = ?", arguments: [session.accountID])
+            for (id, name) in names {
+                try db.execute(sql: "INSERT INTO labelNames (accountID, labelID, name) VALUES (?, ?, ?)",
+                               arguments: [session.accountID, id, name])
+            }
+        }
+        try check(session)
+    }
+
+    fileprivate func labelNames(session: GmailCacheSession) async throws -> [String: String] {
+        try check(session)
+        let names = try await database.read { db in
+            try Row.fetchAll(db, sql: "SELECT labelID, name FROM labelNames WHERE accountID = ?", arguments: [session.accountID])
+                .reduce(into: [String: String]()) { $0[$1["labelID"]] = $1["name"] }
+        }
+        try check(session)
+        return names
     }
 
     fileprivate func unreadCount(session: GmailCacheSession) async throws -> Int? {
