@@ -13,6 +13,13 @@
             </array>
         </dict>
     </array>
+    <!-- Email images are loaded directly from their senders' servers, and many still use plain HTTP.
+         Web content can only reach images: EmailHTMLPolicy's content blocker stops everything else. -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoadsInWebContent</key>
+        <true/>
+    </dict>
     <key>SUFeedURL</key>
     <string>https://github.com/igorkulman/Postie/releases/latest/download/appcast.xml</string>
     <key>SUPublicEDKey</key>

@@ -2,10 +2,12 @@ import SwiftUI
 import WebKit
 
 struct HTMLMessageBody: View {
+    let messageID: String
     let html: String
     let plainText: String
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.openURL) private var openURL
+    @Environment(\.attachmentLoader) private var attachmentLoader
     @State private var height: CGFloat = 140
     @State private var failed = false
 
@@ -23,7 +25,10 @@ struct HTMLMessageBody: View {
                 EmailHTMLWebView(
                     html: html, dark: colorScheme == .dark,
                     heightChanged: { height = $0 }, failed: { failed = true },
-                    openLink: { openURL($0) }
+                    openLink: { openURL($0) },
+                    loadEmbeddedImage: attachmentLoader.map { loader in
+                        { [messageID] in try await loader.embeddedImage(contentID: $0, messageID: messageID) }
+                    }
                 )
                 .frame(maxWidth: .infinity)
                 .frame(height: height)
@@ -35,7 +40,8 @@ struct HTMLMessageBody: View {
 }
 
 // Defense in depth: CSP, a compiled content blocker, disabled page JavaScript,
-// ephemeral storage, and a navigation delegate. Only HTTP(S) image resources are exempted;
+// ephemeral storage, and a navigation delegate. Only HTTP(S) image resources are exempted,
+// plus images from the message itself through EmbeddedImageHandler;
 // no email is loaded before the blocker is installed.
 enum EmailHTMLPolicy {
     static let world = WKContentWorld.world(name: "Postie.EmailLayout")
@@ -55,7 +61,7 @@ enum EmailHTMLPolicy {
         {"trigger":{"url-filter":"^https:","resource-type":["image"]},"action":{"type":"ignore-previous-rules"}}
     ]
     """#
-    static let csp = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data: https: http:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; base-uri 'none'; form-action 'none'"
+    static let csp = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline'; img-src data: cid: https: http:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; media-src 'none'; base-uri 'none'; form-action 'none'"
     private static var ruleTask: Task<WKContentRuleList, Error>?
     private enum Failure: Error { case blockerUnavailable }
 
@@ -185,11 +191,14 @@ struct EmailHTMLWebView: NSViewRepresentable {
     let heightChanged: (CGFloat) -> Void
     let failed: () -> Void
     let openLink: (URL) -> Void
+    let loadEmbeddedImage: ((String) async throws -> Data)?
 
     func makeCoordinator() -> Coordinator { Coordinator() }
 
     func makeNSView(context: Context) -> EmailWebView {
-        let view = EmailWebView(frame: .zero, configuration: EmailHTMLPolicy.configuration())
+        let configuration = EmailHTMLPolicy.configuration()
+        configuration.setURLSchemeHandler(context.coordinator.embeddedImages, forURLScheme: EmbeddedImageHandler.scheme)
+        let view = EmailWebView(frame: .zero, configuration: configuration)
         view.navigationDelegate = context.coordinator
         view.setAccessibilityLabel(String(localized: "HTML email body", comment: "Accessibility label for the web view showing a formatted email"))
         view.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -205,6 +214,7 @@ struct EmailHTMLWebView: NSViewRepresentable {
         coordinator.heightChanged = heightChanged
         coordinator.failed = failed
         coordinator.openLink = openLink
+        coordinator.embeddedImages.load = loadEmbeddedImage
         // Compare the inputs: building the document string for a large email on every update just to compare it is wasteful.
         guard html != coordinator.html || dark != coordinator.dark else { return }
         view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
@@ -217,6 +227,7 @@ struct EmailHTMLWebView: NSViewRepresentable {
         coordinator.heightChanged = nil
         coordinator.failed = nil
         coordinator.openLink = nil
+        coordinator.embeddedImages.load = nil
         view.stopLoading()
         view.navigationDelegate = nil
         view.configuration.userContentController.removeAllScriptMessageHandlers()
@@ -229,6 +240,7 @@ struct EmailHTMLWebView: NSViewRepresentable {
         var heightChanged: ((CGFloat) -> Void)?
         var failed: (() -> Void)?
         var openLink: ((URL) -> Void)?
+        let embeddedImages = EmbeddedImageHandler()
         private var awaitingInitialDocument = false
 
         func load(html: String, dark: Bool, in view: EmailWebView) {
@@ -291,6 +303,52 @@ struct EmailHTMLWebView: NSViewRepresentable {
         }
 
         func webViewWebContentProcessDidTerminate(_ webView: WKWebView) { failed?() }
+    }
+}
+
+/// Answers `cid:` URLs with the images embedded in the message on screen. The page cannot reach anything
+/// else this way: the CSP allows the scheme for images only, and `load` is tied to one message.
+final class EmbeddedImageHandler: NSObject, WKURLSchemeHandler {
+    static let scheme = "cid"
+
+    var load: ((String) async throws -> Data)?
+    private var running: [ObjectIdentifier: Task<Void, Never>] = [:]
+
+    /// A `cid:` URL holds the Content-ID percent-encoded (RFC 2392).
+    nonisolated static func contentID(of url: URL) -> String? {
+        guard url.scheme?.lowercased() == scheme else { return nil }
+        let encoded = String(url.absoluteString.dropFirst(scheme.count + 1))
+        let contentID = encoded.removingPercentEncoding ?? encoded
+        return contentID.isEmpty ? nil : contentID
+    }
+
+    func webView(_ webView: WKWebView, start task: any WKURLSchemeTask) {
+        guard let url = task.request.url, let contentID = Self.contentID(of: url), let load else {
+            task.didFailWithError(URLError(.fileDoesNotExist))
+            return
+        }
+        let id = ObjectIdentifier(task)
+        running[id] = Task { [weak self] in
+            // WebKit raises an exception if a stopped task is used. A stop also runs on the main actor, so
+            // nothing can stop this task between the check and the last call that follows it.
+            do {
+                let data = try await load(contentID)
+                guard !Task.isCancelled else { return }
+                self?.running[id] = nil
+                // No declared type: WebKit detects the format of the image itself.
+                task.didReceive(URLResponse(url: url, mimeType: nil, expectedContentLength: data.count, textEncodingName: nil))
+                task.didReceive(data)
+                task.didFinish()
+            } catch {
+                guard !Task.isCancelled else { return }
+                self?.running[id] = nil
+                task.didFailWithError(error)
+            }
+        }
+    }
+
+    func webView(_ webView: WKWebView, stop task: any WKURLSchemeTask) {
+        running.removeValue(forKey: ObjectIdentifier(task))?.cancel()
     }
 }
 

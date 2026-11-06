@@ -12,6 +12,10 @@ nonisolated struct AttachmentLoader: Equatable, Sendable {
         try await hub.attachmentFile(attachment, accountID: accountID)
     }
 
+    func embeddedImage(contentID: String, messageID: String) async throws -> Data {
+        try await hub.embeddedImage(contentID: contentID, messageID: messageID, accountID: accountID)
+    }
+
     static func == (lhs: AttachmentLoader, rhs: AttachmentLoader) -> Bool {
         lhs.hub === rhs.hub && lhs.accountID == rhs.accountID
     }

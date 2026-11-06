@@ -164,6 +164,18 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
             return MailAttachment(messageID: messageID, partID: partId, attachmentID: attachmentID, filename: name,
                                   mimeType: mimeType ?? "application/octet-stream", size: body?.size ?? 0)
         }
+
+        /// The image an HTML body shows as `cid:<contentID>`. Some senders also mark such an image as an
+        /// attachment, so the disposition does not matter here.
+        func embeddedImage(contentID: String, messageID: String) -> MailAttachment? {
+            if let partId, let attachmentID = body?.attachmentId, !attachmentID.isEmpty,
+               let mimeType, mimeType.lowercased().hasPrefix("image/"),
+               header("Content-ID").trimmingCharacters(in: CharacterSet(charactersIn: "<> \t")) == contentID {
+                return MailAttachment(messageID: messageID, partID: partId, attachmentID: attachmentID,
+                                      filename: filename ?? "", mimeType: mimeType, size: body?.size ?? 0)
+            }
+            return (parts ?? []).lazy.compactMap { $0.embeddedImage(contentID: contentID, messageID: messageID) }.first
+        }
     }
 
     func conversation(includeBody: Bool, fallbackSnippet: String? = nil) throws -> GmailConversation {

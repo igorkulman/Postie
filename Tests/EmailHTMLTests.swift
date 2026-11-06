@@ -22,7 +22,7 @@ struct EmailHTMLTests {
             #expect(trigger["resource-type"] as? [String] == ["image"])
             #expect(["^http:", "^https:"].contains(trigger["url-filter"] as? String ?? ""))
         }
-        #expect(EmailHTMLPolicy.csp.contains("img-src data: https: http:"))
+        #expect(EmailHTMLPolicy.csp.contains("img-src data: cid: https: http:"))
         #expect(EmailHTMLPolicy.csp.contains("script-src 'none'"))
     }
 
@@ -99,6 +99,88 @@ struct EmailHTMLTests {
         #expect(result["onloadRan"] as? String == "")
         #expect(result["imageScriptRan"] as? String == "")
         #expect(page.view.url?.absoluteString == "about:blank")
+    }
+
+    @Test("Plain HTTP images are allowed by the system, for web content only")
+    func transportSecurity() throws {
+        let settings = try #require(Bundle.main.object(forInfoDictionaryKey: "NSAppTransportSecurity") as? [String: Any])
+        #expect(settings["NSAllowsArbitraryLoadsInWebContent"] as? Bool == true)
+        #expect(settings["NSAllowsArbitraryLoads"] == nil)
+    }
+
+    @Test("An embedded image is shown, whatever its format",
+          arguments: [NSBitmapImageRep.FileType.png, .jpeg, .gif, .tiff])
+    func embeddedImage(format: NSBitmapImageRep.FileType) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        let bitmap = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 3, pixelsHigh: 2, bitsPerSample: 8, samplesPerPixel: 3,
+                                                   hasAlpha: false, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let file = try #require(bitmap.representation(using: format, properties: [:]))
+        var requested: [String] = []
+        page.coordinator.embeddedImages.load = { contentID in
+            requested.append(contentID)
+            return file
+        }
+        _ = try await page.load(#"<img id="logo" src="cid:logo%40example" width="60">"#)
+        let result = try await page.inspect("""
+        const image = document.getElementById('logo');
+        return { natural: image.naturalWidth, width: image.getBoundingClientRect().width };
+        """)
+        #expect(requested == ["logo@example"])
+        #expect(result["natural"] as? Int == 3)
+        #expect(result["width"] as? Double == 60)
+    }
+
+    @Test("An embedded image that cannot be loaded leaves the rest of the message", arguments: [true, false])
+    func embeddedImageFailure(hasLoader: Bool) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        page.coordinator.embeddedImages.load = hasLoader ? { _ in throw GmailError.http(404) } : nil
+        _ = try await page.load(#"<p id="text">Saludos</p><img id="logo" src="cid:gone">"#)
+        let result = try await page.inspect("""
+        return { natural: document.getElementById('logo').naturalWidth, text: document.getElementById('text').innerText };
+        """)
+        #expect(result["natural"] as? Int == 0)
+        #expect(result["text"] as? String == "Saludos")
+    }
+
+    @Test("A message can only use cid: URLs for images", arguments: [
+        #"<iframe src="cid:frame"></iframe>"#,
+        #"<object data="cid:object"></object>"#,
+        #"<embed src="cid:embed">"#,
+        #"<script src="cid:script"></script>"#,
+        #"<link rel="stylesheet" href="cid:style">"#,
+        #"<video src="cid:video"></video>"#
+    ])
+    func embeddedImageOnlyForImages(markup: String) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        var requested: [String] = []
+        page.coordinator.embeddedImages.load = { requested.append($0); return Data() }
+        _ = try await page.load(markup)
+        #expect(requested.isEmpty)
+    }
+
+    @Test("Closing a message while its image downloads does not touch the stopped request")
+    func embeddedImageStopped() async throws {
+        let page = BrowserFixture()
+        let (started, startedEvents) = AsyncStream.makeStream(of: Void.self)
+        let (release, releaseEvents) = AsyncStream.makeStream(of: Void.self)
+        let (finished, finishedEvents) = AsyncStream.makeStream(of: Void.self)
+        page.coordinator.embeddedImages.load = { _ in
+            startedEvents.yield()
+            for await _ in release { break }
+            finishedEvents.yield()
+            return Data() // Arrives after the stop, as a slow download would.
+        }
+        page.coordinator.load(html: #"<img src="cid:slow">"#, dark: false, in: page.view)
+        for await _ in started { break }
+        page.close()
+        // WebKit tells the handler to stop asynchronously, so let it arrive before the download ends.
+        try await Task.sleep(for: .milliseconds(200))
+        releaseEvents.yield()
+        for await _ in finished { break }
+        await Task.yield()
     }
 
     @Test("Quoted history is collapsed behind a button that expands it", arguments: [
@@ -211,6 +293,7 @@ private final class BrowserFixture {
         (heights, events) = AsyncThrowingStream.makeStream(of: CGFloat.self)
         let configuration = EmailHTMLPolicy.configuration()
         configuration.setURLSchemeHandler(resources, forURLScheme: "mail-test")
+        configuration.setURLSchemeHandler(coordinator.embeddedImages, forURLScheme: EmbeddedImageHandler.scheme)
         view = EmailWebView(frame: CGRect(x: 0, y: 0, width: 420, height: 140), configuration: configuration)
         view.navigationDelegate = coordinator
         configuration.userContentController.add(coordinator, contentWorld: EmailHTMLPolicy.world, name: EmailHTMLPolicy.heightHandler)
