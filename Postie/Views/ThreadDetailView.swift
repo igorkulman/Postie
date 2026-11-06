@@ -159,7 +159,7 @@ private struct MessageView: View {
                         }
                         .font(.callout)
                         .lineLimit(1)
-                        Text(isExpanded ? recipientsSummary : String(message.body.prefix(100)).replacingOccurrences(of: "\n", with: " "))
+                        Text(isExpanded ? recipientsSummary : message.preview)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .lineLimit(1)

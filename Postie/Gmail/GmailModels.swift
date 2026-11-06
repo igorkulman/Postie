@@ -214,14 +214,29 @@ nonisolated enum GmailText {
     }
 
     static func decode(_ data: Data, charset: String) -> String? {
-        switch charset.lowercased() {
-        case "iso-8859-1", "latin1": String(data: data, encoding: .isoLatin1)
-        case "windows-1252": String(data: data, encoding: .windowsCP1252)
-        case "us-ascii", "ascii": String(data: data, encoding: .ascii)
+        // Text can be UTF-8 while still declaring a single-byte charset. Accented text really in such a
+        // charset is practically never valid UTF-8, so trying UTF-8 first does not garble it.
+        let utf8 = String(data: data, encoding: .utf8)
+        return switch charset.lowercased() {
+        case "iso-8859-1", "latin1": utf8 ?? String(data: data, encoding: .isoLatin1)
+        case "windows-1252": utf8 ?? String(data: data, encoding: .windowsCP1252)
+        case "us-ascii", "ascii": utf8
         case "utf-16": String(data: data, encoding: .utf16)
-        case "utf-8", "utf8", "": String(data: data, encoding: .utf8)
+        case "utf-8", "utf8", "": utf8
         default: nil
         }
+    }
+
+    /// Undoes UTF-8 having been decoded as a single-byte charset ("dÃ­as" back to "días").
+    /// Anything else is returned unchanged, because its characters do not map back to valid UTF-8.
+    static func repairingMisdecodedUTF8(_ text: String) -> String {
+        guard text.utf8.contains(where: { $0 >= 0x80 }) else { return text }
+        for encoding in [String.Encoding.isoLatin1, .windowsCP1252] {
+            if let bytes = text.data(using: encoding), let repaired = String(data: bytes, encoding: .utf8) {
+                return repaired
+            }
+        }
+        return text
     }
 
     struct Content: Equatable, Sendable {

@@ -1,4 +1,5 @@
 import Foundation
+import SQLite3
 import Testing
 @testable import Postie
 
@@ -25,6 +26,42 @@ struct GmailCacheTests {
         #expect(page?.nextPageToken == "next")
         #expect(try await session.conversation(id: "a1") == full)
         #expect(try await session.unreadCount() == 42)
+    }
+
+    @Test("Opening an older cache repairs garbled accents in saved bodies and leaves the rest alone")
+    func repairsSavedBodies() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("mail.sqlite")
+        let account = CachedGmailAccount(id: "a", email: "a@example.com")
+        let text = "Buenos días Jesús,\r\n¿Cómo estás?"
+        let garbled = try #require(String(data: Data(text.utf8), encoding: .isoLatin1))
+        func message(_ id: String, body: String, html: String?) -> GmailMessage {
+            GmailMessage(id: id, senderName: "Andres", senderEmail: "a@example.com", recipient: "b@example.com", cc: "",
+                         date: Date(timeIntervalSince1970: 1), snippet: "", body: body, bodyLoaded: true, htmlBody: html, labelIDs: ["INBOX"])
+        }
+        do {
+            let cache = try await GmailCache.open(at: url)
+            let session = try await cache.session(for: account)
+            try await session.saveConversation(GmailConversation(id: "t", subject: "s", messages: [
+                message("garbled", body: garbled, html: "<p>\(garbled)</p>"),
+                message("correct", body: "Buenos días Jesús", html: nil)
+            ]))
+        }
+        // As if the repair had never run, like a cache written by an earlier version.
+        var handle: OpaquePointer?
+        #expect(sqlite3_open(url.path, &handle) == SQLITE_OK)
+        #expect(sqlite3_exec(handle, "DELETE FROM grdb_migrations WHERE identifier = 'repair-misdecoded-bodies-v3'", nil, nil, nil) == SQLITE_OK)
+        sqlite3_close(handle)
+
+        let reopened = try await GmailCache.open(at: url)
+        let session = try await reopened.session(for: account)
+        let messages = try #require(try await session.conversation(id: "t")).messages
+        let repaired = try #require(messages.first { $0.id == "garbled" })
+        #expect(repaired.body == text)
+        #expect(repaired.htmlBody == "<p>\(text)</p>")
+        #expect(repaired.bodyLoaded)
+        #expect(messages.first { $0.id == "correct" }?.body == "Buenos días Jesús")
     }
 
     @Test("Metadata refresh updates labels while preserving bodies by message ID")

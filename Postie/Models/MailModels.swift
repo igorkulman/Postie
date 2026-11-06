@@ -52,6 +52,12 @@ struct MailMessage: Identifiable, Equatable {
     var initials: String {
         senderName.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined()
     }
+
+    /// The start of the body as continuous text, for rows that truncate it to the space they have.
+    /// Bodies can be huge, so this stops at more than the widest window can show.
+    var preview: String {
+        body.prefix(1000).split(whereSeparator: \.isWhitespace).joined(separator: " ")
+    }
 }
 
 struct MailThread: Identifiable, Equatable {
@@ -63,9 +69,7 @@ struct MailThread: Identifiable, Equatable {
     var isStarred = false
 
     var latestMessage: MailMessage? { messages.last }
-    var preview: String {
-        latestMessage?.body.split(whereSeparator: \.isNewline).joined(separator: " ") ?? ""
-    }
+    var preview: String { latestMessage?.preview ?? "" }
 }
 
 enum ComposeKind: String, Codable, Hashable {
