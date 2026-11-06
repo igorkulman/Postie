@@ -15,19 +15,75 @@ struct MergedConversation: Identifiable, Equatable {
     var id: ConversationKey { key }
 }
 
+/// The groups of a Priority Inbox, in the order they are shown.
+nonisolated enum InboxSection: String, CaseIterable, Identifiable, Sendable {
+    case importantAndUnread, starred, everythingElse
+
+    var id: Self { self }
+
+    /// The first group the conversation fits. It only ever shows in one, because a list row can't appear twice.
+    init(_ conversation: GmailConversation) {
+        if conversation.isImportant, conversation.isUnread { self = .importantAndUnread }
+        else if conversation.isStarred { self = .starred }
+        else { self = .everythingElse }
+    }
+
+    var title: String {
+        switch self {
+        case .importantAndUnread: String(localized: "Important and unread")
+        case .starred: String(localized: "Starred")
+        case .everythingElse: String(localized: "Everything else")
+        }
+    }
+}
+
+/// One group of the list. A collapsed one shows no rows but still counts them.
+struct MergedSection: Identifiable {
+    let section: InboxSection
+    let conversations: [MergedConversation]
+    let count: Int
+    let isCollapsed: Bool
+    var id: InboxSection { section }
+}
+
 /// The conversations the list shows, with the lookups the UI needs done once instead of on every read.
 struct MergedList {
+    /// The rows on screen, in the order shown. Selection and keyboard navigation follow this.
     let conversations: [MergedConversation]
     let keys: [ConversationKey]
+    /// Empty when the list isn't grouped.
+    let sections: [MergedSection]
     private let byKey: [ConversationKey: MergedConversation]
 
     init(_ conversations: [MergedConversation] = []) {
         self.conversations = conversations
         keys = conversations.map(\.key)
+        sections = []
         byKey = Dictionary(conversations.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
     }
 
+    /// Groups the conversations. `placements` overrides the group of the conversations being kept in place.
+    init(grouping all: [MergedConversation], collapsed: Set<InboxSection>, placements: [ConversationKey: InboxSection]) {
+        let groups = Dictionary(grouping: all) { placements[$0.key] ?? InboxSection($0.conversation) }
+        let present = InboxSection.allCases.filter { groups[$0] != nil }
+        // A group on its own needs no heading, and without one nothing could expand it again.
+        sections = present.count < 2 ? [] : present.map { section in
+            let rows = groups[section] ?? []
+            let isCollapsed = collapsed.contains(section)
+            return MergedSection(section: section, conversations: isCollapsed ? [] : rows, count: rows.count, isCollapsed: isCollapsed)
+        }
+        conversations = sections.isEmpty ? all : sections.flatMap(\.conversations)
+        keys = conversations.map(\.key)
+        byKey = Dictionary(all.map { ($0.key, $0) }, uniquingKeysWith: { first, _ in first })
+    }
+
+    /// Finds a conversation in collapsed groups too.
     subscript(key: ConversationKey) -> MergedConversation? { byKey[key] }
+    /// How many conversations are loaded, counting those in collapsed groups.
+    var count: Int { byKey.count }
+    var isEmpty: Bool { byKey.isEmpty }
+    /// Whether the list ends in a collapsed group, whose rows can't scroll into view.
+    var endsCollapsed: Bool { sections.last?.isCollapsed ?? false }
 }
 
 /// Where a search looks.
@@ -107,7 +163,19 @@ final class MailHub {
     private(set) var isSearching = false
     private(set) var searchError: String?
     private var searchVersion = 0
-    @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, mailbox: Mailbox, list: MergedList)?
+    /// Groups the Inbox into sections, like Gmail's Priority Inbox. Gmail doesn't tell apps its own setting, so this is Postie's.
+    var usesPriorityInbox: Bool {
+        didSet {
+            guard usesPriorityInbox != oldValue else { return }
+            preferences?.set(usesPriorityInbox, forKey: SettingsKey.usesPriorityInbox)
+            for session in sessions { session.reader.loadsPriorityThreads = usesPriorityInbox }
+            if usesPriorityInbox { Task { await refresh() } }
+        }
+    }
+    private(set) var collapsedSections: Set<InboxSection>
+    /// The section each selected conversation was in when selected. Reading or flagging it won't move it from under you.
+    private var heldSections: [ConversationKey: InboxSection] = [:]
+    @ObservationIgnored private var folderListCache: FolderListCache?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
     /// Drafts being edited, so opening one again brings its window forward.
@@ -120,14 +188,19 @@ final class MailHub {
     @ObservationIgnored private(set) var outbox: Outbox!
     @ObservationIgnored private let persistsMail: Bool
     @ObservationIgnored private let syncsInBackground: Bool
+    @ObservationIgnored private let preferences: UserDefaults?
     @ObservationIgnored private let makeAPI: (@MainActor (String) -> any GmailReading)?
 
     /// `makeAPI` supplies local mail; `cache` lets regression mode/tests use SQLite without opening the real database.
-    init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true,
+    /// Without `preferences`, how the list is arranged is forgotten on quitting.
+    init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true, preferences: UserDefaults? = nil,
          cache: GmailCache? = nil, outboxStore: OutboxStore? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
         self.accounts = accounts
         self.persistsMail = persistsMail
         self.syncsInBackground = syncsInBackground
+        self.preferences = preferences
+        usesPriorityInbox = preferences?.bool(forKey: SettingsKey.usesPriorityInbox) ?? false
+        collapsedSections = Set((preferences?.stringArray(forKey: SettingsKey.collapsedInboxSections) ?? []).compactMap(InboxSection.init(rawValue:)))
         self.cache = cache
         self.makeAPI = makeAPI
         isPreparing = persistsMail && cache == nil
@@ -193,6 +266,7 @@ final class MailHub {
             }
         }
         let reader = GmailReaderStore(api: api, mailbox: mailbox, cache: savedSession)
+        reader.loadsPriorityThreads = usesPriorityInbox
         await reader.restoreCachedMailbox()
         return AccountSession(identity: identity, reader: reader)
     }
@@ -260,6 +334,16 @@ final class MailHub {
         let revision: Int
     }
 
+    private struct FolderListCache {
+        let revisions: [ReaderRevision]
+        let outboxRevision: Int
+        let mailbox: Mailbox
+        let isGrouped: Bool
+        let collapsed: Set<InboxSection>
+        let placements: [ConversationKey: InboxSection]
+        let list: MergedList
+    }
+
     /// What the list shows: search results while searching, else the folder's conversations from every account, newest first.
     /// Merging and sorting happen only when an account's conversations actually changed, however often the views read this.
     var list: MergedList { isSearchActive ? searchList : folderList }
@@ -270,7 +354,9 @@ final class MailHub {
     private var folderList: MergedList {
         let revisions = sessions.map { ReaderRevision(accountID: $0.id, revision: $0.reader.conversationsRevision) }
         let outboxRevision = mailbox == .outbox ? outbox.revision : 0
-        if let cache = folderListCache, cache.revisions == revisions, cache.outboxRevision == outboxRevision, cache.mailbox == mailbox {
+        let isGrouped = usesPriorityInbox && mailbox == .inbox
+        if let cache = folderListCache, cache.revisions == revisions, cache.outboxRevision == outboxRevision, cache.mailbox == mailbox,
+           cache.isGrouped == isGrouped, cache.collapsed == collapsedSections, !isGrouped || cache.placements == placements(in: cache.list) {
             return cache.list
         }
         let merged: [MergedConversation]
@@ -287,9 +373,36 @@ final class MailHub {
             }
             .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
         }
-        let list = MergedList(merged)
-        folderListCache = (revisions, outboxRevision, mailbox, list)
+        var list = MergedList(merged)
+        var placements: [ConversationKey: InboxSection] = [:]
+        if isGrouped {
+            placements = self.placements(in: list)
+            list = MergedList(grouping: merged, collapsed: collapsedSections, placements: placements)
+        }
+        folderListCache = FolderListCache(revisions: revisions, outboxRevision: outboxRevision, mailbox: mailbox, isGrouped: isGrouped,
+                                          collapsed: collapsedSections, placements: placements, list: list)
         return list
+    }
+
+    /// The held conversations that would be in another section by now. Usually none, so that selecting doesn't rebuild the list.
+    private func placements(in list: MergedList) -> [ConversationKey: InboxSection] {
+        heldSections.filter { key, section in
+            list[key].map { InboxSection($0.conversation) != section } ?? false
+        }
+    }
+
+    /// Keeps the selected conversations in their sections until they are no longer selected.
+    func holdSections(of keys: Set<ConversationKey>) {
+        let held = keys.reduce(into: [ConversationKey: InboxSection]()) { result, key in
+            result[key] = heldSections[key] ?? folderList[key].map { InboxSection($0.conversation) }
+        }
+        if held != heldSections { heldSections = held }
+    }
+
+    /// Collapses a section, or expands it again. Its conversations leave the selection, as they can't be seen.
+    func toggleSection(_ section: InboxSection) {
+        if collapsedSections.remove(section) == nil { collapsedSections.insert(section) }
+        preferences?.set(collapsedSections.map(\.rawValue).sorted(), forKey: SettingsKey.collapsedInboxSections)
     }
 
     /// A queued message shown like a conversation of one message. Its preview says where it stands.
@@ -411,7 +524,7 @@ final class MailHub {
     var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : sessions.contains { $0.reader.nextPageToken != nil } }
     var lastRefreshed: Date? { sessions.compactMap(\.reader.lastRefreshed).min() }
     var mailboxVersion: Int { sessions.reduce(searchVersion) { $0 + $1.reader.mailboxVersion } }
-    var loadedCount: Int { list.conversations.count }
+    var loadedCount: Int { list.count }
     var hasMultipleAccounts: Bool { sessions.count > 1 }
 
     var sendingAccounts: [SendingAccount] {

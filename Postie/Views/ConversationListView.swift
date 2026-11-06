@@ -26,40 +26,21 @@ struct ConversationListView: View {
             }
             // Keep the List (and its first responder) alive across loading and empty states.
             List(selection: listSelection) {
-                ForEach(hub.conversations) { item in
-                    MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox))
-                        .tag(item.key)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
-                        .listRowSeparator(.hidden)
-                        .swipeActions(edge: .leading) {
-                            if hub.canModifyLabels(item.key) {
-                                Button { model.toggleRead(item) } label: {
-                                    Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
-                                          systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
-                                }
+                if hub.list.sections.isEmpty {
+                    rows(hub.conversations)
+                } else {
+                    ForEach(hub.list.sections) { section in
+                        Section {
+                            rows(section.conversations)
+                        } header: {
+                            // The loaded count of the last section grows as the list scrolls, so it says there is more.
+                            InboxSectionHeader(section: section, hasMore: section.section == .everythingElse && hub.hasMorePages) {
+                                hub.toggleSection(section.section)
                             }
                         }
-                        .swipeActions(edge: .trailing) {
-                            if hub.canActOnOutboxItem(item.key) {
-                                Button(role: .destructive) { model.deleteOutboxItem(item.key) } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            if hub.canTrash(item.key) {
-                                Button(role: .destructive) { model.remove(item.key, archiving: false) } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            if hub.canArchive(item.key) {
-                                Button { model.remove(item.key, archiving: true) } label: {
-                                    Label("Archive", systemImage: "archivebox")
-                                }
-                                .tint(.indigo)
-                            }
-                        }
-                        .onAppear { model.conversationAppeared(item.key) }
+                    }
                 }
-                if hub.isLoadingMailbox, !hub.conversations.isEmpty {
+                if hub.isLoadingMailbox, !hub.list.isEmpty {
                     ProgressView().controlSize(.small)
                         .frame(maxWidth: .infinity)
                         .listRowSeparator(.hidden)
@@ -84,13 +65,75 @@ struct ConversationListView: View {
                 if hub.canActOnOutboxItem(key) { model.editOutboxItem(key) } else { model.editDraft(key) }
             }
             .overlay {
-                if hub.conversations.isEmpty {
+                if hub.list.isEmpty {
                     ListPlaceholder(isLoading: hub.isLoadingMailbox || hub.isRestoringCache,
                                     isSearching: hub.isSearchActive, mailbox: hub.mailbox)
                         .allowsHitTesting(false)
                 }
             }
         }
+    }
+
+    private func rows(_ conversations: [MergedConversation]) -> some View {
+        ForEach(conversations) { item in
+            MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox))
+                .tag(item.key)
+                .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                .listRowSeparator(.hidden)
+                .swipeActions(edge: .leading) {
+                    if hub.canModifyLabels(item.key) {
+                        Button { model.toggleRead(item) } label: {
+                            Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
+                                  systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
+                        }
+                    }
+                }
+                .swipeActions(edge: .trailing) {
+                    if hub.canActOnOutboxItem(item.key) {
+                        Button(role: .destructive) { model.deleteOutboxItem(item.key) } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    if hub.canTrash(item.key) {
+                        Button(role: .destructive) { model.remove(item.key, archiving: false) } label: {
+                            Label("Delete", systemImage: "trash")
+                        }
+                    }
+                    if hub.canArchive(item.key) {
+                        Button { model.remove(item.key, archiving: true) } label: {
+                            Label("Archive", systemImage: "archivebox")
+                        }
+                        .tint(.indigo)
+                    }
+                }
+                .onAppear { model.conversationAppeared(item.key) }
+        }
+    }
+}
+
+/// A section's heading in the Priority Inbox. Clicking it collapses or expands the section.
+private struct InboxSectionHeader: View {
+    let section: MergedSection
+    let hasMore: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        Button(action: toggle) {
+            HStack(spacing: 6) {
+                Image(systemName: "chevron.right")
+                    .imageScale(.small)
+                    .rotationEffect(section.isCollapsed ? .zero : .degrees(90))
+                Text(section.section.title)
+                    .fontWeight(.semibold)
+                Spacer()
+                Text(verbatim: hasMore ? "\(section.count)+" : "\(section.count)")
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+            }
+            .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(section.isCollapsed ? String(localized: "Collapsed") : String(localized: "Expanded"))
     }
 }
 

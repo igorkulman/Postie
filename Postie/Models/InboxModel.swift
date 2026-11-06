@@ -16,7 +16,9 @@ final class InboxModel {
     private(set) var selectionRetry = 0
     /// Bumped when an explicit removal should hand keyboard focus back to the list.
     private(set) var listFocusRequest = 0
-    private var selection = ConversationSelection<ConversationKey>()
+    private var selection = ConversationSelection<ConversationKey>() {
+        didSet { hub.holdSections(of: selection.selectedID.map { [$0] } ?? []) }
+    }
 
     @ObservationIgnored private var selectionBeforeSearch: ConversationKey?
     @ObservationIgnored private var autoReadID: ConversationKey?
@@ -106,7 +108,7 @@ final class InboxModel {
 
     /// Loads the next page as the end of the list scrolls into view.
     func conversationAppeared(_ key: ConversationKey) {
-        guard key == conversationKeys.last, hub.hasMorePages, !hub.isLoadingMailbox else { return }
+        guard key == conversationKeys.last, hub.hasMorePages, !hub.isLoadingMailbox, !hub.list.endsCollapsed else { return }
         loadMore()
     }
 

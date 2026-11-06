@@ -13,11 +13,21 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
     private var arrivals = 0
     var rejectNextRemoval = false
 
-    init(empty: Bool = false) {
-        let initial = empty ? [] : [
+    private let usesPriorityInbox: Bool
+
+    /// `usesPriorityInbox` groups the Inbox and adds mail for its sections, such as with -PostiePriorityInbox.
+    init(empty: Bool = false, usesPriorityInbox: Bool = false) {
+        self.usesPriorityInbox = usesPriorityInbox
+        var initial = empty ? [] : [
             Self.thread("open", subject: "Thread to open", order: 2),
             Self.thread("older", subject: "Next older thread", order: 1)
         ]
+        if usesPriorityInbox, !empty {
+            initial += [
+                Self.thread("important", subject: "Important unread thread", order: 0, labels: ["IMPORTANT", "UNREAD"]),
+                Self.thread("starred", subject: "Starred thread", order: -1, labels: ["STARRED"])
+            ]
+        }
         mail = Dictionary(uniqueKeysWithValues: initial.map { ($0.id, $0) })
     }
 
@@ -35,6 +45,7 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         let accounts = AccountStore(vault: MemoryAccountVault([account]))
         accounts.restore()
         let hub = MailHub(accounts: accounts, syncsInBackground: false, cache: cache) { _ in self }
+        hub.usesPriorityInbox = usesPriorityInbox
         await hub.prepare()
         await hub.reconcile()
         return hub
@@ -125,12 +136,12 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         changes.append((version, id))
     }
 
-    private static func thread(_ id: String, subject: String, order: Int) -> GmailConversation {
+    private static func thread(_ id: String, subject: String, order: Int, labels: Set<String> = []) -> GmailConversation {
         GmailConversation(id: id, subject: subject, messages: [
             GmailMessage(id: "message-" + id, senderName: "Sample Sender", senderEmail: "sender@example.com",
                          recipient: SampleAccount.email, cc: "", date: Date(timeIntervalSince1970: 1_700_000_000 + Double(order * 60)),
                          snippet: "Selection regression sample", body: "\(subject)\n\nWatch the list highlight, detail pane and keyboard navigation while inserting and archiving mail.",
-                         labelIDs: ["INBOX"])
+                         labelIDs: labels.union(["INBOX"]))
         ])
     }
 }

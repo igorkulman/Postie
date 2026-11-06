@@ -6,6 +6,13 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Priority Inbox, an option in Settings > General. It groups the Inbox into Important
+  and unread, Starred, and Everything else, including older mail further down the
+  Inbox. Click a heading to collapse its section. A conversation stays in its section
+  while it is selected, so reading or unflagging it doesn't move it away.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed

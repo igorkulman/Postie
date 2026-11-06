@@ -3,8 +3,12 @@ import Testing
 @testable import Postie
 
 /// A Gmail account that serves fixed mail and records what is done to it.
-actor HubAPI: GmailSearching, GmailMutating, GmailSending {
+actor HubAPI: GmailSearching, GmailPriorityLoading, GmailMutating, GmailSending {
     private(set) var mail: [GmailConversation]
+    /// Threads past the first page, which only come up when asking for the priority ones.
+    private var olderPriorityMail: [GmailConversation] = []
+    /// What each request for the priority threads already knew about.
+    private(set) var priorityRequests: [Set<String>] = []
     private(set) var archived: [String] = []
     private(set) var trashed: [String] = []
     private(set) var sent: [OutgoingMessage] = []
@@ -23,10 +27,17 @@ actor HubAPI: GmailSearching, GmailMutating, GmailSending {
         searches.append((query, mailbox))
         return GmailPage(conversations: mail.filter { $0.subject.localizedCaseInsensitiveContains(query) }, nextPageToken: nil)
     }
+    func priorityInboxThreads(excluding known: Set<String>) async throws -> [GmailConversation] {
+        priorityRequests.append(known)
+        return olderPriorityMail.filter { !known.contains($0.id) }
+    }
+    func setOlderPriorityMail(_ mail: [GmailConversation]) { olderPriorityMail = mail }
     func unreadInboxCount() async throws -> Int { mail.filter(\.isUnread).count }
     func archive(threadID: String) async throws { archived.append(threadID); mail.removeAll { $0.id == threadID } }
     func trash(threadID: String) async throws { trashed.append(threadID); mail.removeAll { $0.id == threadID } }
-    func setLabel(_ label: String, on: Bool, threadID: String) async throws {}
+    func setLabel(_ label: String, on: Bool, threadID: String) async throws {
+        if let index = mail.firstIndex(where: { $0.id == threadID }) { mail[index] = mail[index].setting(label, to: on) }
+    }
     func send(_ message: OutgoingMessage) async throws { sent.append(message) }
 }
 
