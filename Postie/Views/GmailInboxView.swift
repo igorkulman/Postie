@@ -14,11 +14,11 @@ struct GmailInboxView: View {
 
     private var hub: MailHub { model.hub }
 
-    private var mailboxSelection: Binding<Mailbox?> {
+    private var mailboxSelection: Binding<MailboxSelection?> {
         Binding(
-            get: { hub.mailbox },
-            set: { mailbox in
-                if let mailbox { model.changeMailbox(mailbox) }
+            get: { hub.selection },
+            set: { selection in
+                if let selection { model.show(selection) }
             }
         )
     }
@@ -37,8 +37,12 @@ struct GmailInboxView: View {
     var body: some View {
         let actions = model.mailActions
         NavigationSplitView {
-            MailboxSidebar(selection: mailboxSelection, badges: [.inbox: hub.unreadInboxCount ?? 0, .drafts: hub.draftCount, .outbox: hub.outboxCount])
-                .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
+            MailboxSidebar(
+                selection: mailboxSelection, showsAllInboxes: hub.canShowAllInboxes, allInboxesBadge: hub.unreadInboxCount ?? 0,
+                badges: [.inbox: hub.selectedUnreadInboxCount ?? 0, .drafts: hub.draftCount, .outbox: hub.outboxCount]
+            )
+            .safeAreaBar(edge: .bottom) { AccountSwitcher(model: model) }
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 260)
         } content: {
             ConversationListView(model: model, listIsFocused: $listIsFocused)
                 .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
@@ -46,7 +50,7 @@ struct GmailInboxView: View {
             ConversationDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
         }
-        .navigationTitle(hub.mailbox.title)
+        .navigationTitle(hub.selection.title)
         .searchable(text: $model.searchText, placement: .toolbar, prompt: "Search")
         .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: actions) }
