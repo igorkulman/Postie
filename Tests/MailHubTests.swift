@@ -93,6 +93,107 @@ struct MailHubTests {
         #expect(hub.loadedCount == 3)
     }
 
+    @Test("All Inboxes merges every account; a folder shows only the selected account")
+    func allInboxes() async {
+        let hub = await makeHub([
+            "a": HubAPI([Self.conversation("a1", at: 100, unread: true)]),
+            "b": HubAPI([Self.conversation("b1", at: 200, unread: true), Self.conversation("b2", at: 50, unread: true)])
+        ])
+        #expect(hub.selection == .allInboxes)
+        #expect(hub.conversations.count == 3)
+
+        hub.show(.folder(.inbox))
+        #expect(hub.selection == .folder(.inbox))
+        #expect(hub.conversations.map(\.key.threadID) == ["a1"])
+        #expect(hub.selectedUnreadInboxCount == 1)
+        #expect(hub.unreadInboxCount == 3)
+
+        hub.show(.allInboxes)
+        #expect(hub.conversations.count == 3)
+    }
+
+    @Test("Choosing an account leaves All Inboxes for its Inbox and keeps an open folder")
+    func selectingAnAccount() async {
+        let hub = await makeHub([
+            "a": HubAPI([Self.conversation("a1", at: 100)]),
+            "b": HubAPI([Self.conversation("b1", at: 200)])
+        ])
+        hub.selectAccount("b")
+        #expect(hub.selection == .folder(.inbox))
+        #expect(hub.conversations.map(\.key.threadID) == ["b1"])
+
+        hub.show(.folder(.sent))
+        hub.selectAccount("a")
+        #expect(hub.selection == .folder(.sent))
+    }
+
+    @Test("Switching accounts clears the open conversation of the previous one")
+    func switchingClearsSelection() async {
+        let hub = await makeHub([
+            "a": HubAPI([Self.conversation("a1", at: 100)]),
+            "b": HubAPI([Self.conversation("b1", at: 200)])
+        ])
+        let model = InboxModel(hub: hub)
+        model.select(ConversationKey(accountID: "b", threadID: "b1"))
+        #expect(model.selectedID != nil)
+        model.selectAccount("a")
+        #expect(model.selectedID == nil)
+        #expect(hub.conversations.map(\.key.accountID) == ["a"])
+    }
+
+    @Test("With one account there is no All Inboxes, even if it was showing before")
+    func singleAccount() async {
+        let hub = await makeHub(["a": HubAPI([Self.conversation("a1", at: 100)])])
+        #expect(!hub.canShowAllInboxes)
+        #expect(hub.selection == .folder(.inbox))
+        #expect(hub.conversations.map(\.key.threadID) == ["a1"])
+
+        let two = await makeHub(["a": HubAPI([Self.conversation("a1", at: 100)]), "b": HubAPI([])])
+        #expect(two.selection == .allInboxes)
+        await two.removeAccount("b")
+        #expect(two.selection == .folder(.inbox))
+        #expect(two.conversations.map(\.key.threadID) == ["a1"])
+    }
+
+    @Test("Removing the selected account falls back to another one")
+    func removingSelected() async {
+        let hub = await makeHub([
+            "a": HubAPI([Self.conversation("a1", at: 100)]),
+            "b": HubAPI([Self.conversation("b1", at: 200)])
+        ])
+        hub.selectAccount("b")
+        await hub.removeAccount("b")
+        #expect(hub.accounts.selectedAccount?.id == "a")
+        #expect(hub.conversations.map(\.key.threadID) == ["a1"])
+    }
+
+    @Test("Search covers the accounts on screen")
+    func searchScope() async {
+        let a = HubAPI([Self.conversation("a1", at: 100)])
+        let b = HubAPI([Self.conversation("b1", at: 200)])
+        let hub = await makeHub(["a": a, "b": b])
+
+        hub.setSearch("Subject", scope: .allMail)
+        await hub.performSearch()
+        #expect(hub.searchResults.count == 2)
+
+        hub.setSearch("", scope: .allMail)
+        hub.selectAccount("b")
+        hub.setSearch("Subject", scope: .allMail)
+        await hub.performSearch()
+        #expect(hub.searchResults.map(\.key.threadID) == ["b1"])
+    }
+
+    @Test("New messages come from the account on screen, or the default one in All Inboxes")
+    func newMessageAccount() async {
+        let hub = await makeHub(["a": HubAPI([]), "b": HubAPI([])])
+        #expect(hub.defaultSendingAccount?.id == "a")
+        hub.selectAccount("b")
+        #expect(hub.defaultSendingAccount?.id == "b")
+        hub.show(.allInboxes)
+        #expect(hub.defaultSendingAccount?.id == "a")
+    }
+
     @Test("Identical thread IDs in two accounts stay separate conversations")
     func sameThreadID() async {
         let hub = await makeHub([

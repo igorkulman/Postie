@@ -94,17 +94,25 @@ struct MailThreadRow: View {
 
 /// The folder list of the Gmail reader.
 struct MailboxSidebar: View {
-    @Binding var selection: Mailbox?
+    @Binding var selection: MailboxSelection?
+    /// Whether to offer every account's inbox together, and its unread count.
+    let showsAllInboxes: Bool
+    let allInboxesBadge: Int
     /// Unread or draft counts to show next to a folder.
     let badges: [Mailbox: Int]
 
     var body: some View {
         List(selection: $selection) {
             Section("Mailboxes") {
+                if showsAllInboxes {
+                    Label(MailboxSelection.allInboxes.title, systemImage: MailboxSelection.allInboxes.symbol)
+                        .badge(allInboxesBadge)
+                        .tag(MailboxSelection.allInboxes)
+                }
                 ForEach(Mailbox.allCases) { mailbox in
                     Label(mailbox.title, systemImage: mailbox.symbol)
                         .badge(badges[mailbox] ?? 0)
-                        .tag(mailbox)
+                        .tag(MailboxSelection.folder(mailbox))
                 }
             }
         }

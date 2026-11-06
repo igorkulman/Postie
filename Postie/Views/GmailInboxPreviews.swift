@@ -54,7 +54,7 @@ private func makeGmailPreviewHub(mailbox: Mailbox = .inbox, failsBody: Bool = fa
     let hub = MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false) { _ in
         PreviewGmailAPI(conversations: conversations, failsBody: failsBody)
     }
-    hub.changeMailbox(mailbox)
+    hub.show(.folder(mailbox))
     return hub
 }
 

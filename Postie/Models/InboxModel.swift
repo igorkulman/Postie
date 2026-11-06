@@ -46,12 +46,22 @@ final class InboxModel {
         selection.reconcile(with: conversationKeys)
     }
 
-    func changeMailbox(_ mailbox: Mailbox) {
-        guard mailbox != hub.mailbox else { return }
+    func show(_ target: MailboxSelection) {
+        guard target != hub.selection else { return }
+        startNewList()
+        hub.show(target)
+    }
+
+    func selectAccount(_ id: String) {
+        guard hub.isShowingAllInboxes || id != hub.accounts.selectedAccount?.id else { return }
+        startNewList()
+        hub.selectAccount(id)
+    }
+
+    private func startNewList() {
         selection.reset()
         searchText = ""
         selectionBeforeSearch = nil
-        hub.changeMailbox(mailbox)
     }
 
     /// The fully loaded conversation that Reply and Forward act on. Its account is the one that sends the response.
@@ -229,8 +239,9 @@ final class InboxModel {
         let openConversation = openConversation
         let selected = selected
         return MailActions(
-            currentMailbox: hub.mailbox,
-            selectMailbox: { [self] in changeMailbox($0) },
+            currentSelection: hub.selection,
+            canShowAllInboxes: hub.canShowAllInboxes,
+            select: { [self] in show($0) },
             newMessage: canCompose ? { [self] in newMessage() } : nil,
             refresh: hub.isLoadingMailbox || hub.mailbox == .outbox ? nil : { [self] in refresh() },
             archive: canRemoveSelection && hub.canArchive(selectedID)

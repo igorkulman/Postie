@@ -37,6 +37,26 @@ nonisolated enum Mailbox: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+/// What the sidebar has selected: a folder of the selected account, or every account's inbox together.
+nonisolated enum MailboxSelection: Hashable, Sendable {
+    case allInboxes
+    case folder(Mailbox)
+
+    var title: String {
+        switch self {
+        case .allInboxes: String(localized: "All Inboxes", comment: "Mailbox name")
+        case .folder(let mailbox): mailbox.title
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .allInboxes: "tray.2"
+        case .folder(let mailbox): mailbox.symbol
+        }
+    }
+}
+
 struct MailMessage: Identifiable, Equatable {
     let id: String
     var senderName: String

@@ -6,6 +6,18 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- The selected account, with its Google profile picture, at the bottom of the
+  sidebar. Click it to switch accounts or add another one.
+- All Inboxes above Inbox when more than one account is connected, showing every
+  account's inbox together.
+
+### Changed
+
+- Inbox and the other folders now show only the selected account instead of every
+  account merged. Search and new messages follow the account on screen.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed

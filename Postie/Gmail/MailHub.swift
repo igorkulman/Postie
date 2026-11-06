@@ -91,7 +91,7 @@ final class AccountSession: Identifiable {
     }
 }
 
-/// Every connected account's mail, merged into the single set of folders the person sees.
+/// Every connected account's mail. The folders show the selected account; All Inboxes merges every account's inbox.
 /// Each conversation stays tied to its account, so actions and replies go to the right one.
 @MainActor
 @Observable
@@ -99,6 +99,8 @@ final class MailHub {
     let accounts: AccountStore
     private(set) var sessions: [AccountSession] = []
     private(set) var mailbox: Mailbox = .inbox
+    /// Stays set with a single account, so All Inboxes is back as soon as a second one is added.
+    private var wantsAllInboxes = true
     private(set) var isPreparing: Bool
     private(set) var storageError: String?
     private(set) var searchQuery = ""
@@ -216,10 +218,42 @@ final class MailHub {
 
     // MARK: Folders
 
-    func changeMailbox(_ mailbox: Mailbox) {
+    /// All Inboxes only means something with more than one account.
+    var canShowAllInboxes: Bool { hasMultipleAccounts }
+    var isShowingAllInboxes: Bool { wantsAllInboxes && canShowAllInboxes }
+    var selection: MailboxSelection { isShowingAllInboxes ? .allInboxes : .folder(mailbox) }
+
+    func show(_ selection: MailboxSelection) {
+        switch selection {
+        case .allInboxes:
+            wantsAllInboxes = true
+            changeMailbox(.inbox)
+        case .folder(let mailbox):
+            wantsAllInboxes = false
+            changeMailbox(mailbox)
+        }
+    }
+
+    /// Shows the account's mail: the folder that is open, or its Inbox when coming from All Inboxes.
+    func selectAccount(_ id: String) {
+        accounts.selectAccount(id)
+        wantsAllInboxes = false
+    }
+
+    /// Every reader follows the folder, whichever account is showing, so switching accounts is instant.
+    private func changeMailbox(_ mailbox: Mailbox) {
         guard self.mailbox != mailbox else { return }
         self.mailbox = mailbox
         for session in sessions { session.reader.changeMailbox(mailbox) }
+    }
+
+    private var selectedSession: AccountSession? {
+        sessions.first { $0.id == accounts.selectedAccount?.id } ?? sessions.first
+    }
+
+    /// The accounts whose mail is on screen.
+    private var visibleSessions: [AccountSession] {
+        isShowingAllInboxes ? sessions : selectedSession.map { [$0] } ?? []
     }
 
     /// Shows what is saved for the current folder, then asks Gmail for anything new, for every account at once.
@@ -246,7 +280,7 @@ final class MailHub {
             return
         }
         await withTaskGroup(of: Void.self) { group in
-            for session in sessions where session.reader.nextPageToken != nil {
+            for session in visibleSessions where session.reader.nextPageToken != nil {
                 let reader = session.reader
                 group.addTask { await reader.loadMore() }
             }
@@ -260,7 +294,7 @@ final class MailHub {
         let revision: Int
     }
 
-    /// What the list shows: search results while searching, else the folder's conversations from every account, newest first.
+    /// What the list shows: search results while searching, else the conversations of the accounts on screen, newest first.
     /// Merging and sorting happen only when an account's conversations actually changed, however often the views read this.
     var list: MergedList { isSearchActive ? searchList : folderList }
     var conversations: [MergedConversation] { list.conversations }
@@ -268,7 +302,8 @@ final class MailHub {
     var searchResults: [MergedConversation] { searchList.conversations }
 
     private var folderList: MergedList {
-        let revisions = sessions.map { ReaderRevision(accountID: $0.id, revision: $0.reader.conversationsRevision) }
+        let visible = visibleSessions
+        let revisions = visible.map { ReaderRevision(accountID: $0.id, revision: $0.reader.conversationsRevision) }
         let outboxRevision = mailbox == .outbox ? outbox.revision : 0
         if let cache = folderListCache, cache.revisions == revisions, cache.outboxRevision == outboxRevision, cache.mailbox == mailbox {
             return cache.list
@@ -276,11 +311,11 @@ final class MailHub {
         let merged: [MergedConversation]
         if mailbox == .outbox {
             merged = outbox.items.compactMap { item in
-                session(for: item.accountID).map { MergedConversation(key: ConversationKey(accountID: $0.id, threadID: item.id), conversation: outboxConversation(item, from: $0)) }
+                visible.first { $0.id == item.accountID }.map { MergedConversation(key: ConversationKey(accountID: $0.id, threadID: item.id), conversation: outboxConversation(item, from: $0)) }
             }
             .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
         } else {
-            merged = sessions.flatMap { session in
+            merged = visible.flatMap { session in
                 session.reader.conversations.map {
                     MergedConversation(key: ConversationKey(accountID: session.id, threadID: $0.id), conversation: $0)
                 }
@@ -329,7 +364,7 @@ final class MailHub {
         searchVersion += 1
     }
 
-    /// Asks every account for the first page of results. Results appear as each account answers.
+    /// Asks the accounts on screen for the first page of results. Results appear as each account answers.
     func performSearch() async { await search(pageAfter: false) }
 
     private func search(pageAfter: Bool) async {
@@ -337,7 +372,7 @@ final class MailHub {
         guard !query.isEmpty else { return }
         let generation = searchGeneration
         let folder: Mailbox? = searchScope == .folder ? mailbox : nil
-        let targets = sessions.filter { $0.reader.canSearch && (!pageAfter || searchTokens[$0.id] != nil) }
+        let targets = visibleSessions.filter { $0.reader.canSearch && (!pageAfter || searchTokens[$0.id] != nil) }
         isSearching = true
         searchError = nil
         var collected = pageAfter ? searchResults : []
@@ -392,24 +427,29 @@ final class MailHub {
         }
     }
 
+    /// Unread mail across all accounts, for All Inboxes and the Dock badge.
     var unreadInboxCount: Int? {
         let counts = sessions.compactMap(\.reader.unreadInboxCount)
         return counts.isEmpty ? nil : counts.reduce(0, +)
     }
 
-    /// Drafts across all accounts, for the badge next to the Drafts folder.
-    var draftCount: Int {
-        sessions.compactMap(\.reader.draftCount).reduce(0, +)
+    /// The selected account's unread mail, for the badge next to the Inbox folder.
+    var selectedUnreadInboxCount: Int? { selectedSession?.reader.unreadInboxCount }
+
+    /// The selected account's drafts, for the badge next to the Drafts folder.
+    var draftCount: Int { selectedSession?.reader.draftCount ?? 0 }
+
+    /// The selected account's messages waiting to be sent or that could not be, for the badge next to the Outbox folder.
+    var outboxCount: Int {
+        guard let id = selectedSession?.id else { return 0 }
+        return outbox.items.filter { $0.accountID == id }.count
     }
 
-    /// Messages waiting to be sent or that could not be, for the badge next to the Outbox folder.
-    var outboxCount: Int { outbox.items.count }
-
-    var isLoadingMailbox: Bool { isSearchActive ? isSearching : sessions.contains { $0.reader.isLoadingMailbox } }
-    var isRestoringCache: Bool { sessions.contains { $0.reader.isRestoringCache } }
-    var showingCachedMail: Bool { !isSearchActive && sessions.contains { $0.reader.showingCachedMail } }
-    var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : sessions.contains { $0.reader.nextPageToken != nil } }
-    var lastRefreshed: Date? { sessions.compactMap(\.reader.lastRefreshed).min() }
+    var isLoadingMailbox: Bool { isSearchActive ? isSearching : visibleSessions.contains { $0.reader.isLoadingMailbox } }
+    var isRestoringCache: Bool { visibleSessions.contains { $0.reader.isRestoringCache } }
+    var showingCachedMail: Bool { !isSearchActive && visibleSessions.contains { $0.reader.showingCachedMail } }
+    var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : visibleSessions.contains { $0.reader.nextPageToken != nil } }
+    var lastRefreshed: Date? { visibleSessions.compactMap(\.reader.lastRefreshed).min() }
     var mailboxVersion: Int { sessions.reduce(searchVersion) { $0 + $1.reader.mailboxVersion } }
     var loadedCount: Int { list.conversations.count }
     var hasMultipleAccounts: Bool { sessions.count > 1 }
@@ -418,9 +458,11 @@ final class MailHub {
         sessions.filter { $0.reader.canSend && !isDisconnected($0.id) }.map { SendingAccount(id: $0.id, email: $0.email) }
     }
 
-    /// Where new messages come from unless the person picks another account.
+    /// Where new messages come from unless the person picks another account:
+    /// the account on screen, or the default one when looking at All Inboxes.
     var defaultSendingAccount: SendingAccount? {
         let candidates = sendingAccounts
+        if !isShowingAllInboxes, let selected = candidates.first(where: { $0.id == selectedSession?.id }) { return selected }
         return candidates.first { $0.id == accounts.defaultAccount?.id } ?? candidates.first
     }
 
@@ -466,6 +508,8 @@ final class MailHub {
     var notices: [HubNotice] {
         var notices: [HubNotice] = []
         if let storageError { notices.append(HubNotice(id: "storage", message: storageError)) }
+        // Accounts can be added from the sidebar, where there is no room to say why it failed.
+        if let accountError = accounts.error { notices.append(HubNotice(id: "accounts", message: accountError, isError: true)) }
         for session in sessions {
             let label: (String) -> String = { self.hasMultipleAccounts ? "\(session.email): \($0)" : $0 }
             if isDisconnected(session.id) {

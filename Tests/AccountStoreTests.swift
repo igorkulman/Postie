@@ -48,6 +48,64 @@ struct AccountStoreTests {
         while store.isBusy { await Task.yield() }
     }
 
+    @Test("The selected account is the default one until another is chosen, and is remembered")
+    func selectedAccount() {
+        let stored = ["u1", "u2"].enumerated().map { index, id in
+            StoredAccount(
+                identity: GoogleIdentity(id: id, email: "\(id)@example.com", name: nil),
+                credentials: GoogleCredentials(refreshToken: "r", accessToken: "t", expiresAt: .distantFuture, scopes: []),
+                addedAt: Date(timeIntervalSince1970: Double(index))
+            )
+        }
+        let vault = MemoryAccountVault(stored)
+        let defaults = UserDefaults(suiteName: "postie-tests-\(UUID().uuidString)")!
+        let store = AccountStore(vault: vault, oauth: nil, defaults: defaults)
+        store.restore()
+        #expect(store.selectedAccount?.id == "u1")
+        store.selectAccount("u2")
+        #expect(store.selectedAccount?.id == "u2")
+        store.selectAccount("unknown")
+        #expect(store.selectedAccount?.id == "u2")
+
+        let reopened = AccountStore(vault: vault, oauth: nil, defaults: defaults)
+        reopened.restore()
+        #expect(reopened.selectedAccount?.id == "u2")
+    }
+
+    @Test("Profile pictures are fetched for saved accounts and kept; a failure changes nothing")
+    func profilePictures() async throws {
+        let credentials = GoogleCredentials(refreshToken: "r", accessToken: "t", expiresAt: .distantFuture,
+                                            scopes: Set(GoogleOAuthClient.requiredScopes))
+        // Saved before Postie knew about pictures: the JSON has no such key.
+        let saved = #"{"id":"u1","email":"a@example.com"}"#
+        let identity = try JSONDecoder().decode(GoogleIdentity.self, from: Data(saved.utf8))
+        #expect(identity.picture == nil)
+        #expect(identity.initials == "A")
+        let vault = MemoryAccountVault([StoredAccount(identity: identity, credentials: credentials, addedAt: Date())])
+
+        let script = Script()
+        let transport = TokenTransport { _ in (script.refreshError == nil ? 200 : 500, #"{"picture":"https://lh3.example.com/a=s96-c"}"#) }
+        let store = AccountStore(vault: vault, oauth: GoogleOAuthClient(clientID: OAuthFixtures.clientID, transport: transport),
+                                 defaults: UserDefaults(suiteName: "postie-tests-\(UUID().uuidString)")!)
+        store.restore()
+        let picture = URL(string: "https://lh3.example.com/a=s96-c")
+
+        await store.refreshProfilePictures()
+        #expect(store.accounts.first?.identity.picture == picture)
+        #expect(try vault.loadAll().first?.identity.picture == picture)
+
+        script.refreshError = "server_error"
+        await store.refreshProfilePictures()
+        #expect(store.accounts.first?.identity.picture == picture)
+    }
+
+    @Test("Initials come from the name, else the address")
+    func initials() {
+        #expect(GoogleIdentity(id: "1", email: "a@example.com", name: "alex morgan rivera").initials == "AM")
+        #expect(GoogleIdentity(id: "1", email: "zed@example.com", name: nil).initials == "Z")
+        #expect(GoogleIdentity(id: "1", email: "zed@example.com", name: "").initials == "Z")
+    }
+
     @Test("The first account added is the default until another is chosen")
     func defaults() async {
         let (store, script, _, _) = makeStore()
