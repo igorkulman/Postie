@@ -3,6 +3,8 @@ import Testing
 import WebKit
 @testable import Postie
 
+private let squareImage = "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
 @Suite("HTML email security", .serialized, .timeLimit(.minutes(1)))
 @MainActor
 struct EmailHTMLTests {
@@ -99,6 +101,80 @@ struct EmailHTMLTests {
         #expect(result["onloadRan"] as? String == "")
         #expect(result["imageScriptRan"] as? String == "")
         #expect(page.view.url?.absoluteString == "about:blank")
+    }
+
+    @Test("A logo keeps its size and proportions beside a cell that claims all the width", arguments: [
+        #"<img id="logo" src="\#(squareImage)" width="90" height="90" style="display: block; height: 90px;">"#,
+        #"<img id="logo" src="\#(squareImage)" style="display: block; width: 90px; height: 90px;">"#,
+        #"<img id="logo" src="\#(squareImage)" width="90" height="90">"#
+    ])
+    func logoInTableCell(image: String) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load("""
+        <table width="400" cellpadding="0" cellspacing="0"><tr>
+        <td valign="top">\(image)</td>
+        <td width="100%" align="right">Account ending: 436</td>
+        </tr></table>
+        """)
+        let size = try await page.inspect(renderedSize(of: "logo"))
+        #expect(size["width"] as? Double == 90)
+        #expect(size["height"] as? Double == 90)
+    }
+
+    @Test("An image wider than the message is scaled down to fit, in proportion", arguments: [
+        #"<img id="wide" src="\#(squareImage)" width="1000" height="1000">"#,
+        #"<table><tr><td><img id="wide" src="\#(squareImage)" width="1000" height="1000"></td></tr></table>"#
+    ])
+    func wideImage(markup: String) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load(markup)
+        let size = try await page.inspect(renderedSize(of: "wide"))
+        let width = try #require(size["width"] as? Double)
+        #expect(width <= 420)
+        #expect(size["height"] as? Double == width)
+    }
+
+    @Test("Images keep the shape the email declares, not the shape of the image file", arguments: [
+        // A 1×1 file stretched into a rule or a spacer.
+        (#"<img id="image" src="\#(squareImage)" width="300" height="2">"#, CGSize(width: 300, height: 2)),
+        (#"<img id="image" src="\#(squareImage)" width="1" height="20">"#, CGSize(width: 1, height: 20)),
+        (#"<table><tr><td><img id="image" src="\#(squareImage)" width="300" height="2"></td></tr></table>"#, CGSize(width: 300, height: 2)),
+        (#"<img id="image" src="\#(squareImage)" height="20">"#, CGSize(width: 20, height: 20)),
+        // Too wide for the message: scaled down, keeping the declared shape.
+        (#"<img id="image" src="\#(squareImage)" width="1000" height="500">"#, CGSize(width: 420, height: 210)),
+        (#"<img id="image" src="\#(squareImage)" width="1000" height="2" style="display: block;">"#, CGSize(width: 420, height: 0.84)),
+        // The email asks for the file's own shape, so the attributes do not apply.
+        (#"<img id="image" src="\#(squareImage)" width="300" height="2" style="height: auto;">"#, CGSize(width: 300, height: 300))
+    ])
+    func declaredImageSize(markup: String, expected: CGSize) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load(markup)
+        let size = try await page.inspect(renderedSize(of: "image"))
+        let width = try #require(size["width"] as? Double)
+        let height = try #require(size["height"] as? Double)
+        #expect(abs(width - expected.width) < 0.5)
+        #expect(abs(height - expected.height) < 0.5)
+    }
+
+    @Test("An image with only a declared height is never distorted if it gets narrowed")
+    func heightOnlyImageIsNotDistorted() async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load(#"<img id="image" src="\#(squareImage)" height="20">"#)
+        let result = try await page.inspect("""
+        return { objectFit: getComputedStyle(document.getElementById('image')).objectFit };
+        """)
+        #expect(result["objectFit"] as? String == "contain")
+    }
+
+    private func renderedSize(of id: String) -> String {
+        """
+        const rect = document.getElementById('\(id)').getBoundingClientRect();
+        return { width: rect.width, height: rect.height };
+        """
     }
 
     @Test("Quoted history is collapsed behind a button that expands it", arguments: [
