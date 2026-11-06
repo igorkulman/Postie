@@ -10,6 +10,12 @@ final class GmailReaderStore {
     private(set) var unreadInboxCount: Int?
     /// How many drafts the account has. Nil until Gmail has been asked.
     private(set) var draftCount: Int?
+    /// The account's own labels.
+    private(set) var labels: [GmailLabel] = []
+    /// The same labels, arranged for the sidebar.
+    private(set) var labelTree = LabelTree()
+    /// The same labels' names, by label ID. Unlike the rest, these don't change as mail is read.
+    private(set) var labelNames: [String: String] = [:]
     private(set) var conversations: [GmailConversation] = [] {
         didSet { conversationsRevision &+= 1 }
     }
@@ -36,6 +42,7 @@ final class GmailReaderStore {
     @ObservationIgnored private let signatureLoader: (any GmailSignatureLoading)?
     @ObservationIgnored private let drafter: (any GmailDrafting)?
     @ObservationIgnored private let contactLoader: (any GmailContactLoading)?
+    @ObservationIgnored private let labelLoader: (any GmailLabelLoading)?
     /// Google's contacts are not asked for again before this, so a failing request is not repeated every refresh.
     @ObservationIgnored private var nextContactsFetch = Date.distantPast
     @ObservationIgnored private let cache: GmailCacheSession?
@@ -49,6 +56,9 @@ final class GmailReaderStore {
     @ObservationIgnored private var selectionGeneration = Generation()
     @ObservationIgnored private var accountGeneration = Generation()
     @ObservationIgnored private var unreadCountGeneration = Generation()
+    /// The state of the mail when the label counts were last read. They can't have changed while it stays the same.
+    @ObservationIgnored private var labelCountsCheckpoint: String?
+    @ObservationIgnored private var isLoadingLabelCounts = false
 
     init(api: any GmailReading, mailbox: Mailbox = .inbox, cache: GmailCacheSession? = nil) {
         self.api = api
@@ -59,6 +69,7 @@ final class GmailReaderStore {
         signatureLoader = api as? any GmailSignatureLoading
         drafter = api as? any GmailDrafting
         contactLoader = api as? any GmailContactLoading
+        labelLoader = api as? any GmailLabelLoading
         self.mailbox = mailbox
         self.cache = cache
         if let cache, let syncAPI = api as? any GmailSyncReading {
@@ -85,6 +96,9 @@ final class GmailReaderStore {
         mailbox = .inbox
         unreadInboxCount = nil
         draftCount = nil
+        show(labels: [])
+        labelCountsCheckpoint = nil
+        isLoadingLabelCounts = false
         unreadCountGeneration.advance()
         accountGeneration.advance()
     }
@@ -150,11 +164,96 @@ final class GmailReaderStore {
         async let unreadCount: Void = refreshUnreadCount(for: startedAccount)
         async let drafts: Void = refreshDraftCount(for: startedAccount)
         async let contacts: Void = refreshContacts(for: startedAccount)
+        async let labels: Void = refreshLabels(for: startedAccount)
         if let synchronizer { await synchronize(using: synchronizer) }
         else { await loadPage(refreshing: true) }
         await unreadCount
         await drafts
         await contacts
+        await labels
+        // The sync may have just brought in what changes them.
+        await refreshLabelCounts(for: startedAccount)
+    }
+
+    /// Setting an unchanged value would still redraw whatever shows it, on every refresh.
+    private func show(labels: [GmailLabel]) {
+        guard labels != self.labels else { return }
+        self.labels = labels
+        labelTree = LabelTree(labels)
+        let names = Dictionary(labels.map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        if names != labelNames { labelNames = names }
+    }
+
+    /// Shows the saved labels right away, then picks up any added, renamed or moved in Gmail since.
+    private func refreshLabels(for startedAccount: Generation) async {
+        guard let labelLoader, accountGeneration == startedAccount else { return }
+        if labels.isEmpty, let saved = try? await cache?.labels(), accountGeneration == startedAccount {
+            show(labels: saved)
+        }
+        do {
+            let fresh = try await labelLoader.userLabels()
+            guard accountGeneration == startedAccount, !Task.isCancelled else { return }
+            let known = Dictionary(labels.map { ($0.id, $0.unreadThreads) }, uniquingKeysWith: { first, _ in first })
+            let updated = fresh.map { label in
+                var label = label
+                label.unreadThreads = known[label.id] ?? 0
+                return label
+            }
+            if updated != labels {
+                // A new label's count is not known yet, and neither is that of one no longer hidden.
+                labelCountsCheckpoint = nil
+                show(labels: updated)
+                try await cache?.saveLabels(updated)
+            }
+        } catch {
+            // The last known labels stay.
+            if !(error is CancellationError) { Log.api.error("Could not read the labels: \(error.localizedDescription, privacy: .public)") }
+        }
+        await refreshLabelCounts(for: startedAccount)
+    }
+
+    /// Reads the unread counts, unless no mail has changed since the last time, as it takes a request per label.
+    /// Hidden labels are skipped: they sit under More, where a count matters least, and could be many.
+    private func refreshLabelCounts(for startedAccount: Generation) async {
+        guard let labelLoader, !isLoadingLabelCounts, accountGeneration == startedAccount, !Task.isCancelled else { return }
+        isLoadingLabelCounts = true
+        defer { if accountGeneration == startedAccount { isLoadingLabelCounts = false } }
+        var checkpoint = try? await cache?.historyID()
+        while checkpoint == nil || checkpoint != labelCountsCheckpoint {
+            let ids = labels.filter { $0.visibility != .hide }.map(\.id)
+            let counts = await withTaskGroup(of: (String, Int?).self) { group in
+                for id in ids {
+                    group.addTask { (id, try? await labelLoader.unreadThreads(inLabel: id)) }
+                }
+                var counts: [String: Int?] = [:]
+                for await (id, count) in group { counts[id] = count }
+                return counts
+            }
+            guard accountGeneration == startedAccount, !Task.isCancelled else { return }
+            let updated = labels.map { label in
+                var label = label
+                if let count = counts[label.id], let count { label.unreadThreads = count }
+                return label
+            }
+            if updated != labels {
+                show(labels: updated)
+                do { try await cache?.saveLabels(updated) }
+                catch {
+                    if !(error is CancellationError) { Log.cache.error("Could not save the labels: \(error.localizedDescription)") }
+                }
+            }
+            // A label that could not be read is asked for again at the next refresh.
+            guard counts.values.allSatisfy({ $0 != nil }) else {
+                Log.api.error("Could not read the unread count of every label")
+                labelCountsCheckpoint = nil
+                return
+            }
+            // Without a cache there is nothing to compare with, so the next refresh just asks again.
+            guard let read = checkpoint else { return }
+            labelCountsCheckpoint = read
+            checkpoint = try? await cache?.historyID()
+            guard accountGeneration == startedAccount, !Task.isCancelled else { return }
+        }
     }
 
     /// Keeps a local copy of the account's Google contacts, fetched again every few hours.
@@ -220,7 +319,8 @@ final class GmailReaderStore {
         }
     }
 
-    var canArchive: Bool { mailbox == .inbox && mutator != nil }
+    /// In a label, whether a conversation can be archived depends on the conversation: see `MailHub.canArchive`.
+    var canArchive: Bool { (mailbox == .inbox || mailbox.isLabel) && mutator != nil }
     var canTrash: Bool { ![.trash, .outbox].contains(mailbox) && mutator != nil }
     var canSearch: Bool { searcher != nil }
 
@@ -235,7 +335,10 @@ final class GmailReaderStore {
     @discardableResult
     func archive(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
         guard fromAnyFolder ? canModifyLabels : canArchive, let mutator else { return false }
-        return await mutate(id, onRemoved: onRemoved) { try await mutator.archive(threadID: id) }
+        // Leaving the Inbox doesn't take a conversation out of its labels.
+        return await mutate(id, keepingRowWithout: mailbox.isLabel ? "INBOX" : nil, onRemoved: onRemoved) {
+            try await mutator.archive(threadID: id)
+        }
     }
 
     @discardableResult
@@ -346,16 +449,22 @@ final class GmailReaderStore {
         }
         guard folderGeneration == startedFolder else { return }
         mailboxError = nil
+        updateLoaded(id, setting: label, to: on)
+        // Persist through Gmail history and refresh the unread badge.
+        await refresh()
+    }
+
+    private func updateLoaded(_ id: String, setting label: String, to on: Bool) {
         if let index = conversations.firstIndex(where: { $0.id == id }) {
             conversations[index] = conversations[index].setting(label, to: on)
         }
         if let selected = selectedConversation, selected.id == id { selectedConversation = selected.setting(label, to: on) }
         if let cached = bodies[id] { bodies[id] = cached.setting(label, to: on) }
-        // Persist through Gmail history and refresh the unread badge.
-        await refresh()
     }
 
-    private func mutate(_ id: String, onRemoved: () -> Void, _ change: () async throws -> Void) async -> Bool {
+    /// `keepingRowWithout` is for a change after which the conversation is still in this folder, minus that label.
+    private func mutate(_ id: String, keepingRowWithout label: String? = nil, onRemoved: () -> Void,
+                        _ change: () async throws -> Void) async -> Bool {
         let startedFolder = folderGeneration
         do {
             try await change()
@@ -369,9 +478,13 @@ final class GmailReaderStore {
         mailboxError = nil
         // Animate so the row slides out and its neighbors close the gap, like Mail.
         withAnimation(.easeInOut(duration: 0.25)) {
-            conversations.removeAll { $0.id == id }
-            if selectedConversation?.id == id { selectedConversation = nil }
-            bodies[id] = nil
+            if let label {
+                updateLoaded(id, setting: label, to: false)
+            } else {
+                conversations.removeAll { $0.id == id }
+                if selectedConversation?.id == id { selectedConversation = nil }
+                bodies[id] = nil
+            }
             mailboxVersion += 1
             // Reconcile UI selection in the same transaction, not after the network refresh.
             onRemoved()

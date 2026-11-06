@@ -40,6 +40,15 @@ nonisolated struct GmailConversation: Identifiable, Equatable, Sendable {
     var isStarred: Bool { labelIDs.contains("STARRED") }
     var latestDate: Date { messages.last?.date ?? .distantPast }
 
+    /// What to show as the conversation's labels: where it is, then the person's own labels by name.
+    /// Like Gmail, this leaves out states such as unread and starred, Sent, and the inbox categories.
+    func visibleLabels(named userLabels: [String: String]) -> [String] {
+        let labels = labelIDs
+        let folders: [(id: String, mailbox: Mailbox)] = [("INBOX", .inbox), ("SPAM", .junk), ("TRASH", .trash)]
+        return folders.filter { labels.contains($0.id) }.map(\.mailbox.title)
+            + labels.compactMap { userLabels[$0] }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
     /// A copy with a label added to or removed from every message, mirroring Gmail's thread-level modify.
     func setting(_ label: String, to on: Bool) -> GmailConversation {
         GmailConversation(id: id, subject: subject, messages: messages.map { message in
@@ -68,6 +77,30 @@ nonisolated struct GmailPage: Sendable {
 nonisolated struct GmailInboxLabel: Decodable, Sendable {
     let id: String
     let messagesUnread: Int
+}
+
+nonisolated struct GmailLabelList: Decodable, Sendable {
+    struct Label: Decodable, Sendable {
+        let id: String
+        let name: String
+        let type: String?
+        let labelListVisibility: String?
+    }
+    let labels: [Label]?
+
+    /// The labels the person created. System labels have fixed IDs and names of their own.
+    /// The list doesn't say how many threads are unread: that takes asking for each label.
+    var userLabels: [GmailLabel] {
+        (labels ?? []).filter { $0.type == "user" }.map {
+            GmailLabel(id: $0.id, name: $0.name, visibility: $0.labelListVisibility.flatMap(GmailLabel.Visibility.init(rawValue:)) ?? .show)
+        }
+    }
+}
+
+nonisolated struct GmailLabelCounts: Decodable, Sendable {
+    let id: String
+    /// Left out when there are none.
+    let threadsUnread: Int?
 }
 
 nonisolated struct GmailSendAsList: Decodable, Sendable {

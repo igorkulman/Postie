@@ -78,6 +78,9 @@
         }
       }
     },
+    "Account: %@" : {
+      "comment" : "Spoken by VoiceOver for the account switcher at the bottom of the sidebar"
+    },
     "Accounts" : {
       "comment" : "Settings tab and list name"
     },
@@ -98,6 +101,9 @@
     },
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
 
+    },
+    "All Inboxes" : {
+      "comment" : "Mailbox name"
     },
     "All Mail" : {
 
@@ -267,6 +273,12 @@
     "Junk" : {
       "comment" : "Mailbox name"
     },
+    "Label" : {
+      "comment" : "Title of a Gmail label whose name is not known"
+    },
+    "Labels" : {
+
+    },
     "Loading" : {
       "comment" : "VoiceOver label of a progress spinner"
     },
@@ -294,6 +306,9 @@
     "Make Default" : {
       "comment" : "Button that makes the selected account the one new messages are sent from"
     },
+    "Manage Accounts…" : {
+      "comment" : "In the account switcher, opens Settings"
+    },
     "Mark as Read" : {
 
     },
@@ -310,6 +325,9 @@
       "comment" : "VoiceOver label of a message header; the sender follows"
     },
     "Messages that are waiting to be sent, or could not be, appear here." : {
+
+    },
+    "More" : {
 
     },
     "Move to Trash" : {
@@ -453,6 +471,9 @@
     "Select a conversation to read it." : {
 
     },
+    "Selected" : {
+      "comment" : "Spoken by VoiceOver for the checkmark next to the selected account"
+    },
     "Send" : {
 
     },
@@ -494,6 +515,9 @@
     },
     "Subject" : {
 
+    },
+    "Switches to another account" : {
+      "comment" : "VoiceOver hint for the account switcher"
     },
     "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
 

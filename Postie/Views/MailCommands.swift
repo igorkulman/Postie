@@ -2,8 +2,9 @@ import SwiftUI
 
 /// What the active window can do right now. A nil action disables its menu item.
 struct MailActions {
-    var currentMailbox: Mailbox
-    var selectMailbox: (Mailbox) -> Void
+    var currentSelection: MailboxSelection
+    var canShowAllInboxes: Bool
+    var select: (MailboxSelection) -> Void
     var newMessage: (() -> Void)?
     var refresh: (() -> Void)?
     var archive: (() -> Void)?
@@ -49,10 +50,19 @@ struct MailCommands: Commands {
                 .keyboardShortcut("n", modifiers: [.command, .shift])
                 .disabled(actions?.refresh == nil)
             Divider()
+            if actions?.canShowAllInboxes == true {
+                Toggle(isOn: Binding(
+                    get: { actions?.currentSelection == .allInboxes },
+                    set: { _ in actions?.select(.allInboxes) }
+                )) {
+                    Label(MailboxSelection.allInboxes.title, systemImage: MailboxSelection.allInboxes.symbol)
+                }
+                .keyboardShortcut("0", modifiers: .command)
+            }
             ForEach(Array(Mailbox.allCases.enumerated()), id: \.element) { index, mailbox in
                 Toggle(isOn: Binding(
-                    get: { actions?.currentMailbox == mailbox },
-                    set: { _ in actions?.selectMailbox(mailbox) }
+                    get: { actions?.currentSelection == .folder(mailbox) },
+                    set: { _ in actions?.select(.folder(mailbox)) }
                 )) {
                     Label(mailbox.title, systemImage: mailbox.symbol)
                 }

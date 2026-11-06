@@ -65,6 +65,8 @@ nonisolated struct GmailSyncBatch: Sendable {
     var snapshots: [Mailbox: GmailPage] = [:]
     var conversations: [GmailConversation] = []
     var deletedThreadIDs: Set<String> = []
+    /// Folders to forget, so that opening them again starts from a fresh snapshot.
+    var droppedFolders: Set<Mailbox> = []
     let expectedHistoryID: String?
     var historyID: String
 }
@@ -160,6 +162,9 @@ final class GmailSyncCoordinator {
         var batch = GmailSyncBatch(expectedHistoryID: expectedHistoryID, historyID: baseline)
         var mailboxes = Set(try await cache.cachedMailboxes())
         if mailbox != .outbox { mailboxes.insert(mailbox) }
+        // Someone may have opened any number of labels, each of which would cost a page of requests here.
+        batch.droppedFolders = mailboxes.filter { $0.isLabel && $0 != mailbox }
+        mailboxes.subtract(batch.droppedFolders)
         for folder in mailboxes.sorted(by: { $0.rawValue < $1.rawValue }) {
             try Task.checkCancellation()
             batch.snapshots[folder] = try await api.mailbox(folder, pageToken: nil)
@@ -249,6 +254,9 @@ extension GmailConversation {
         case .archive:
             labelIDs.isDisjoint(with: ["INBOX", "DRAFT", "SPAM", "TRASH"])
                 && messages.contains { $0.labelIDs.isDisjoint(with: ["INBOX", "SENT", "DRAFT", "SPAM", "TRASH"]) }
+        case .label(let id):
+            // Like Gmail's own list of a label, which leaves out what is in the Spam and the Trash.
+            messages.contains { $0.labelIDs.contains(id) && $0.labelIDs.isDisjoint(with: ["SPAM", "TRASH"]) }
         }
     }
 }

@@ -11,19 +11,25 @@ subscriptions, AI features, or workspace bloat.
 
 - Native SwiftUI macOS app
 - Gmail integration using Google sign-in and the Gmail API
-- Multiple Gmail accounts, merged into one set of folders. Replies, forwards and
-  archive/trash actions always go through the account the conversation belongs to
-  and the default account for new messages can be chosen in Settings
+- Multiple Gmail accounts: switch between them from your profile picture at the
+  bottom of the sidebar, or read all of them together in All Inboxes. Replies,
+  forwards and archive/trash actions always go through the account the conversation
+  belongs to. New messages come from the account on screen, and in All Inboxes from
+  the default account chosen in Settings
 - Inbox, Drafts, Sent, Archive, Junk, and Trash
-- Conversation view with HTML email rendering
+- Your Gmail labels in the sidebar, nested as in Gmail with their unread counts, for
+  the selected account, including in All Inboxes. Labels Gmail is set not to list are
+  under More
+- Conversation view with HTML email rendering, and the conversation's Gmail labels
+  next to its subject
 - Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
   underline, lists, links), with attachments and your Gmail signature
 - Drafts are saved in Gmail, so they show up in every Gmail client: closing a
   message you have written asks whether to keep it, and drafts can be edited
   later from the Drafts folder
 - Archive, trash, star, and read/unread actions
-- Search as you type across all accounts, powered by Gmail: search the current
-  folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
+- Search as you type, powered by Gmail, in the account on screen or across all
+  accounts from All Inboxes: search the current folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
   Results are not stored in the local cache
 - Reading attachments: shown in the message header and as a chip in the list;
   double-click to open, or use the context menu to save, share, or copy
@@ -44,7 +50,7 @@ Planned:
 
 - Search suggestions (people and subjects)
 - Showing CID (embedded) images
-- Gmail labels
+- Changing Gmail labels
 - Full offline mailbox downloads
 
 Not planned:
@@ -120,6 +126,8 @@ chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
 operation after the user changes selection does not choose a new thread.
+
+Add `-PostieLabels` to try the same mail with nested labels in the sidebar.
 
 ## Tests
 

@@ -8,7 +8,8 @@ struct GmailSelectionRegressionView: View {
     @State private var error: String?
 
     init(empty: Bool = false) {
-        _mail = State(initialValue: SelectionRegressionMail(empty: empty))
+        let hasLabels = ProcessInfo.processInfo.arguments.contains("-PostieLabels")
+        _mail = State(initialValue: SelectionRegressionMail(empty: empty, hasLabels: hasLabels))
     }
 
     fileprivate init(mail: SelectionRegressionMail, hub: MailHub) {

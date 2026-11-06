@@ -22,6 +22,13 @@ nonisolated protocol GmailMutating: Sendable {
     func setLabel(_ label: String, on: Bool, threadID: String) async throws
 }
 
+nonisolated protocol GmailLabelLoading: Sendable {
+    /// The labels the person created, without their unread counts.
+    func userLabels() async throws -> [GmailLabel]
+    /// How many conversations with the label are unread. One request per label.
+    func unreadThreads(inLabel id: String) async throws -> Int
+}
+
 nonisolated struct GmailHTTPResponse: Sendable {
     let data: Data
     let statusCode: Int
@@ -59,7 +66,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading, GmailLabelLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -165,6 +172,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         case .archive:
             // Gmail has no ARCHIVE label: use received mail outside the other system folders.
             terms.append("-in:inbox -in:sent -in:drafts -in:spam -in:trash")
+        case .label(let id): query.append(URLQueryItem(name: "labelIds", value: id))
         case .outbox, nil: break
         }
         if let search { terms.append(search) }
@@ -281,6 +289,19 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         let body: Body = try await get(path: path, query: [])
         guard let data = GmailText.base64URL(body.data) else { throw GmailError.invalidResponse }
         return data
+    }
+
+    func userLabels() async throws -> [GmailLabel] {
+        let list: GmailLabelList = try await get(path: "labels", query: [URLQueryItem(name: "fields", value: "labels(id,name,type,labelListVisibility)")])
+        return list.userLabels
+    }
+
+    func unreadThreads(inLabel id: String) async throws -> Int {
+        let counts: GmailLabelCounts = try await get(path: "labels/" + Self.pathComponent(id), query: [
+            URLQueryItem(name: "fields", value: "id,threadsUnread")
+        ])
+        guard counts.id == id else { throw GmailError.invalidResponse }
+        return counts.threadsUnread ?? 0
     }
 
     func archive(threadID: String) async throws {

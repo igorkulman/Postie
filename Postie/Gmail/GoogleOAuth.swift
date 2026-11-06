@@ -6,6 +6,14 @@ nonisolated struct GoogleIdentity: Codable, Equatable, Hashable, Sendable, Ident
     let id: String
     let email: String
     let name: String?
+    /// Accounts saved before Postie showed pictures have none until `AccountStore` fetches it.
+    var picture: URL? = nil
+
+    /// What stands in for the picture while it loads, or when there is none.
+    var initials: String {
+        let letters = (name ?? "").split(separator: " ").prefix(2).compactMap(\.first)
+        return (letters.isEmpty ? String(email.prefix(1)) : String(letters)).uppercased()
+    }
 }
 
 nonisolated struct GoogleCredentials: Codable, Equatable, Sendable {
@@ -49,6 +57,7 @@ nonisolated struct GoogleOAuthClient: Sendable {
 
     private static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
     private static let tokenEndpoint = "https://oauth2.googleapis.com/token"
+    private static let userInfoEndpoint = "https://openidconnect.googleapis.com/v1/userinfo"
 
     let clientID: String
     let transport: any GmailTransport
@@ -133,6 +142,17 @@ nonisolated struct GoogleOAuthClient: Sendable {
         if let refreshToken = response.refreshToken { refreshed.refreshToken = refreshToken }
         if !response.grantedScopes.isEmpty { refreshed.scopes = response.grantedScopes }
         return refreshed
+    }
+
+    /// The account's current profile picture. Needs only the `profile` scope every sign-in asks for.
+    func profilePicture(accessToken: String) async throws -> URL? {
+        struct UserInfo: Decodable { let picture: String? }
+        var request = URLRequest(url: URL(string: Self.userInfoEndpoint)!)
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        let response = try await transport.send(request)
+        guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
+        guard let info = try? JSONDecoder().decode(UserInfo.self, from: response.data) else { throw GmailError.invalidResponse }
+        return info.picture.flatMap(URL.init(string:))
     }
 
     private struct TokenResponse: Decodable {

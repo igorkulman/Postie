@@ -7,7 +7,7 @@ import os
 @Observable
 final class AccountStore {
     struct Entry: Identifiable, Equatable {
-        let identity: GoogleIdentity
+        var identity: GoogleIdentity
         let addedAt: Date
         /// The refresh token was revoked or the Keychain entry is unusable; mail already downloaded stays readable.
         var needsReconnect = false
@@ -20,6 +20,7 @@ final class AccountStore {
     private(set) var isBusy = false
     var error: String?
     private var storedDefaultID: String?
+    private var storedSelectedID: String?
 
     @ObservationIgnored private var credentials: [String: GoogleCredentials] = [:]
     @ObservationIgnored private var refreshes: [String: Task<GoogleCredentials, Error>] = [:]
@@ -29,6 +30,7 @@ final class AccountStore {
     @ObservationIgnored private let webSignIn: any WebAuthenticating
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private static let defaultAccountKey = "defaultAccountID"
+    @ObservationIgnored private static let selectedAccountKey = "selectedAccountID"
 
     init(
         vault: any AccountVault = KeychainAccountVault(),
@@ -42,6 +44,7 @@ final class AccountStore {
         self.webSignIn = webSignIn ?? SystemWebSignIn()
         self.defaults = defaults
         storedDefaultID = defaults.string(forKey: Self.defaultAccountKey)
+        storedSelectedID = defaults.string(forKey: Self.selectedAccountKey)
     }
 
     static func configuredOAuthClient() -> GoogleOAuthClient? {
@@ -65,6 +68,17 @@ final class AccountStore {
         guard accounts.contains(where: { $0.id == id }) else { return }
         storedDefaultID = id
         defaults.set(id, forKey: Self.defaultAccountKey)
+    }
+
+    /// The account whose folders the sidebar shows: the one last chosen there, else the default one.
+    var selectedAccount: Entry? {
+        accounts.first { $0.id == storedSelectedID } ?? defaultAccount
+    }
+
+    func selectAccount(_ id: String) {
+        guard accounts.contains(where: { $0.id == id }) else { return }
+        storedSelectedID = id
+        defaults.set(id, forKey: Self.selectedAccountKey)
     }
 
     func restore() {
@@ -128,6 +142,10 @@ final class AccountStore {
             storedDefaultID = nil
             defaults.removeObject(forKey: Self.defaultAccountKey)
         }
+        if storedSelectedID == id {
+            storedSelectedID = nil
+            defaults.removeObject(forKey: Self.selectedAccountKey)
+        }
         error = nil
     }
 
@@ -154,6 +172,30 @@ final class AccountStore {
             Log.accounts.error("Refreshing the access token failed: \(error.localizedDescription)")
             if case GmailError.signInRequired = error { markNeedsReconnect(id) }
             throw error
+        }
+    }
+
+    /// Fetches every account's profile picture and keeps it for next time. A failure just leaves the initials showing.
+    func refreshProfilePictures() async {
+        guard let oauth else { return }
+        for entry in accounts where !entry.needsReconnect {
+            do {
+                let picture = try await oauth.profilePicture(accessToken: try await accessToken(for: entry.id))
+                try Task.checkCancellation()
+                setPicture(picture, for: entry.id)
+            } catch is CancellationError {
+                return
+            } catch {
+                Log.accounts.error("Could not fetch a profile picture: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    private func setPicture(_ picture: URL?, for id: String) {
+        guard let index = accounts.firstIndex(where: { $0.id == id }), accounts[index].identity.picture != picture else { return }
+        accounts[index].identity.picture = picture
+        if let credentials = credentials[id] {
+            try? vault.save(StoredAccount(identity: accounts[index].identity, credentials: credentials, addedAt: accounts[index].addedAt))
         }
     }
 

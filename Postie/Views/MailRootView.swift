@@ -51,7 +51,9 @@ struct MailRootView: View {
         .task(id: AccountBinding(
             ids: accounts.accounts.map(\.id), disconnected: accounts.accounts.filter(\.needsReconnect).map(\.id), ready: !hub.isPreparing
         )) {
-            if !hub.isPreparing { await hub.reconcile() }
+            guard !hub.isPreparing else { return }
+            await hub.reconcile()
+            if restoresSession { await accounts.refreshProfilePictures() }
         }
         // Looks for new mail whenever the window comes back to the foreground.
         .task(id: scenePhase) {
