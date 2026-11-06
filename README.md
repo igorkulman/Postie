@@ -102,7 +102,8 @@ In a Debug build, launch with `-PostieSelectionRegression` to run the real Gmail
 against deterministic mail and an in-memory SQLite cache. It uses no real
 credentials, network requests, or saved mailbox database.
 
-1. Open **Thread to open**.
+1. No conversation is open at launch, and the detail column shows **No
+   Conversation Selected**. Open **Thread to open**.
 2. Choose **Regression > Insert Newer Mail**. The highlight and detail must stay
    on the same conversation, even though its row moved.
 3. Archive it with **⌃⌘A**. **Next older thread** must become selected and open.
@@ -115,8 +116,8 @@ The Regression menu also simulates an external archive of **Thread to open**
 and a rejected next archive/trash. External disappearance clears selection
 without opening unrelated mail; rejection preserves the selected thread.
 
-The policy is identity-based: an explicit removal
-chooses the next surviving older neighbor from the visible order at action time,
+The policy is identity-based: a folder opens with nothing selected, Esc clears the
+selection, and an explicit removal chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
 operation after the user changes selection does not choose a new thread.

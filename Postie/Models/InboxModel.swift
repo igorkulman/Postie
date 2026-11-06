@@ -38,6 +38,13 @@ final class InboxModel {
         selection.select(key)
     }
 
+    /// Closes the open conversation. The list takes keyboard focus, which may have been inside the message.
+    func deselect() {
+        guard selection.selectedID != nil else { return }
+        selection.select(nil)
+        listFocusRequest += 1
+    }
+
     func updateFromList(_ key: ConversationKey?) {
         selection.updateFromList(key, visibleIDs: conversationKeys)
     }

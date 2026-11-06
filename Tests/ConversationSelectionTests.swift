@@ -5,17 +5,21 @@ import Testing
 @Suite("Conversation selection policy")
 @MainActor
 struct ConversationSelectionTests {
-    @Test("An empty List's redundant deselection does not consume initial cache selection")
-    func initialListDeselects() {
+    @Test("Loading a list opens nothing until the user picks a conversation")
+    func nothingOpensByItself() {
         var selection = ConversationSelection<String>()
         selection.updateFromList(nil, visibleIDs: [])
-        selection.reconcile(with: ["open"])
+        selection.reconcile(with: [])
+        selection.reconcile(with: ["open", "older"])
+        #expect(selection.selectedID == nil)
+        selection.updateFromList("open", visibleIDs: ["open", "older"])
         #expect(selection.selectedID == "open")
     }
 
     @Test("Replacing cached rows and inserting newer mail preserves conversation identity")
     func insertion() {
         var selection = ConversationSelection<String>()
+        selection.select("open")
         selection.reconcile(with: ["open", "older"])
         selection.reconcile(with: ["new", "open", "older"])
         #expect(selection.selectedID == "open")
@@ -60,7 +64,7 @@ struct ConversationSelectionTests {
     @Test("Archiving the last conversation clears selection, even after another arrival")
     func emptyInbox() throws {
         var selection = ConversationSelection<String>()
-        selection.reconcile(with: ["open"])
+        selection.select("open")
         let tokenRequest = selection.beginRemoval(of: "open", visibleIDs: ["open"])
         let token = try #require(tokenRequest)
         selection.finishRemoval(token, removed: true, visibleIDs: [])
@@ -124,20 +128,21 @@ struct ConversationSelectionTests {
         #expect(selection.selectedID == "older")
     }
 
-    @Test("Folder reset invalidates pending removals and allows one initial selection")
+    @Test("Folder reset clears selection, invalidates pending removals and opens nothing")
     func folderChange() throws {
         var selection = ConversationSelection<String>()
         selection.select("open")
         let tokenRequest = selection.beginRemoval(of: "open", visibleIDs: ["open", "older"])
         let token = try #require(tokenRequest)
         selection.reset()
+        #expect(selection.selectedID == nil)
         selection.reconcile(with: [])
         selection.reconcile(with: ["sent"])
-        selection.finishRemoval(token, removed: true, visibleIDs: ["sent"])
-        #expect(selection.selectedID == "sent")
-        selection.select(nil)
-        selection.reconcile(with: ["new", "sent"])
         #expect(selection.selectedID == nil)
+        selection.select("sent")
+        let applied = selection.finishRemoval(token, removed: true, visibleIDs: ["sent"])
+        #expect(!applied)
+        #expect(selection.selectedID == "sent")
     }
 
     @Test("Account identity disambiguates equal Gmail thread IDs")

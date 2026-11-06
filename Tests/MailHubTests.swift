@@ -93,6 +93,19 @@ struct MailHubTests {
         #expect(hub.loadedCount == 3)
     }
 
+    @Test("Deselecting closes the open conversation and returns focus to the list, once")
+    func deselecting() async {
+        let hub = await makeHub(["a": HubAPI([Self.conversation("a1", at: 100)])])
+        let model = InboxModel(hub: hub)
+        model.select(ConversationKey(accountID: "a", threadID: "a1"))
+        #expect(model.selectedID != nil)
+        model.deselect()
+        #expect(model.selectedID == nil)
+        #expect(model.listFocusRequest == 1)
+        model.deselect()
+        #expect(model.listFocusRequest == 1)
+    }
+
     @Test("Identical thread IDs in two accounts stay separate conversations")
     func sameThreadID() async {
         let hub = await makeHub([

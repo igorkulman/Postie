@@ -3,7 +3,6 @@ import Foundation
 /// Selection belongs to a conversation, never to a row position.
 struct ConversationSelection<ID: Hashable> {
     private(set) var selectedID: ID?
-    private var selectsInitialConversation = true
     private var revision = 0
     private var removals: [UUID: Removal] = [:]
 
@@ -15,27 +14,22 @@ struct ConversationSelection<ID: Hashable> {
     }
 
     mutating func select(_ id: ID?) {
-        selectsInitialConversation = false
         guard selectedID != id else { return }
         selectedID = id
         revision += 1
     }
 
-    /// A new folder may initially open its first conversation. Refreshes never do this again.
+    /// A new folder starts with nothing open, until the user picks a conversation.
     mutating func reset() {
         select(nil)
         removals = [:]
-        selectsInitialConversation = true
     }
 
     mutating func reconcile(with visibleIDs: [ID]) {
-        if selectsInitialConversation, let first = visibleIDs.first {
-            select(first)
-        } else if let selectedID, !visibleIDs.contains(selectedID) {
-            let removal = removals.values.first { $0.id == selectedID && $0.revision == revision }
-            // Background disappearance clears selection; only an explicit removal advances it.
-            select(removal?.neighbors.first { visibleIDs.contains($0) })
-        }
+        guard let selectedID, !visibleIDs.contains(selectedID) else { return }
+        let removal = removals.values.first { $0.id == selectedID && $0.revision == revision }
+        // Background disappearance clears selection; only an explicit removal advances it.
+        select(removal?.neighbors.first { visibleIDs.contains($0) })
     }
 
     /// List may emit a deselection as a selected row disappears. Apply our policy, not its row fallback.

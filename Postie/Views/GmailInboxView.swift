@@ -51,6 +51,12 @@ struct GmailInboxView: View {
         .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: actions) }
         .focusedSceneValue(\.mailActions, actions)
+        // Esc closes the open conversation, except in the search field, where it clears the search.
+        .background {
+            Button("Close", action: model.deselect)
+                .keyboardShortcut(.cancelAction).hidden()
+                .disabled(searchIsFocused)
+        }
         // Each message gets its own window, so the mailbox stays usable while writing.
         .onChange(of: model.composer) { _, draft in
             guard let draft else { return }
