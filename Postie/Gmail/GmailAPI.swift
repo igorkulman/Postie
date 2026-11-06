@@ -22,6 +22,11 @@ nonisolated protocol GmailMutating: Sendable {
     func setLabel(_ label: String, on: Bool, threadID: String) async throws
 }
 
+nonisolated protocol GmailLabelLoading: Sendable {
+    /// The names of the labels the person created, by label ID.
+    func userLabels() async throws -> [String: String]
+}
+
 nonisolated struct GmailHTTPResponse: Sendable {
     let data: Data
     let statusCode: Int
@@ -59,7 +64,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading, GmailLabelLoading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -281,6 +286,11 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         let body: Body = try await get(path: path, query: [])
         guard let data = GmailText.base64URL(body.data) else { throw GmailError.invalidResponse }
         return data
+    }
+
+    func userLabels() async throws -> [String: String] {
+        let list: GmailLabelList = try await get(path: "labels", query: [URLQueryItem(name: "fields", value: "labels(id,name,type)")])
+        return list.userLabels
     }
 
     func archive(threadID: String) async throws {

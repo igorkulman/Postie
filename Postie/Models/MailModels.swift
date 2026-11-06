@@ -81,6 +81,7 @@ struct MailThread: Identifiable, Equatable {
     var mailbox: Mailbox
     var isUnread = false
     var isStarred = false
+    var labels: [String] = []
 
     var latestMessage: MailMessage? { messages.last }
     var preview: String {

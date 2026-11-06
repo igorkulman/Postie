@@ -12,11 +12,17 @@ All notable changes to Postie are documented here. The format is based on
   sidebar. Click it to switch accounts or add another one.
 - All Inboxes above Inbox when more than one account is connected, showing every
   account's inbox together.
+- A conversation's labels, such as Inbox and the ones you created in Gmail, next
+  to its subject.
 
 ### Changed
 
 - Inbox and the other folders now show only the selected account instead of every
   account merged. Search and new messages follow the account on screen.
+
+### Fixed
+
+- Web and email addresses written out as text in an email are now clickable.
 
 ## [0.3.0] - 2026-10-14
 

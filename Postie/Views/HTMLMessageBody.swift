@@ -12,10 +12,7 @@ struct HTMLMessageBody: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if failed {
-                Text(plainText)
-                    .font(.body)
-                    .lineSpacing(3)
-                    .textSelection(.enabled)
+                PlainMessageText(text: plainText)
                 Text("Unable to display HTML. Showing plain text.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -31,6 +28,56 @@ struct HTMLMessageBody: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: html) { _, _ in failed = false }
+    }
+}
+
+/// A plain-text message body, with the web and mail addresses in it clickable.
+/// This is a text view because SwiftUI's `Text` cannot show a different cursor over just its links.
+struct PlainMessageText: NSViewRepresentable {
+    let text: String
+
+    func makeNSView(context: Context) -> NSTextView {
+        let view = NSTextView()
+        view.isEditable = false
+        view.isSelectable = true
+        view.drawsBackground = false
+        view.textContainerInset = .zero
+        view.textContainer?.lineFragmentPadding = 0
+        view.linkTextAttributes = [
+            .foregroundColor: NSColor.linkColor,
+            .underlineStyle: NSUnderlineStyle.single.rawValue,
+            .cursor: NSCursor.pointingHand
+        ]
+        return view
+    }
+
+    func updateNSView(_ view: NSTextView, context: Context) {
+        // Setting the same text again would clear the person's selection.
+        guard view.string != text else { return }
+        view.textStorage?.setAttributedString(Self.linked(text))
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSTextView, context: Context) -> CGSize? {
+        guard let width = proposal.width, width.isFinite else { return nil }
+        let height = Self.linked(text).boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude),
+                                                    options: [.usesLineFragmentOrigin, .usesFontLeading]).height
+        return CGSize(width: width, height: ceil(height))
+    }
+
+    static func linked(_ text: String) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        let result = NSMutableAttributedString(string: text, attributes: [
+            .font: NSFont.preferredFont(forTextStyle: .body),
+            .foregroundColor: NSColor.labelColor,
+            .paragraphStyle: paragraph
+        ])
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return result }
+        for match in detector.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let url = EmailHTMLPolicy.externalLink(match.url) else { continue }
+            result.addAttribute(.link, value: url, range: match.range)
+        }
+        return result
     }
 }
 
@@ -84,6 +131,9 @@ enum EmailHTMLPolicy {
         configuration.userContentController.addUserScript(WKUserScript(
             source: layoutScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: world
         ))
+        configuration.userContentController.addUserScript(WKUserScript(
+            source: linkScript, injectionTime: .atDocumentEnd, forMainFrameOnly: true, in: world
+        ))
         return configuration
     }
 
@@ -102,6 +152,7 @@ enum EmailHTMLPolicy {
         img { height: auto; }
         pre { white-space: pre-wrap; }
         a { color: LinkText; }
+        a[href] { cursor: pointer; }
         </style></head><body>\(html)</body></html>
         """
     }
@@ -110,7 +161,8 @@ enum EmailHTMLPolicy {
         guard let url, let scheme = url.scheme?.lowercased() else { return nil }
         switch scheme {
         case "http", "https": return url.host?.isEmpty == false ? url : nil
-        case "mailto": return url.path.isEmpty ? nil : url
+        // `url.path` is empty for a mail link that Foundation parsed itself, as NSDataDetector's are.
+        case "mailto": return URLComponents(url: url, resolvingAgainstBaseURL: false)?.path.isEmpty == false ? url : nil
         default: return nil
         }
     }
@@ -119,6 +171,50 @@ enum EmailHTMLPolicy {
         let data = try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed)
         return data.flatMap { String(data: $0, encoding: .utf8) } ?? "''"
     }
+
+    // Addresses written out as text become links, as Gmail shows them. Clicking one takes the same
+    // checked path as any other link in an email: see `externalLink`.
+    static let linkScript = #"""
+    (() => {
+        const address = /(?<![\w.@\/-])(?:https?:\/\/|www\.)[^\s<>"]+|(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)+/gi;
+        const trailing = /[.,;:!?'*_~\]}]+$/;
+        const count = (text, character) => text.split(character).length - 1;
+        // Punctuation after an address belongs to the sentence, and so does a ")" the address did not open.
+        const trimmed = (match) => {
+            let text = match.replace(trailing, '');
+            while (text.endsWith(')') && count(text, ')') > count(text, '(')) {
+                text = text.slice(0, -1).replace(trailing, '');
+            }
+            return text;
+        };
+        const target = (text) => {
+            if (/^https?:/i.test(text)) { return text; }
+            return (text.includes('@') ? 'mailto:' : 'http://') + text;
+        };
+        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+            acceptNode: (node) => node.parentElement.closest('a, button, script, style, textarea, select, title')
+                ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT
+        });
+        const nodes = [];
+        while (walker.nextNode()) { nodes.push(walker.currentNode); }
+        for (const node of nodes) {
+            const content = document.createDocumentFragment();
+            let end = 0;
+            for (const match of node.data.matchAll(address)) {
+                const text = trimmed(match[0]);
+                const link = document.createElement('a');
+                link.href = target(text);
+                link.textContent = text;
+                content.append(node.data.slice(end, match.index), link);
+                end = match.index + text.length;
+            }
+            if (end > 0) {
+                content.append(node.data.slice(end));
+                node.replaceWith(content);
+            }
+        }
+    })();
+    """#
 
     // App-owned code runs in an isolated content world, not the email's page world.
     static let layoutScript = """

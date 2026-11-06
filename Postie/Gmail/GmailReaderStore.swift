@@ -10,6 +10,8 @@ final class GmailReaderStore {
     private(set) var unreadInboxCount: Int?
     /// How many drafts the account has. Nil until Gmail has been asked.
     private(set) var draftCount: Int?
+    /// The names of the account's own labels, by label ID.
+    private(set) var labelNames: [String: String] = [:]
     private(set) var conversations: [GmailConversation] = [] {
         didSet { conversationsRevision &+= 1 }
     }
@@ -36,6 +38,7 @@ final class GmailReaderStore {
     @ObservationIgnored private let signatureLoader: (any GmailSignatureLoading)?
     @ObservationIgnored private let drafter: (any GmailDrafting)?
     @ObservationIgnored private let contactLoader: (any GmailContactLoading)?
+    @ObservationIgnored private let labelLoader: (any GmailLabelLoading)?
     /// Google's contacts are not asked for again before this, so a failing request is not repeated every refresh.
     @ObservationIgnored private var nextContactsFetch = Date.distantPast
     @ObservationIgnored private let cache: GmailCacheSession?
@@ -59,6 +62,7 @@ final class GmailReaderStore {
         signatureLoader = api as? any GmailSignatureLoading
         drafter = api as? any GmailDrafting
         contactLoader = api as? any GmailContactLoading
+        labelLoader = api as? any GmailLabelLoading
         self.mailbox = mailbox
         self.cache = cache
         if let cache, let syncAPI = api as? any GmailSyncReading {
@@ -85,6 +89,7 @@ final class GmailReaderStore {
         mailbox = .inbox
         unreadInboxCount = nil
         draftCount = nil
+        labelNames = [:]
         unreadCountGeneration.advance()
         accountGeneration.advance()
     }
@@ -150,11 +155,31 @@ final class GmailReaderStore {
         async let unreadCount: Void = refreshUnreadCount(for: startedAccount)
         async let drafts: Void = refreshDraftCount(for: startedAccount)
         async let contacts: Void = refreshContacts(for: startedAccount)
+        async let labels: Void = refreshLabelNames(for: startedAccount)
         if let synchronizer { await synchronize(using: synchronizer) }
         else { await loadPage(refreshing: true) }
         await unreadCount
         await drafts
         await contacts
+        await labels
+    }
+
+    /// Shows the saved names right away, then picks up any label added or renamed in Gmail since.
+    private func refreshLabelNames(for startedAccount: Generation) async {
+        guard let labelLoader, accountGeneration == startedAccount else { return }
+        if labelNames.isEmpty, let saved = try? await cache?.labelNames(), accountGeneration == startedAccount {
+            labelNames = saved
+        }
+        do {
+            let names = try await labelLoader.userLabels()
+            // Setting an unchanged value would still redraw the open conversation on every refresh.
+            guard accountGeneration == startedAccount, !Task.isCancelled, names != labelNames else { return }
+            labelNames = names
+            try await cache?.saveLabelNames(names)
+        } catch {
+            // The last known names stay.
+            if !(error is CancellationError) { Log.api.error("Could not read the labels: \(error.localizedDescription, privacy: .public)") }
+        }
     }
 
     /// Keeps a local copy of the account's Google contacts, fetched again every few hours.
