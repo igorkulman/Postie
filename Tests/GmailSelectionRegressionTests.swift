@@ -92,6 +92,27 @@ struct GmailSelectionRegressionTests {
         #expect(!hub.notices.isEmpty)
     }
 
+    @Test("A partly refused bulk archive keeps the refused thread selected, with the reason on screen")
+    func partlyRefusedBulkArchive() async throws {
+        let mail = SelectionRegressionMail()
+        let hub = try await mail.makeHub()
+        let model = InboxModel(hub: hub)
+        mail.insertNewerMail()
+        await hub.refresh()
+        let selected = [key("arrival-1"), key("open")]
+        model.updateFromList(Set(selected))
+        mail.rejectNextRemoval = true
+        model.mailActions.archive?()
+        while model.selectedCount > 1 { await Task.yield() }
+        #expect(hub.loadedCount == 2)
+        let survivor = try #require(model.selectedID)
+        #expect(selected.contains(survivor))
+        #expect(hub.conversations.map(\.key).contains(survivor))
+        // The follow-up refresh must not have erased why it is still here.
+        while hub.notices.isEmpty { await Task.yield() }
+        #expect(!hub.notices.isEmpty)
+    }
+
     @Test("External archive clears highlight and detail instead of opening newer mail")
     func externalArchive() async throws {
         let mail = SelectionRegressionMail()

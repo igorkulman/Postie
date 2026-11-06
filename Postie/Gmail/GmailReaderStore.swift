@@ -232,26 +232,27 @@ final class GmailReaderStore {
 
     /// Archives or trashes a conversation, then drops it from the loaded list right away.
     /// Returns false (with `mailboxError` set) when Gmail rejects the change.
+    /// `refreshing: false` leaves the follow-up refresh to a caller that is removing several conversations.
     @discardableResult
-    func archive(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
+    func archive(_ id: String, fromAnyFolder: Bool = false, refreshing: Bool = true, onRemoved: () -> Void = {}) async -> Bool {
         guard fromAnyFolder ? canModifyLabels : canArchive, let mutator else { return false }
-        return await mutate(id, onRemoved: onRemoved) { try await mutator.archive(threadID: id) }
+        return await mutate(id, refreshing: refreshing, onRemoved: onRemoved) { try await mutator.archive(threadID: id) }
     }
 
     @discardableResult
-    func trash(_ id: String, fromAnyFolder: Bool = false, onRemoved: () -> Void = {}) async -> Bool {
+    func trash(_ id: String, fromAnyFolder: Bool = false, refreshing: Bool = true, onRemoved: () -> Void = {}) async -> Bool {
         guard fromAnyFolder ? canModifyLabels : canTrash, let mutator else { return false }
         // In Drafts, "delete" means the drafts. Trashing the thread would also take a conversation they answer.
         if mailbox == .drafts, !fromAnyFolder, let drafter {
             let draftMessages = (conversations.first { $0.id == id } ?? selectedConversation.flatMap { $0.id == id ? $0 : nil })?
                 .messages.filter { $0.labelIDs.contains("DRAFT") }.map(\.id) ?? []
-            return await mutate(id, onRemoved: onRemoved) {
+            return await mutate(id, refreshing: refreshing, onRemoved: onRemoved) {
                 for messageID in draftMessages {
                     if let draftID = try await drafter.draftID(forMessage: messageID) { try await drafter.deleteDraft(id: draftID) }
                 }
             }
         }
-        return await mutate(id, onRemoved: onRemoved) { try await mutator.trash(threadID: id) }
+        return await mutate(id, refreshing: refreshing, onRemoved: onRemoved) { try await mutator.trash(threadID: id) }
     }
 
     var canLoadAttachments: Bool { attachmentLoader != nil }
@@ -355,7 +356,7 @@ final class GmailReaderStore {
         await refresh()
     }
 
-    private func mutate(_ id: String, onRemoved: () -> Void, _ change: () async throws -> Void) async -> Bool {
+    private func mutate(_ id: String, refreshing: Bool, onRemoved: () -> Void, _ change: () async throws -> Void) async -> Bool {
         let startedFolder = folderGeneration
         do {
             try await change()
@@ -366,7 +367,8 @@ final class GmailReaderStore {
             return false
         }
         guard folderGeneration == startedFolder else { return true }
-        mailboxError = nil
+        // Another conversation of the same batch may have just been refused.
+        if refreshing { mailboxError = nil }
         // Animate so the row slides out and its neighbors close the gap, like Mail.
         withAnimation(.easeInOut(duration: 0.25)) {
             conversations.removeAll { $0.id == id }
@@ -377,8 +379,15 @@ final class GmailReaderStore {
             onRemoved()
         }
         // Reconcile the cache and unread badge with Gmail's history.
-        await refresh()
+        if refreshing { await refresh() }
         return true
+    }
+
+    /// The refresh after removing several conversations. It would otherwise clear why Gmail refused some of them.
+    func refresh(keepingError: Bool) async {
+        let error = keepingError ? mailboxError : nil
+        await refresh()
+        if let error { mailboxError = error }
     }
 
     func refreshUnreadCount() async {
@@ -531,6 +540,13 @@ final class GmailReaderStore {
             // Keep cached bodies visible even when a newly added reply cannot be downloaded.
             conversationError = error.localizedDescription
         }
+    }
+
+    /// A conversation with all its bodies, without opening it.
+    func fullConversation(_ id: String) async throws -> GmailConversation {
+        if let saved = try? await cache?.conversation(id: id), saved.messages.allSatisfy(\.bodyLoaded) { return saved }
+        if let loaded = bodies[id] { return loaded }
+        return try await api.conversation(id: id)
     }
 
     /// Downloads the newest unread-from-network bodies in the background so opening them is instant.

@@ -22,6 +22,8 @@ subscriptions, AI features, or workspace bloat.
   message you have written asks whether to keep it, and drafts can be edited
   later from the Drafts folder
 - Archive, trash, star, and read/unread actions
+- Select several conversations with Shift or Command to archive, trash, or forward
+  them together. They are forwarded in one message
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
   Results are not stored in the local cache
@@ -120,6 +122,10 @@ chooses the next surviving older neighbor from the visible order at action time,
 then the nearest surviving newer neighbor, then no selection. Reordering never
 changes a surviving selection. Removing an unselected thread or completing an
 operation after the user changes selection does not choose a new thread.
+
+Several selected threads stay closed and unread. Removing them chooses the next
+neighbor past the oldest of them once they have all gone; threads Gmail refused
+stay selected instead.
 
 ## Tests
 

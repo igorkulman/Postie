@@ -31,6 +31,9 @@
         }
       }
     },
+    "%lld Conversations Selected" : {
+
+    },
     "%lld loaded" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from Gmail",
       "extractionState" : "stale",
@@ -178,6 +181,9 @@
 
     },
     "Could Not Open Attachment" : {
+
+    },
+    "Could not forward the conversations" : {
 
     },
     "Could not open the draft" : {
