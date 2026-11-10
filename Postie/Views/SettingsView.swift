@@ -2,6 +2,7 @@ import SwiftUI
 
 enum SettingsKey {
     static let showsDockBadge = "showsDockBadge"
+    static let messageTextSize = "messageTextSize"
 }
 
 struct SettingsView: View {

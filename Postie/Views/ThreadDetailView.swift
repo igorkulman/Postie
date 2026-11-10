@@ -116,6 +116,7 @@ private struct MessageView: View {
     let interact: () -> Void
     let minimumExpandedHeight: CGFloat?
     @State private var isExpanded: Bool
+    @AppStorage(SettingsKey.messageTextSize) private var messageTextSize = MessageTextSize.defaultSize
 
     init(message: MailMessage, expandedInitially: Bool, minimumExpandedHeight: CGFloat?,
          interact: @escaping () -> Void) {
@@ -198,11 +199,11 @@ private struct MessageView: View {
                     CalendarInvitationList(messageID: message.id)
                 }
                 if let html = message.htmlBody {
-                    HTMLMessageBody(html: html, plainText: message.body)
+                    HTMLMessageBody(html: html, plainText: message.body, messageTextSize: messageTextSize)
                         .id(message.id)
                 } else {
                     Text(message.body)
-                        .font(.body)
+                        .font(.system(size: CGFloat(MessageTextSize.clamped(messageTextSize))))
                         .lineSpacing(3)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)

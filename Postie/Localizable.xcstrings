@@ -90,6 +90,9 @@
     "Accounts" : {
       "comment" : "Settings tab and list name"
     },
+    "Actual Size" : {
+
+    },
     "Add" : {
 
     },
@@ -136,6 +139,9 @@
 
     },
     "Bcc" : {
+
+    },
+    "Bigger" : {
 
     },
     "Bold" : {
@@ -600,6 +606,9 @@
     "Sign in with Google" : {
 
     },
+    "Smaller" : {
+
+    },
     "Star conversation" : {
 
     },
@@ -616,6 +625,9 @@
 
     },
     "Tentative" : {
+
+    },
+    "Text Size" : {
 
     },
     "The Keychain could not be accessed (error %d)." : {

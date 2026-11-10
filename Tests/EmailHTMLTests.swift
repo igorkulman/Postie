@@ -101,6 +101,67 @@ struct EmailHTMLTests {
         #expect(page.view.url?.absoluteString == "about:blank")
     }
 
+    @Test("Reading size scales nested and fixed-size text once, preserves images and quotes, and resets exactly")
+    func readingTextSize() async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        _ = try await page.load("""
+        <div id="parent" style="font-size: 20px; line-height: 24px">
+            Parent <span id="child" style="font-size: 0.5em">Nested text</span>
+        </div>
+        <img id="image" width="40" height="30"
+             src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7">
+        <div class="gmail_quote">Earlier text</div>
+        """)
+        _ = try await page.inspect("document.querySelector('[data-quote-toggle]').click(); return {};")
+        let inspect = """
+        return {
+            parent: getComputedStyle(document.getElementById('parent')).fontSize,
+            child: getComputedStyle(document.getElementById('child')).fontSize,
+            lineHeight: getComputedStyle(document.getElementById('parent')).lineHeight,
+            imageWidth: document.getElementById('image').getBoundingClientRect().width,
+            expanded: document.querySelector('[data-quote-toggle]').getAttribute('aria-expanded'),
+            inlineSize: document.getElementById('child').style.getPropertyValue('font-size')
+        };
+        """
+        let original = try await page.inspect(inspect)
+        page.coordinator.setTextScale(2, in: page.view)
+        let bigger = try await page.inspect(inspect)
+        #expect(bigger["parent"] as? String == "40px")
+        #expect(bigger["child"] as? String == "20px")
+        #expect(bigger["lineHeight"] as? String == "48px")
+        #expect(bigger["imageWidth"] as? Int == 40)
+        #expect(bigger["expanded"] as? String == "true")
+
+        page.coordinator.setTextScale(1.5, in: page.view)
+        let smaller = try await page.inspect(inspect)
+        #expect(smaller["child"] as? String == "15px") // Not compounded from the previous size.
+
+        page.coordinator.setTextScale(1, in: page.view)
+        let reset = try await page.inspect(inspect)
+        #expect(reset["parent"] as? String == original["parent"] as? String)
+        #expect(reset["child"] as? String == original["child"] as? String)
+        #expect(reset["inlineSize"] as? String == original["inlineSize"] as? String)
+        #expect(reset["expanded"] as? String == "true")
+    }
+
+    @Test("A new email opens at the saved reading size and reports its enlarged height")
+    func initialReadingTextSize() async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        page.coordinator.setTextScale(2, in: page.view)
+        let height = try await page.load("<div style='font-size:20px;line-height:24px'>Hello</div>")
+        let result = try await page.inspect("""
+        return {
+            font: getComputedStyle(document.querySelector('div')).fontSize,
+            height: document.body.getBoundingClientRect().height
+        };
+        """)
+        #expect(result["font"] as? String == "40px")
+        #expect(result["height"] as? Int == 48)
+        #expect(height >= 48)
+    }
+
     @Test("Quoted history is collapsed behind a button that expands it", arguments: [
         "<div>Thanks!</div><div class=\"gmail_quote\"><div>On Monday, Ann wrote:</div><blockquote>Earlier text</blockquote></div>",
         "<div>Thanks!</div><blockquote type=\"cite\"><div>On Monday, Ann wrote:</div>Earlier text</blockquote>",
