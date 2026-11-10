@@ -105,6 +105,65 @@ struct MailHubTests {
         #expect(hub.loadedCount == 3)
     }
 
+    @Test("With several conversations selected only Archive, Trash and Forward stay available")
+    func severalSelectedActions() async throws {
+        let hub = await makeHub(["a": HubAPI([Self.conversation("a1", at: 100), Self.conversation("a2", at: 200)])])
+        let model = InboxModel(hub: hub)
+        model.updateFromList([ConversationKey(accountID: "a", threadID: "a1"), ConversationKey(accountID: "a", threadID: "a2")])
+        await model.openSelection()
+        #expect(model.selectedID == nil)
+        #expect(model.selectedCount == 2)
+        let actions = model.mailActions
+        #expect(actions.reply == nil && actions.replyAll == nil)
+        #expect(actions.archive != nil && actions.trash != nil && actions.forward != nil)
+    }
+
+    @Test("Archiving several conversations removes them all and selects the next one")
+    func archivingSeveral() async throws {
+        let api = HubAPI([Self.conversation("a1", at: 300), Self.conversation("a2", at: 200), Self.conversation("a3", at: 100)])
+        let hub = await makeHub(["a": api])
+        let model = InboxModel(hub: hub)
+        let selected = [ConversationKey(accountID: "a", threadID: "a1"), ConversationKey(accountID: "a", threadID: "a2")]
+        model.updateFromList(Set(selected))
+        let removed = await hub.remove(selected, archiving: true, onRemoved: {})
+        model.reconcileSelection()
+        #expect(removed)
+        #expect(await api.archived.sorted() == ["a1", "a2"])
+        #expect(hub.conversations.map(\.key.threadID) == ["a3"])
+    }
+
+    @Test("Removing from several accounts goes through each conversation's own account")
+    func removingAcrossAccounts() async throws {
+        let a = HubAPI([Self.conversation("a1", at: 300)])
+        let b = HubAPI([Self.conversation("b1", at: 200)])
+        let hub = await makeHub(["a": a, "b": b])
+        let keys = [ConversationKey(accountID: "a", threadID: "a1"), ConversationKey(accountID: "b", threadID: "b1")]
+        let removed = await hub.remove(keys, archiving: false, onRemoved: {})
+        #expect(removed)
+        #expect(await a.trashed == ["a1"])
+        #expect(await b.trashed == ["b1"])
+        #expect(hub.conversations.isEmpty)
+    }
+
+    @Test("Forwarding several conversations carries each one in a single draft, without opening them")
+    func forwardingSeveral() async throws {
+        let hub = await makeHub(["a": HubAPI([Self.conversation("a1", at: 200), Self.conversation("a2", at: 100)])])
+        let model = InboxModel(hub: hub)
+        let keys = [ConversationKey(accountID: "a", threadID: "a1"), ConversationKey(accountID: "a", threadID: "a2")]
+        model.updateFromList(Set(keys))
+        let forward = try #require(model.mailActions.forward)
+        forward()
+        while model.composer == nil { await Task.yield() }
+        let draft = try #require(model.composer)
+        #expect(draft.subject == "Fwd: Subject a1 and 1 more")
+        #expect(draft.kind == .forward)
+        #expect(draft.accountID == "a")
+        #expect(draft.gmailThreadID == nil)
+        #expect(draft.body.contains("Subject: Subject a1") && draft.body.contains("Subject: Subject a2"))
+        #expect(draft.html?.contains("Subject a2") == true)
+        #expect(hub.sessions.allSatisfy { $0.reader.selectedConversation == nil })
+    }
+
     @Test("Identical thread IDs in two accounts stay separate conversations")
     func sameThreadID() async {
         let hub = await makeHub([

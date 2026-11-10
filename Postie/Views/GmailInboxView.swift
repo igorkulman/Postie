@@ -79,6 +79,11 @@ struct GmailInboxView: View {
         } message: {
             Text(model.draftError ?? "")
         }
+        .alert("Could not forward the conversations", isPresented: Binding(get: { model.forwardError != nil }, set: { if !$0 { model.forwardError = nil } })) {
+            Button("OK") {}
+        } message: {
+            Text(model.forwardError ?? "")
+        }
         .onChange(of: model.listFocusRequest) {
             if !searchIsFocused, model.composer == nil { listIsFocused = true }
         }

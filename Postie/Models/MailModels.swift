@@ -163,13 +163,21 @@ extension ComposeDraft {
     }
 
     static func forward(_ thread: MailThread) -> ComposeDraft {
-        let hasPrefix = thread.subject.lowercased().hasPrefix("fwd:") || thread.subject.lowercased().hasPrefix("fw:")
-        let subject = hasPrefix ? thread.subject : "Fwd: " + thread.subject
+        forward([thread])
+    }
+
+    /// One message carrying every thread, named after the first of them.
+    static func forward(_ threads: [MailThread]) -> ComposeDraft {
+        let first = threads.first?.subject ?? ""
+        let hasPrefix = first.lowercased().hasPrefix("fwd:") || first.lowercased().hasPrefix("fw:")
+        var subject = hasPrefix ? first : "Fwd: " + first
+        if threads.count > 1 { subject += " and \(threads.count - 1) more" }
         var body = ""
         var html = HTMLText.emptyLine
-        if let message = thread.latestMessage {
+        for thread in threads {
+            guard let message = thread.latestMessage else { continue }
             let ccHeader = message.cc.isEmpty ? "" : "\nCc: \(message.cc)"
-            body = """
+            body += """
 
 
             ---------- Forwarded message ----------

@@ -588,21 +588,58 @@ final class MailHub {
     }
 
     @discardableResult
-    func archive(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+    func archive(_ key: ConversationKey, refreshing: Bool = true, onRemoved: () -> Void = {}) async -> Bool {
         let generation = searchGeneration
-        return await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive) {
+        return await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive, refreshing: refreshing) {
             if self.searchGeneration == generation { self.removeSearchResult(key) }
             onRemoved()
         } ?? false
     }
 
     @discardableResult
-    func trash(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+    func trash(_ key: ConversationKey, refreshing: Bool = true, onRemoved: () -> Void = {}) async -> Bool {
         let generation = searchGeneration
-        return await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive) {
+        return await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive, refreshing: refreshing) {
             if self.searchGeneration == generation { self.removeSearchResult(key) }
             onRemoved()
         } ?? false
+    }
+
+    /// Archives or trashes conversations a few at a time, then brings each of their accounts up to date once.
+    /// `onRemoved` runs as each row goes. Returns whether any conversation was removed.
+    func remove(_ keys: [ConversationKey], archiving: Bool, onRemoved: @escaping @MainActor @Sendable () -> Void) async -> Bool {
+        let results = await withTaskGroup(of: Removal.self) { group in
+            var results: [Removal] = []
+            for (index, key) in keys.enumerated() {
+                if index >= 4, let result = await group.next() { results.append(result) }
+                group.addTask { await self.remove(key, archiving: archiving, onRemoved: onRemoved) }
+            }
+            for await result in group { results.append(result) }
+            return results
+        }
+        let refusedAccounts = Set(results.filter { !$0.removed }.map(\.key.accountID))
+        for accountID in Set(keys.map(\.accountID)) {
+            await session(for: accountID)?.reader.refresh(keepingError: refusedAccounts.contains(accountID))
+        }
+        return results.contains { $0.removed }
+    }
+
+    private nonisolated struct Removal: Sendable {
+        let key: ConversationKey
+        let removed: Bool
+    }
+
+    private func remove(_ key: ConversationKey, archiving: Bool, onRemoved: @MainActor @Sendable () -> Void) async -> Removal {
+        let removed = archiving
+            ? await archive(key, refreshing: false) { onRemoved() }
+            : await trash(key, refreshing: false) { onRemoved() }
+        return Removal(key: key, removed: removed)
+    }
+
+    /// A conversation with all its bodies, without opening it.
+    func fullConversation(_ key: ConversationKey) async throws -> GmailConversation {
+        guard let reader = session(for: key.accountID)?.reader else { throw GmailError.signInRequired }
+        return try await reader.fullConversation(key.threadID)
     }
 
     func setUnread(_ key: ConversationKey, _ unread: Bool) async {

@@ -6,6 +6,12 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Select several conversations with Shift or Command to archive them, move them to
+  the Trash, or forward them together in one message. Reply and Reply All are
+  disabled while several are selected.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed
