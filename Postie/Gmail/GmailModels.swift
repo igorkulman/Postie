@@ -1,7 +1,7 @@
 import Foundation
 
 /// A file attached to a message. Embedded images that the HTML body shows inline are not attachments.
-nonisolated struct MailAttachment: Identifiable, Equatable, Hashable, Sendable {
+nonisolated struct MailAttachment: Identifiable, Codable, Equatable, Hashable, Sendable {
     let messageID: String
     /// Position in the MIME tree. Gmail may reissue `attachmentID`, so this is what identifies the file.
     let partID: String
@@ -26,6 +26,7 @@ nonisolated struct GmailMessage: Identifiable, Equatable, Sendable {
     var bodyLoaded: Bool = true
     var htmlBody: String? = nil
     var attachments: [MailAttachment] = []
+    var calendarSources: [CalendarSource] = []
     var replyTo = ""
     var labelIDs: Set<String>
 }
@@ -181,6 +182,7 @@ nonisolated struct GmailThreadResource: Decodable, Sendable {
                 snippet: GmailText.decodeEntities(message.snippet ?? (message.id == sorted.last?.id ? fallbackSnippet : nil) ?? ""),
                 body: content?.plainText ?? "", bodyLoaded: includeBody, htmlBody: content?.html,
                 attachments: message.payload?.attachments(messageID: message.id) ?? [],
+                calendarSources: message.payload?.calendarSources(messageID: message.id) ?? [],
                 replyTo: GmailText.decodeHeader(message.payload?.header("Reply-To") ?? ""),
                 labelIDs: Set(message.labelIds ?? [])
             )

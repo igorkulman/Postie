@@ -10,6 +10,8 @@ nonisolated struct OutgoingMessage: Sendable, Equatable {
     /// The plain-text version. With `htmlBody` it is the alternative for clients that cannot show HTML.
     var body: String
     var htmlBody: String?
+    /// A scheduling reply is a MIME alternative, not just a downloadable file.
+    var calendarReply: Data? = nil
     var attachments: [OutgoingAttachment] = []
     /// Gmail thread to attach a reply to. Forwards and new messages start a new thread.
     var threadID: String?
@@ -116,12 +118,19 @@ nonisolated enum GmailMessageBuilder {
     private static func contentPart(_ message: OutgoingMessage) -> (headers: String, body: String) {
         let plainHeaders = "Content-Type: text/plain; charset=UTF-8\r\nContent-Transfer-Encoding: base64"
         let plain = encodedBody(message.body)
-        guard let html = message.htmlBody else { return (plainHeaders, plain) }
+        guard message.htmlBody != nil || message.calendarReply != nil else { return (plainHeaders, plain) }
         let boundary = "postie-alt-" + UUID().uuidString
         let htmlHeaders = "Content-Type: text/html; charset=UTF-8\r\nContent-Transfer-Encoding: base64"
-        let body = "--\(boundary)\r\n" + plainHeaders + "\r\n\r\n" + plain + "\r\n"
-            + "--\(boundary)\r\n" + htmlHeaders + "\r\n\r\n" + encodedBody(html) + "\r\n"
-            + "--\(boundary)--\r\n"
+        var body = "--\(boundary)\r\n" + plainHeaders + "\r\n\r\n" + plain + "\r\n"
+        if let html = message.htmlBody {
+            body += "--\(boundary)\r\n" + htmlHeaders + "\r\n\r\n" + encodedBody(html) + "\r\n"
+        }
+        if let reply = message.calendarReply {
+            body += "--\(boundary)\r\nContent-Type: text/calendar; charset=UTF-8; method=REPLY; component=VEVENT\r\n"
+                + "Content-Disposition: inline; filename=\"reply.ics\"\r\nContent-Transfer-Encoding: base64\r\n\r\n"
+                + wrapped(reply) + "\r\n"
+        }
+        body += "--\(boundary)--\r\n"
         return ("Content-Type: multipart/alternative; boundary=\"\(boundary)\"", body)
     }
 

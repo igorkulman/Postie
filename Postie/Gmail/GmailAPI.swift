@@ -59,7 +59,7 @@ nonisolated struct GmailURLTransport: GmailTransport {
 }
 
 // Reads are GETs; the only writes are archive and trash. Parsing and networking run off the UI actor.
-actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading {
+actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, GmailDrafting, GmailSignatureLoading, GmailContactLoading, GmailAttachmentLoading, GoogleCalendarReading {
     private let transport: any GmailTransport
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
@@ -269,8 +269,9 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             Log.attachments.notice("Attachment ID was rejected (HTTP \(code, privacy: .public)), looking it up again")
             let message: GmailThreadResource.Message = try await get(path: try messagePath(attachment.messageID),
                                                                      query: [URLQueryItem(name: "format", value: "full")])
-            guard let fresh = message.payload?.attachments(messageID: attachment.messageID)
-                .first(where: { $0.partID == attachment.partID }) else { throw GmailError.http(code) }
+            let files = (message.payload?.attachments(messageID: attachment.messageID) ?? [])
+                + (message.payload?.calendarSources(messageID: attachment.messageID).compactMap(\.attachment) ?? [])
+            guard let fresh = files.first(where: { $0.partID == attachment.partID }) else { throw GmailError.http(code) }
             return try await download(messageID: fresh.messageID, attachmentID: fresh.attachmentID)
         }
     }
@@ -425,6 +426,31 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             + fetch(path: "otherContacts", fields: URLQueryItem(name: "readMask", value: "names,emailAddresses"), saved: false)
     }
 
+    /// Searches by RFC 5545 UID, never by subject or date, and never expands a whole agenda.
+    func calendarStatus(for invitation: CalendarInvitation) async throws -> GoogleCalendarStatus? {
+        var events: [GoogleCalendarEvents.Event] = []
+        var pageToken: String?
+        var seen: Set<String> = []
+        repeat {
+            var query = [
+                URLQueryItem(name: "iCalUID", value: invitation.uid),
+                URLQueryItem(name: "singleEvents", value: "false"),
+                URLQueryItem(name: "showHiddenInvitations", value: "true"),
+                URLQueryItem(name: "showDeleted", value: "true"),
+                URLQueryItem(name: "maxAttendees", value: "1"),
+                URLQueryItem(name: "maxResults", value: "250"),
+                URLQueryItem(name: "fields", value: "nextPageToken,items(iCalUID,sequence,recurringEventId,recurrence,originalStartTime(date,dateTime,timeZone),attendees(self,responseStatus))")
+            ]
+            if let pageToken { query.append(URLQueryItem(name: "pageToken", value: pageToken)) }
+            let page: GoogleCalendarEvents = try await get(path: "calendars/primary/events", query: query,
+                                                           base: "https://www.googleapis.com/calendar/v3/", httpError: GoogleCalendarError.fromHTTP)
+            events += page.items ?? []
+            pageToken = page.nextPageToken.flatMap { $0.isEmpty ? nil : $0 }
+            if let pageToken, !seen.insert(pageToken).inserted || seen.count > 20 { throw GmailError.invalidResponse }
+        } while pageToken != nil
+        return GoogleCalendarEvents.status(for: invitation, in: events)
+    }
+
     func signature() async throws -> String {
         let list: GmailSendAsList = try await get(path: "settings/sendAs", query: [
             URLQueryItem(name: "fields", value: "sendAs(sendAsEmail,isPrimary,isDefault,signature)")
@@ -481,7 +507,8 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     private func get<Value: Decodable & Sendable>(path: String, query: [URLQueryItem],
-                                                  base: String = "https://gmail.googleapis.com/gmail/v1/users/me/") async throws -> Value {
+                                                  base: String = "https://gmail.googleapis.com/gmail/v1/users/me/",
+                                                  httpError: @Sendable (GmailHTTPResponse) -> any Error = { GmailError.http($0.statusCode) }) async throws -> Value {
         try Task.checkCancellation()
         let token = try await accessToken()
         try Task.checkCancellation()
@@ -496,7 +523,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let response = try await send(request)
         try Task.checkCancellation()
-        guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
+        guard (200..<300).contains(response.statusCode) else { throw httpError(response) }
         // Gmail answers 204 with no body for an empty list, such as the drafts of an account without any.
         let body = response.data.isEmpty ? Data("{}".utf8) : response.data
         do { return try JSONDecoder().decode(Value.self, from: body) }

@@ -4,9 +4,6 @@
     "" : {
 
     },
-    "& %lld more" : {
-      "comment" : "After the first attachment's name in the message list"
-    },
     "%lld cached" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from the local cache",
       "extractionState" : "stale",
@@ -78,13 +75,22 @@
         }
       }
     },
+    "& %lld more" : {
+      "comment" : "After the first attachment's name in the message list"
+    },
+    "A newer invitation is available" : {
+
+    },
+    "Accept" : {
+
+    },
+    "Accepted" : {
+
+    },
     "Accounts" : {
       "comment" : "Settings tab and list name"
     },
     "Add" : {
-
-    },
-    "Add a Gmail account to read and send mail." : {
 
     },
     "Add Account…" : {
@@ -96,14 +102,17 @@
     "Add Link" : {
 
     },
+    "Add a Gmail account to read and send mail." : {
+
+    },
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
 
     },
     "All Mail" : {
 
     },
-    "and %lld more" : {
-      "comment" : "VoiceOver: the number of attachments besides the first one"
+    "All day" : {
+
     },
     "Archive" : {
       "comment" : "Mailbox name"
@@ -117,13 +126,16 @@
     "Attachment %@" : {
       "comment" : "VoiceOver label of an attachment; the file name follows"
     },
+    "Awaiting response" : {
+
+    },
     "B" : {
 
     },
-    "Bcc" : {
+    "BCC email addresses" : {
 
     },
-    "BCC email addresses" : {
+    "Bcc" : {
 
     },
     "Bold" : {
@@ -132,22 +144,43 @@
     "Bulleted List" : {
 
     },
+    "CC email addresses" : {
+
+    },
+    "Calendar access was not granted. Your mail still works normally." : {
+
+    },
+    "Calendar invitation" : {
+
+    },
+    "Calendar response" : {
+
+    },
+    "Calendar response unavailable" : {
+
+    },
     "Cancel" : {
+
+    },
+    "Cancelled event" : {
 
     },
     "Cc" : {
       "comment" : "Label of the carbon-copy field in the composer"
     },
-    "CC email addresses" : {
-
-    },
     "Cc: %@" : {
       "comment" : "Header line in an expanded message: the Cc recipients"
+    },
+    "Check for Updates…" : {
+
     },
     "Check for updates automatically" : {
 
     },
-    "Check for Updates…" : {
+    "Checking your Calendar response…" : {
+
+    },
+    "Choose the same Google account to connect its calendar. No account was changed." : {
 
     },
     "Clear Formatting" : {
@@ -160,6 +193,12 @@
       "comment" : "VoiceOver value of a message that is showing only a summary"
     },
     "Collapses the message" : {
+
+    },
+    "Connect Calendar to see replies made in Gmail or other calendar apps." : {
+
+    },
+    "Connect Google Calendar…" : {
 
     },
     "Connected accounts" : {
@@ -183,6 +222,21 @@
     "Could not open the draft" : {
 
     },
+    "Could not read your Calendar response. Check your connection, then try refreshing." : {
+
+    },
+    "Current response" : {
+
+    },
+    "Date not provided" : {
+
+    },
+    "Decline" : {
+
+    },
+    "Declined" : {
+
+    },
     "Default" : {
       "comment" : "Badge on the account that new messages are sent from"
     },
@@ -202,6 +256,9 @@
 
     },
     "Edit Draft" : {
+
+    },
+    "Enable Google Calendar API…" : {
 
     },
     "Expanded" : {
@@ -243,23 +300,41 @@
     "Gmail returned a response that could not be read." : {
 
     },
+    "Google Calendar API is disabled for this app's Google Cloud project. Reconnecting will not fix this. Enable the API, then refresh your response." : {
+
+    },
+    "Google Calendar access was denied (HTTP 403). Check your Google Workspace policy or this app's configuration." : {
+
+    },
+    "Google Calendar could not complete the request (HTTP %lld). Try refreshing." : {
+
+    },
+    "Google Calendar is temporarily rate-limiting requests. Try refreshing shortly." : {
+
+    },
     "Google sign-in returned an unexpected response. Please try again." : {
 
     },
     "Google sign-in was not completed (%@)." : {
 
     },
-    "Hide quoted text" : {
-      "comment" : "Tooltip of the button that collapses the quoted history of an email"
+    "Guests (%lld)" : {
+
     },
     "HTML email body" : {
       "comment" : "Accessibility label for the web view showing a formatted email"
+    },
+    "Hide quoted text" : {
+      "comment" : "Tooltip of the button that collapses the quoted history of an email"
     },
     "I" : {
 
     },
     "Inbox" : {
       "comment" : "Mailbox name"
+    },
+    "Invitation says: %@" : {
+
     },
     "Italic" : {
 
@@ -271,6 +346,9 @@
       "comment" : "VoiceOver label of a progress spinner"
     },
     "Loading conversation…" : {
+
+    },
+    "Loading invitation…" : {
 
     },
     "Loading mail…" : {
@@ -300,6 +378,9 @@
     "Mark as Unread" : {
 
     },
+    "Maybe" : {
+
+    },
     "Message" : {
       "comment" : "Menu title"
     },
@@ -321,14 +402,14 @@
     "Needs sign-in" : {
       "comment" : "Shown next to an account whose Google access was revoked or expired"
     },
-    "New message" : {
-      "comment" : "Composer title"
-    },
     "New Message" : {
 
     },
     "New Message (⌘N)" : {
 
+    },
+    "New message" : {
+      "comment" : "Composer title"
     },
     "No Accounts" : {
 
@@ -340,6 +421,12 @@
 
     },
     "No matching mail" : {
+
+    },
+    "No response found in your primary Google Calendar." : {
+
+    },
+    "Not responded" : {
 
     },
     "Not sent: %@" : {
@@ -357,10 +444,16 @@
     "Open Draft" : {
 
     },
+    "Open meeting link" : {
+
+    },
     "Opening mailbox…" : {
 
     },
     "Opening saved mail…" : {
+
+    },
+    "Organizer" : {
 
     },
     "Outbox" : {
@@ -375,7 +468,13 @@
     "Postie can no longer sync %@. Sign in again to update it; downloaded messages can still be read." : {
 
     },
+    "Postie cannot display this calendar invitation. Use the original email or calendar attachment below." : {
+
+    },
     "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access." : {
+
+    },
+    "RSVP is unavailable for this invitation from this account. Use the original email for more options." : {
 
     },
     "Read" : {
@@ -391,6 +490,12 @@
       "comment" : "Button that signs a disconnected account in again"
     },
     "Reconnect Gmail" : {
+
+    },
+    "Reconnect Google Calendar…" : {
+
+    },
+    "Refresh response" : {
 
     },
     "Refresh to check for new mail." : {
@@ -411,6 +516,12 @@
     "Remove…" : {
 
     },
+    "Repeating event · reply applies to the series" : {
+
+    },
+    "Replies are sent to the organizer from %@." : {
+
+    },
     "Reply" : {
       "comment" : "Composer title"
     },
@@ -423,7 +534,13 @@
     "Reply All (⇧⌘R)" : {
 
     },
+    "Reply sent: %@" : {
+
+    },
     "Reply-To: %@" : {
+
+    },
+    "Response from Google Calendar" : {
 
     },
     "Save" : {
@@ -454,6 +571,9 @@
 
     },
     "Send" : {
+
+    },
+    "Send %@ to the organizer" : {
 
     },
     "Send Now" : {
@@ -495,13 +615,19 @@
     "Subject" : {
 
     },
-    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
+    "Tentative" : {
 
     },
     "The Keychain could not be accessed (error %d)." : {
 
     },
+    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
+
+    },
     "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message." : {
+
+    },
+    "This invitation cannot be answered from this account, or a newer invitation is available." : {
 
     },
     "This message body has not been downloaded. Connect to Gmail to read it." : {
@@ -511,6 +637,9 @@
 
     },
     "This message is an unsent draft." : {
+
+    },
+    "This occurrence only" : {
 
     },
     "To" : {
@@ -573,6 +702,12 @@
     "Unread" : {
       "comment" : "Swipe action label (mark as unread) and VoiceOver state of an unread conversation"
     },
+    "Untitled event" : {
+
+    },
+    "Updated invitation" : {
+
+    },
     "Waiting to be sent" : {
 
     },
@@ -591,8 +726,17 @@
     "You're all set" : {
       "comment" : "Onboarding: shown after the first account is connected"
     },
+    "Your Calendar authorization has expired. Reconnect Google Calendar to try again." : {
+
+    },
     "Your Google session has expired. Sign out and sign in again." : {
 
+    },
+    "Your response: %@" : {
+
+    },
+    "and %lld more" : {
+      "comment" : "VoiceOver: the number of attachments besides the first one"
     }
   },
   "version" : "1.0"

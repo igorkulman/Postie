@@ -142,6 +142,9 @@ actor GmailCache {
             );
             """)
         }
+        migrator.registerMigration("calendar-v3") { db in
+            try db.execute(sql: "ALTER TABLE messages ADD COLUMN calendarSources BLOB")
+        }
         try migrator.migrate(database)
     }
 
@@ -418,10 +421,17 @@ actor GmailCache {
                 MailAttachment(messageID: messageID, partID: row["partID"], attachmentID: row["attachmentID"],
                                filename: row["filename"], mimeType: row["mimeType"], size: row["size"])
             }
+            // NULL means this row predates calendar support. An explicit empty array
+            // means its MIME tree was scanned and must remain authoritative (e.g. forwarded mail).
+            let calendarSources = (row["calendarSources"] as Data?).flatMap {
+                try? JSONDecoder().decode([CalendarSource].self, from: $0)
+            }
             return GmailMessage(id: messageID, senderName: row["senderName"], senderEmail: row["senderEmail"],
                                 recipient: row["recipient"], cc: row["cc"], date: Date(timeIntervalSince1970: row["date"]),
                                 snippet: row["snippet"], body: (row["body"] as String?) ?? "", bodyLoaded: row["bodyLoaded"],
-                                htmlBody: row["htmlBody"], attachments: attachments, replyTo: row["replyTo"],
+                                htmlBody: row["htmlBody"], attachments: attachments,
+                                calendarSources: calendarSources ?? CalendarSource.fromAttachments(attachments),
+                                replyTo: row["replyTo"],
                                 labelIDs: Set(labels))
         }
         return GmailConversation(id: id, subject: subject, messages: messages)
@@ -454,6 +464,13 @@ actor GmailCache {
                                  message.recipient, message.cc, message.date.timeIntervalSince1970, message.snippet,
                                  message.bodyLoaded ? message.body : nil, message.htmlBody, message.bodyLoaded,
                                  message.replyTo, keepBody, keepBody, keepBody])
+            // Metadata knows the part references but not the inline bytes. Keep downloaded
+            // calendar content just as we keep the message body on metadata-only refreshes.
+            try db.execute(sql: """
+                UPDATE messages SET calendarSources = CASE WHEN ? AND calendarSources IS NOT NULL AND calendarSources != ?
+                    THEN calendarSources ELSE ? END WHERE accountID = ? AND id = ?
+                """, arguments: [keepBody, try JSONEncoder().encode([CalendarSource]()),
+                                 try JSONEncoder().encode(message.calendarSources), accountID, message.id])
             try db.execute(sql: "DELETE FROM attachments WHERE accountID = ? AND messageID = ?", arguments: [accountID, message.id])
             for (position, attachment) in message.attachments.enumerated() {
                 try db.execute(sql: """

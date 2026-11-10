@@ -104,6 +104,102 @@ struct AccountStoreTests {
         #expect(store.error != nil)
     }
 
+    @Test("Calendar permission upgrades only the selected account and survives restoring credentials")
+    func calendarGrant() async throws {
+        let vault = MemoryAccountVault()
+        let (store, script, web, _) = makeStore(vault: vault)
+        await add(store, script, sub: "u1", email: "a@example.com")
+        let added = store.accounts[0].addedAt
+        #expect(!store.hasCalendarAccess("u1"))
+        #expect(!store.accounts[0].needsReconnect)
+        script.scope += " https://www.googleapis.com/auth/calendar.events.readonly"
+        store.enableCalendarAccess("u1")
+        while store.isBusy { await Task.yield() }
+        #expect(store.accounts.map(\.id) == ["u1"])
+        #expect(store.accounts[0].addedAt == added)
+        #expect(store.hasCalendarAccess("u1"))
+        let url = try #require(web.urls.last)
+        let query = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems)
+        #expect(query.first { $0.name == "login_hint" }?.value == "a@example.com")
+        #expect(query.first { $0.name == "scope" }?.value?.contains("calendar.events.readonly") == true)
+        let (restored, _, _, _) = makeStore(vault: vault)
+        restored.restore()
+        #expect(restored.hasCalendarAccess("u1"))
+    }
+
+    @Test("Declining optional Calendar access does not disconnect mail; cancelling leaves it unchanged")
+    func calendarDenied() async throws {
+        let (store, script, web, _) = makeStore()
+        await add(store, script, sub: "u1", email: "a@example.com")
+        store.enableCalendarAccess("u1")
+        while store.isBusy { await Task.yield() }
+        #expect(!store.hasCalendarAccess("u1"))
+        #expect(store.error != nil)
+        #expect(store.calendarConnectionErrors["u1"] != nil)
+        #expect(!store.accounts[0].needsReconnect)
+        #expect(try await store.accessToken(for: "u1") == "access-1")
+        web.cancels = true
+        store.enableCalendarAccess("u1")
+        while store.isBusy { await Task.yield() }
+        #expect(store.error == nil)
+        #expect(store.calendarConnectionErrors["u1"] == nil)
+        #expect(store.accounts.map(\.id) == ["u1"])
+        #expect(try await store.accessToken(for: "u1") == "access-1")
+    }
+
+    @Test("Choosing a different Google account for Calendar never replaces or adds an account")
+    func calendarWrongAccount() async throws {
+        let vault = MemoryAccountVault()
+        let (store, script, _, _) = makeStore(vault: vault)
+        await add(store, script, sub: "u1", email: "a@example.com")
+        script.next = ("u2", "b@example.com")
+        script.scope += " https://www.googleapis.com/auth/calendar.events.readonly"
+        store.enableCalendarAccess("u1")
+        while store.isBusy { await Task.yield() }
+        #expect(store.accounts.map(\.id) == ["u1"])
+        #expect(try vault.loadAll().map(\.id) == ["u1"])
+        #expect(store.calendarConnectionErrors["u1"] != nil)
+        #expect(store.calendarConnectionErrors["u2"] == nil)
+        #expect(!store.hasCalendarAccess("u1"))
+        #expect(store.error != nil)
+    }
+
+    @Test("Successful Calendar reconnect invalidates a failed lookup even when the permission was already granted")
+    func calendarReconnectReloadsStatus() async throws {
+        let (store, script, web, _) = makeStore()
+        script.scope += " https://www.googleapis.com/auth/calendar.events.readonly"
+        await add(store, script, sub: "u1", email: "a@example.com")
+        let mail = GmailConversation(id: "t", subject: "Invitation", messages: [CalendarFixtures.message("m")])
+        let api = HubAPI([mail])
+        await api.setCalendarResult(.failure(.http(403)))
+        let hub = MailHub(accounts: store, persistsMail: false, syncsInBackground: false) { _ in api }
+        await hub.reconcile()
+        let model = CalendarConversationModel(hub: hub, key: ConversationKey(accountID: "u1", threadID: "t"))
+        let invitation = try CalendarFixtures.parse()
+        await model.load(mail)
+        #expect(model.calendarStatusMessage(for: invitation) != nil)
+        let before = model.loadRequest(for: mail)
+        #expect(store.hasCalendarAccess("u1"))
+        store.enableCalendarAccess("u1")
+        while store.isBusy { await Task.yield() }
+        #expect(store.hasCalendarAccess("u1"))
+        #expect(model.loadRequest(for: mail) != before, "The view's task must rerun after successful same-scope sign-in")
+        await api.setCalendarResult(.success(.accepted))
+        await model.load(mail)
+        #expect(model.calendarStatus(for: invitation) == .accepted)
+        #expect(model.calendarStatusMessage(for: invitation) == nil)
+        let renewed = model.loadRequest(for: mail)
+        web.cancels = true
+        store.enableCalendarAccess("u1")
+        while store.isBusy { await Task.yield() }
+        #expect(model.loadRequest(for: mail) == renewed, "Cancelling sign-in must not invalidate a working snapshot")
+        web.cancels = false
+        await add(store, script, sub: "u2", email: "b@example.com")
+        store.enableCalendarAccess("u2")
+        while store.isBusy { await Task.yield() }
+        #expect(model.loadRequest(for: mail) == renewed, "Another account's reconnect must not reload this account's invitations")
+    }
+
     @Test("Concurrent requests share one token refresh")
     func sharedRefresh() async throws {
         let stale = StoredAccount(

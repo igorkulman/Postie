@@ -194,6 +194,9 @@ private struct MessageView: View {
                     AttachmentList(attachments: message.attachments)
                         .padding(.leading, 42)
                 }
+                if !message.calendarSources.isEmpty {
+                    CalendarInvitationList(messageID: message.id)
+                }
                 if let html = message.htmlBody {
                     HTMLMessageBody(html: html, plainText: message.body)
                         .id(message.id)

@@ -78,6 +78,23 @@ struct GoogleOAuthTests {
         #expect(scopes.isSuperset(of: GoogleOAuthClient.requiredScopes))
     }
 
+    @Test("Calendar access is opt-in, read-only, and never required for mail")
+    func optionalCalendarScope() throws {
+        let pkce = GoogleOAuthClient.makePKCE()
+        func scopes(_ url: URL) throws -> Set<String> {
+            let value = try #require(URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?
+                .first(where: { $0.name == "scope" })?.value)
+            return Set(value.split(separator: " ").map(String.init))
+        }
+        let mail = try scopes(client.authorizationURL(pkce))
+        let calendar = try scopes(client.authorizationURL(pkce, calendarAccess: true))
+        #expect(!mail.contains("https://www.googleapis.com/auth/calendar.events.readonly"))
+        #expect(calendar.subtracting(mail) == ["https://www.googleapis.com/auth/calendar.events.readonly"])
+        #expect(!GoogleOAuthClient.requiredScopes.contains("https://www.googleapis.com/auth/calendar.events.readonly"))
+        #expect(!calendar.contains("https://www.googleapis.com/auth/calendar"))
+        #expect(!calendar.contains("https://www.googleapis.com/auth/calendar.events"))
+    }
+
     @Test("The redirect is checked against the request's state")
     func callback() throws {
         let pkce = GoogleOAuthClient.makePKCE()

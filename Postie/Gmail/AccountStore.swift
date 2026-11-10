@@ -11,6 +11,9 @@ final class AccountStore {
         let addedAt: Date
         /// The refresh token was revoked or the Keychain entry is unusable; mail already downloaded stays readable.
         var needsReconnect = false
+        var hasCalendarAccess = false
+        /// A successful sign-in must refresh dependents even when its granted scopes are unchanged.
+        var authorizationID = UUID()
 
         var id: String { identity.id }
         var email: String { identity.email }
@@ -19,6 +22,7 @@ final class AccountStore {
     private(set) var accounts: [Entry] = []
     private(set) var isBusy = false
     var error: String?
+    private(set) var calendarConnectionErrors: [String: String] = [:]
     private var storedDefaultID: String?
 
     @ObservationIgnored private var credentials: [String: GoogleCredentials] = [:]
@@ -72,7 +76,8 @@ final class AccountStore {
             let stored = try vault.loadAll()
             credentials = Dictionary(uniqueKeysWithValues: stored.map { ($0.id, $0.credentials) })
             accounts = stored.sorted { ($0.addedAt, $0.id) < ($1.addedAt, $1.id) }
-                .map { Entry(identity: $0.identity, addedAt: $0.addedAt, needsReconnect: !$0.credentials.grants(GoogleOAuthClient.requiredScopes)) }
+                .map { Entry(identity: $0.identity, addedAt: $0.addedAt, needsReconnect: !$0.credentials.grants(GoogleOAuthClient.requiredScopes),
+                             hasCalendarAccess: $0.credentials.scopes.contains(GoogleOAuthClient.calendarEventsScope)) }
         } catch {
             Log.accounts.error("Could not read the saved accounts: \(error.localizedDescription)")
             self.error = error.localizedDescription
@@ -80,34 +85,50 @@ final class AccountStore {
     }
 
     /// Signs in a Google account and adds it. Signing in an account that is already connected renews its credentials.
-    func addAccount(loginHint: String? = nil) {
+    func addAccount(loginHint: String? = nil, calendarAccountID: String? = nil) {
         guard !isBusy, let oauth else { return }
         isBusy = true
         error = nil
+        if let calendarAccountID { calendarConnectionErrors[calendarAccountID] = nil }
         signInTask = Task { [weak self] in
             guard let self else { return }
             defer { self.isBusy = false; self.signInTask = nil }
             do {
                 let pkce = GoogleOAuthClient.makePKCE()
                 let callback = try await webSignIn.authenticate(
-                    url: oauth.authorizationURL(pkce, loginHint: loginHint), callbackScheme: oauth.redirectScheme
+                    url: oauth.authorizationURL(pkce, loginHint: loginHint, calendarAccess: calendarAccountID != nil), callbackScheme: oauth.redirectScheme
                 )
                 let code = try oauth.authorizationCode(from: callback, expecting: pkce)
                 let (identity, newCredentials) = try await oauth.exchange(code: code, pkce: pkce)
                 try Task.checkCancellation()
                 guard newCredentials.grants(GoogleOAuthClient.requiredScopes) else { throw GmailError.permissionRequired }
+                if let calendarAccountID, identity.id != calendarAccountID { throw GoogleCalendarError.wrongAccount }
                 try accept(identity, newCredentials)
+                if calendarAccountID != nil, !newCredentials.scopes.contains(GoogleOAuthClient.calendarEventsScope) {
+                    throw GoogleCalendarError.permissionRequired
+                }
             } catch is CancellationError {
             } catch GoogleAuthError.cancelled {
             } catch {
                 Log.accounts.error("Signing in failed: \(error.localizedDescription)")
                 self.error = error.localizedDescription
+                if let calendarAccountID { self.calendarConnectionErrors[calendarAccountID] = error.localizedDescription }
             }
         }
     }
 
     func reconnect(_ id: String) {
-        addAccount(loginHint: accounts.first { $0.id == id }?.email)
+        let account = accounts.first { $0.id == id }
+        addAccount(loginHint: account?.email, calendarAccountID: account?.hasCalendarAccess == true ? id : nil)
+    }
+
+    func enableCalendarAccess(_ id: String) {
+        guard let account = accounts.first(where: { $0.id == id }) else { return }
+        addAccount(loginHint: account.email, calendarAccountID: id)
+    }
+
+    func hasCalendarAccess(_ id: String) -> Bool {
+        accounts.first { $0.id == id }?.hasCalendarAccess == true
     }
 
     func cancelSignIn() { signInTask?.cancel() }
@@ -121,6 +142,7 @@ final class AccountStore {
             return
         }
         credentials[id] = nil
+        calendarConnectionErrors[id] = nil
         refreshes[id]?.cancel()
         refreshes[id] = nil
         accounts.removeAll { $0.id == id }
@@ -145,6 +167,9 @@ final class AccountStore {
             guard accounts.contains(where: { $0.id == id }) else { throw GmailError.signInRequired }
             refreshes[id] = nil
             credentials[id] = refreshed
+            if let index = accounts.firstIndex(where: { $0.id == id }) {
+                accounts[index].hasCalendarAccess = refreshed.scopes.contains(GoogleOAuthClient.calendarEventsScope)
+            }
             if let entry = accounts.first(where: { $0.id == id }) {
                 try? vault.save(StoredAccount(identity: entry.identity, credentials: refreshed, addedAt: entry.addedAt))
             }
@@ -165,7 +190,9 @@ final class AccountStore {
         let addedAt = accounts.first { $0.id == identity.id }?.addedAt ?? Date()
         try vault.save(StoredAccount(identity: identity, credentials: newCredentials, addedAt: addedAt))
         credentials[identity.id] = newCredentials
-        let entry = Entry(identity: identity, addedAt: addedAt)
+        calendarConnectionErrors[identity.id] = nil
+        let entry = Entry(identity: identity, addedAt: addedAt,
+                          hasCalendarAccess: newCredentials.scopes.contains(GoogleOAuthClient.calendarEventsScope))
         if let index = accounts.firstIndex(where: { $0.id == identity.id }) {
             accounts[index] = entry
         } else {

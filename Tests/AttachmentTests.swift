@@ -65,6 +65,8 @@ struct AttachmentTests {
 
     private actor Transport: GmailTransport {
         var paths: [String] = []
+        let unnamedCalendar: Bool
+        init(unnamedCalendar: Bool = false) { self.unnamedCalendar = unnamedCalendar }
         func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
             let path = request.url?.path ?? ""
             paths.append(path)
@@ -72,7 +74,9 @@ struct AttachmentTests {
             if path.hasSuffix("/attachments/NEW") {
                 return GmailHTTPResponse(data: Data(#"{"data":"aGVsbG8"}"#.utf8), statusCode: 200)
             }
-            let payload = #"{"partId":"","mimeType":"multipart/mixed","parts":[{"partId":"1","mimeType":"text/plain","filename":"a.txt","body":{"attachmentId":"NEW","size":5}}]}"#
+            let type = unnamedCalendar ? "text/calendar" : "text/plain"
+            let filename = unnamedCalendar ? "" : "a.txt"
+            let payload = #"{"partId":"","mimeType":"multipart/mixed","parts":[{"partId":"1","mimeType":"\#(type)","filename":"\#(filename)","body":{"attachmentId":"NEW","size":5}}]}"#
             return GmailHTTPResponse(data: Data(#"{"id":"m","payload":\#(payload)}"#.utf8), statusCode: 200)
         }
     }
@@ -85,6 +89,16 @@ struct AttachmentTests {
         let data = try await api.attachmentData(stale)
         #expect(String(decoding: data, as: UTF8.self) == "hello")
         #expect(await transport.paths.count == 3)
+    }
+
+    @Test("Unnamed inline calendars recover from reissued Gmail attachment IDs")
+    func reissuedCalendarID() async throws {
+        let transport = Transport(unnamedCalendar: true)
+        let api = GmailAPI(transport: transport) { "token" }
+        let stale = MailAttachment(messageID: "m", partID: "1", attachmentID: "OLD", filename: "invite.ics", mimeType: "text/calendar", size: 5)
+        #expect(try await api.attachmentData(stale) == Data("hello".utf8))
+        #expect(await transport.paths == ["/gmail/v1/users/me/messages/m/attachments/OLD", "/gmail/v1/users/me/messages/m",
+                                         "/gmail/v1/users/me/messages/m/attachments/NEW"])
     }
 
     @Test("Hostile identifiers are rejected before a request is made")

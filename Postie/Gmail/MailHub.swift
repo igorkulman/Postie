@@ -107,6 +107,8 @@ final class MailHub {
     private(set) var isSearching = false
     private(set) var searchError: String?
     private var searchVersion = 0
+    private(set) var calendarResponses: [CalendarResponseKey: CalendarInvitation.Response] = [:]
+    private(set) var calendarRepliesInFlight: Set<CalendarResponseKey> = []
     @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, mailbox: Mailbox, list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
@@ -209,6 +211,7 @@ final class MailHub {
         Log.accounts.info("Removed an account and its cached mail")
         sessions.first { $0.id == id }?.stop()
         sessions.removeAll { $0.id == id }
+        calendarResponses = calendarResponses.filter { $0.key.accountID != id }
         await outbox.removeAll(accountID: id)
         accounts.remove(id)
         await AttachmentFiles.removeAll(accountID: id)
@@ -457,6 +460,39 @@ final class MailHub {
     }
 
     func email(for accountID: String) -> String? { session(for: accountID)?.email }
+
+    func calendarData(_ source: CalendarSource, messageID: String, key: ConversationKey) async throws -> Data {
+        if let data = source.data { return data }
+        if let attachment = source.attachment {
+            guard attachment.size <= CalendarSource.maximumBytes else { throw CalendarInvitationError.unsupported }
+            return try await CalendarSource.readFile(attachmentFile(attachment, accountID: key.accountID))
+        }
+        // Older cached bodies may only have gained the calendar MIME shape on a metadata refresh.
+        guard let reader = session(for: key.accountID)?.reader else { throw GmailError.signInRequired }
+        return try await reader.calendarData(partID: source.partID, messageID: messageID, threadID: key.threadID)
+    }
+
+    func calendarStatus(for invitation: CalendarInvitation, accountID: String) async throws -> GoogleCalendarStatus? {
+        guard accounts.hasCalendarAccess(accountID) else { throw GoogleCalendarError.permissionRequired }
+        guard let session = session(for: accountID), !isDisconnected(accountID) else { throw GmailError.signInRequired }
+        let status = try await session.reader.calendarStatus(for: invitation)
+        guard self.session(for: accountID) === session else { throw CancellationError() }
+        return status
+    }
+
+    func sendCalendarResponse(_ response: CalendarInvitation.Response, to invitation: CalendarInvitation,
+                              key: ConversationKey) async throws {
+        guard let session = session(for: key.accountID), !isDisconnected(key.accountID) else { throw GmailError.signInRequired }
+        let receipt = CalendarResponseKey(accountID: key.accountID, invitation: invitation)
+        guard !calendarRepliesInFlight.contains(receipt) else { throw CalendarInvitationError.cannotRespond }
+        let message = try ICalendarReply.message(for: invitation, response: response, email: session.email)
+        calendarRepliesInFlight.insert(receipt)
+        defer { calendarRepliesInFlight.remove(receipt) }
+        // Send directly: only show success after Gmail accepts the scheduling reply.
+        try await session.reader.send(message)
+        guard self.session(for: key.accountID) === session else { return }
+        calendarResponses[receipt] = response
+    }
 
     private func isDisconnected(_ id: String) -> Bool {
         accounts.accounts.first { $0.id == id }?.needsReconnect ?? true

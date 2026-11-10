@@ -14,7 +14,8 @@ extension GmailConversation {
                             body: includingBodies
                                 ? ($0.bodyLoaded ? $0.body : $0.snippet + "\n\n" + String(localized: "This message body has not been downloaded. Connect to Gmail to read it."))
                                 : $0.snippet,
-                            htmlBody: includingBodies ? $0.htmlBody : nil, attachments: $0.attachments)
+                            htmlBody: includingBodies ? $0.htmlBody : nil, attachments: $0.attachments,
+                            calendarSources: $0.calendarSources)
             },
             mailbox: mailbox, isUnread: isUnread, isStarred: isStarred
         )

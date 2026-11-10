@@ -3,12 +3,15 @@ import Testing
 @testable import Postie
 
 /// A Gmail account that serves fixed mail and records what is done to it.
-actor HubAPI: GmailSearching, GmailMutating, GmailSending {
+actor HubAPI: GmailSearching, GmailMutating, GmailSending, GoogleCalendarReading {
     private(set) var mail: [GmailConversation]
     private(set) var archived: [String] = []
     private(set) var trashed: [String] = []
     private(set) var sent: [OutgoingMessage] = []
     private(set) var searches: [(query: String, mailbox: Mailbox?)] = []
+    private var sendError: GmailError?
+    private var calendarResult: Result<GoogleCalendarStatus?, GmailError> = .success(nil)
+    private(set) var calendarQueries: [String] = []
 
     init(_ mail: [GmailConversation]) { self.mail = mail }
 
@@ -27,7 +30,16 @@ actor HubAPI: GmailSearching, GmailMutating, GmailSending {
     func archive(threadID: String) async throws { archived.append(threadID); mail.removeAll { $0.id == threadID } }
     func trash(threadID: String) async throws { trashed.append(threadID); mail.removeAll { $0.id == threadID } }
     func setLabel(_ label: String, on: Bool, threadID: String) async throws {}
-    func send(_ message: OutgoingMessage) async throws { sent.append(message) }
+    func setCalendarResult(_ result: Result<GoogleCalendarStatus?, GmailError>) { calendarResult = result }
+    func calendarStatus(for invitation: CalendarInvitation) async throws -> GoogleCalendarStatus? {
+        calendarQueries.append(invitation.uid)
+        return try calendarResult.get()
+    }
+    func failSending(_ error: GmailError) { sendError = error }
+    func send(_ message: OutgoingMessage) async throws {
+        if let sendError { throw sendError }
+        sent.append(message)
+    }
 }
 
 /// An account whose requests fail until it is told sign-in worked.
@@ -57,13 +69,13 @@ struct MailHubTests {
         ])
     }
 
-    func makeHub(_ apis: [String: HubAPI], order: [String]? = nil) async -> MailHub {
+    func makeHub(_ apis: [String: HubAPI], order: [String]? = nil, calendarAccess: Set<String> = []) async -> MailHub {
         let ids = order ?? apis.keys.sorted()
         let stored = ids.enumerated().map { index, id in
             StoredAccount(
                 identity: GoogleIdentity(id: id, email: "\(id)@example.com", name: nil),
                 credentials: GoogleCredentials(refreshToken: "r", accessToken: "t", expiresAt: .distantFuture,
-                                               scopes: Set(GoogleOAuthClient.requiredScopes)),
+                                               scopes: Set(GoogleOAuthClient.requiredScopes + (calendarAccess.contains(id) ? [GoogleOAuthClient.calendarEventsScope] : []))),
                 addedAt: Date(timeIntervalSince1970: Double(index))
             )
         }

@@ -45,6 +45,8 @@ nonisolated struct GoogleOAuthClient: Sendable {
     /// People you saved, and the people you have only ever written to, for address suggestions.
     static let contactsScope = "https://www.googleapis.com/auth/contacts.readonly"
     static let otherContactsScope = "https://www.googleapis.com/auth/contacts.other.readonly"
+    /// Optional: requested only when connecting Calendar response status, never required to use mail.
+    static let calendarEventsScope = "https://www.googleapis.com/auth/calendar.events.readonly"
     static let requiredScopes = [gmailModifyScope, gmailSendScope, gmailSettingsScope, contactsScope, otherContactsScope]
 
     private static let authorizationEndpoint = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -78,13 +80,14 @@ nonisolated struct GoogleOAuthClient: Sendable {
         Data((0..<byteCount).map { _ in UInt8.random(in: .min ... .max) }).base64URLEncoded
     }
 
-    func authorizationURL(_ pkce: PKCE, loginHint: String? = nil) -> URL {
+    func authorizationURL(_ pkce: PKCE, loginHint: String? = nil, calendarAccess: Bool = false) -> URL {
         var components = URLComponents(string: Self.authorizationEndpoint)!
+        let scopes = ["openid", "email", "profile"] + Self.requiredScopes + (calendarAccess ? [Self.calendarEventsScope] : [])
         var items = [
             URLQueryItem(name: "client_id", value: clientID),
             URLQueryItem(name: "redirect_uri", value: redirectURI),
             URLQueryItem(name: "response_type", value: "code"),
-            URLQueryItem(name: "scope", value: (["openid", "email", "profile"] + Self.requiredScopes).joined(separator: " ")),
+            URLQueryItem(name: "scope", value: scopes.joined(separator: " ")),
             URLQueryItem(name: "code_challenge", value: pkce.challenge),
             URLQueryItem(name: "code_challenge_method", value: "S256"),
             URLQueryItem(name: "state", value: pkce.state),

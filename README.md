@@ -27,6 +27,18 @@ subscriptions, AI features, or workspace bloat.
   Results are not stored in the local cache
 - Reading attachments: shown in the message header and as a chip in the list;
   double-click to open, or use the context menu to save, share, or copy
+- Calendar invitations: event details and meeting links above the email body,
+  with Accept, Maybe, and Decline replies sent through the receiving Gmail account.
+  Supports inline calendar parts and `.ics` attachments, all-day events, and
+  invitation updates/cancellations within a conversation. Optional **Connect Google
+  Calendar…** access reads your response from the receiving account's primary
+  calendar, including replies made in Gmail, Mimestream, or other calendar apps.
+  It refreshes when opening an invitation or choosing **Refresh response**.
+  Calendar access is read-only and not required for mail or email RSVPs; Postie
+  does not display an agenda, modify calendars, or add events to a local calendar.
+  Without Calendar access, Postie shows status only from the invitation and replies
+  sent during the current app session. “Reply sent” confirms Gmail accepted the
+  reply, not that the organizer’s calendar processed it
 - Local SQLite cache for previously loaded mail
 - Incremental Gmail synchronization while the app is running
 - Native light and dark mode
@@ -67,6 +79,11 @@ It asks for these Google permissions:
   and the people you have written to, so the composer can suggest addresses.
   Postie never changes your contacts
 
+Only if you choose **Connect Google Calendar…** on an invitation, it additionally
+requests `calendar.events.readonly` to look up that invitation in your primary
+Google Calendar and show your response. This is optional, is never used to modify
+calendar events, and can be declined without affecting mail
+
 Postie never permanently deletes mail. Trash is Gmail's normal, recoverable
 Trash. Sign-in credentials stay in your Mac's Keychain,
 and loaded mail and your contacts are cached in a local SQLite database on your Mac.
@@ -95,6 +112,10 @@ and notarized by Apple, and updates itself from then on. See [CHANGELOG.md](CHAN
 ## Running Postie from source
 
 Open `Postie.xcodeproj`, choose the **Postie** scheme and **My Mac**, and run.
+For optional Calendar response lookup, also enable the **Google Calendar API** in
+the Google Cloud project that owns the OAuth client and configure the
+`calendar.events.readonly` scope on its consent screen. Existing mail credentials
+continue working; grant Calendar access from an invitation when you want to use it.
 
 ## Selection regression without a mailbox
 

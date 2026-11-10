@@ -48,6 +48,7 @@ struct MailMessage: Identifiable, Equatable {
     var body: String
     var htmlBody: String? = nil
     var attachments: [MailAttachment] = []
+    var calendarSources: [CalendarSource] = []
 
     var initials: String {
         senderName.split(separator: " ").prefix(2).compactMap { $0.first }.map(String.init).joined()
