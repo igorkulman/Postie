@@ -99,7 +99,11 @@ enum EmailHTMLPolicy {
         body { display: flow-root; margin: 0; padding: 0; font: 13px -apple-system, sans-serif;
                line-height: 1.5; color: CanvasText; background-color: Canvas; overflow-wrap: anywhere; }
         img, table { max-width: 100%; }
-        img { height: auto; }
+        /* In a table cell a percentage limit lets the cell collapse, squashing the image to nothing. */
+        td img, th img { max-width: 100vw; }
+        /* Scale with the width. The layout script supplies the shape when both sizes are declared. */
+        img[width] { height: auto; }
+        img[height]:not([width]) { object-fit: contain; }
         pre { white-space: pre-wrap; }
         a { color: LinkText; }
         </style></head><body>\(html)</body></html>
@@ -123,6 +127,15 @@ enum EmailHTMLPolicy {
     // App-owned code runs in an isolated content world, not the email's page world.
     static let layoutScript = """
     (() => {
+        // Automatic height follows the image file's shape, which would turn a 1×1 file declared as a
+        // thin rule into a square. Use the declared shape, unless the email asks for a height itself.
+        for (const image of document.images) {
+            const width = Number(image.getAttribute('width'));
+            const height = Number(image.getAttribute('height'));
+            if (width > 0 && height > 0 && !image.style.height) {
+                image.style.aspectRatio = width + ' / ' + height;
+            }
+        }
         let lastHeight = -1;
         const root = document.documentElement;
         const report = () => {

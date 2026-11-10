@@ -6,6 +6,13 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Fixed
+
+- Images in table-based emails, such as logos in a header, are no longer squashed
+  into a thin strip or hidden.
+- Thin rule and spacer images in emails keep the size the email gives them instead
+  of growing into large squares.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed
