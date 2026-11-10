@@ -77,7 +77,6 @@ private struct RegressionPreviewData: PreviewModifier {
     static func makeSharedContext() async throws -> Context {
         let mail = SelectionRegressionMail()
         let hub = try await mail.makeHub()
-        await hub.select(hub.conversations.first?.key)
         let emptyMail = SelectionRegressionMail(empty: true)
         let emptyHub = try await emptyMail.makeHub()
         return Context(mail: mail, hub: hub, emptyMail: emptyMail, emptyHub: emptyHub)

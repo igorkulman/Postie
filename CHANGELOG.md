@@ -6,6 +6,16 @@ All notable changes to Postie are documented here. The format is based on
 
 ## [Unreleased]
 
+### Added
+
+- Press Esc to close the open conversation. In the search field, Esc still clears
+  the search.
+
+### Changed
+
+- Opening Postie or a folder no longer opens the first conversation and marks it
+  as read. Nothing is selected until you choose a conversation.
+
 ## [0.3.0] - 2026-10-14
 
 ### Changed
