@@ -47,6 +47,11 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         record(id)
     }
 
+    func insertConversation(_ conversation: GmailConversation) {
+        mail[conversation.id] = conversation
+        record(conversation.id)
+    }
+
     @MainActor func currentHistoryID() async throws -> String { String(version) }
 
     @MainActor func history(startHistoryID: String, pageToken: String?) async throws -> GmailHistoryPage {

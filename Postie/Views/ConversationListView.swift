@@ -4,7 +4,6 @@ import SwiftUI
 struct ConversationListView: View {
     @Bindable var model: InboxModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var displayedContext: UpdateContext?
     var listIsFocused: FocusState<Bool>.Binding
 
     private var hub: MailHub { model.hub }
@@ -79,16 +78,11 @@ struct ConversationListView: View {
                 .listStyle(.inset)
                 .focused(listIsFocused)
                 .accessibilityIdentifier("conversationList")
-                // The first result batch belongs to a new context even if it arrives later.
-                // Don't slide an entire cached folder or replacement search into the list.
+                // Keep structural updates stable while rows invalidate stale native height
+                // estimates. Loading indicators outside the table can still fade.
                 .transaction { transaction in
-                    if displayedContext != updateContext {
-                        transaction.animation = nil
-                        transaction.disablesAnimations = true
-                    }
-                }
-                .onChange(of: hub.conversationKeys, initial: true) {
-                    if !hub.conversationKeys.isEmpty { displayedContext = updateContext }
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
                 }
                 .onDeleteCommand {
                     guard let key = model.selectedID else { return }
@@ -124,9 +118,7 @@ struct ConversationListView: View {
                     .transition(.opacity)
             }
         }
-        // Animate changes within a mailbox, never a wholesale folder/search/account replacement.
-        // Identity, List lifetime and keyboard focus remain unchanged.
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: hub.conversationKeys)
+        // Fade loading status without animating the native table's structural updates.
         .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hub.isLoadingMailbox)
         .transaction(value: updateContext) { transaction in
             transaction.animation = nil

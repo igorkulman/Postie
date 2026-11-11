@@ -80,6 +80,9 @@ struct MailThreadRow: View {
                 }
             }
             .padding(.vertical, 6)
+            // Keep the subject and preview when List measures a row with a compact height proposal.
+            .fixedSize(horizontal: false, vertical: true)
+            .background(NativeListRowSizing())
             .opacity(isPending ? 0.65 : 1)
             .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPending)
             .accessibilityElement(children: .combine)
