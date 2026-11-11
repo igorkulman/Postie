@@ -12,6 +12,7 @@ private let notificationPreview = MailThread(
 
 private struct IncomingNotificationPreview: View {
     var selectNotification = false
+    var textSize = ConversationListTextSize.defaultSize
     @State private var threads = Array(SampleMail.threads().prefix(2))
     @State private var selection: String? = SampleMail.threads().first?.id
 
@@ -19,7 +20,7 @@ private struct IncomingNotificationPreview: View {
         ScrollViewReader { _ in
             List(selection: $selection) {
                 ForEach(threads) { thread in
-                    MailThreadRow(thread: thread)
+                    MailThreadRow(thread: thread, textSize: textSize)
                         .tag(thread.id)
                         .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                         .listRowSeparator(.hidden)
@@ -50,5 +51,11 @@ private struct IncomingNotificationPreview: View {
     MailThreadRow(thread: notificationPreview)
         .padding(.horizontal, 16)
         .frame(width: 330)
+}
+
+#Preview("Message list · 26 pt · Narrow dark") {
+    IncomingNotificationPreview(selectNotification: true, textSize: 26)
+        .frame(width: 280, height: 650)
+        .preferredColorScheme(.dark)
 }
 #endif

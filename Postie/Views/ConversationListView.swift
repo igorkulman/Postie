@@ -3,6 +3,7 @@ import SwiftUI
 /// The middle column: notices, the search header, the conversation list and its footer.
 struct ConversationListView: View {
     @Bindable var model: InboxModel
+    @AppStorage(SettingsKey.conversationListTextSize) private var textSize = ConversationListTextSize.defaultSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var listIsFocused: FocusState<Bool>.Binding
 
@@ -42,7 +43,7 @@ struct ConversationListView: View {
                 List(selection: listSelection) {
                     ForEach(hub.conversations) { item in
                         MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox),
-                                      isPending: model.isRemoving(item.key))
+                                      isPending: model.isRemoving(item.key), textSize: textSize)
                             .tag(item.key)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)

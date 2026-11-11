@@ -191,6 +191,7 @@ private struct AttachmentRow: View {
 /// The first attachment of a conversation's newest message, plus how many more there are, for the message list.
 struct AttachmentChip: View {
     let attachments: [MailAttachment]
+    var textScale: CGFloat = 1
 
     var body: some View {
         if let first = attachments.first {
@@ -198,7 +199,7 @@ struct AttachmentChip: View {
                 HStack(spacing: 5) {
                     Image(nsImage: fileIcon(for: first.filename))
                         .resizable()
-                        .frame(width: 14, height: 14)
+                        .frame(width: 14 * textScale, height: 14 * textScale)
                     Text(first.filename)
                         .lineLimit(1)
                         .truncationMode(.middle)
@@ -211,7 +212,7 @@ struct AttachmentChip: View {
                         .fixedSize()
                 }
             }
-            .font(.callout)
+            .font(.system(size: 12 * textScale))
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
         }

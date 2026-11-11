@@ -17,9 +17,20 @@ struct SenderAvatar: View {
 struct MailThreadRow: View {
     let thread: MailThread
     var isPending = false
+    var textSize = ConversationListTextSize.defaultSize
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // .increased while the row sits on the accent-colored selection background.
     @Environment(\.backgroundProminence) private var prominence
+
+    private var pointSize: CGFloat { CGFloat(ConversationListTextSize.clamped(textSize)) }
+    private var textScale: CGFloat { pointSize / CGFloat(ConversationListTextSize.defaultSize) }
+
+    // At larger sizes, give the sender the full width rather than competing with the date.
+    private var headerLayout: AnyLayout {
+        pointSize >= 20
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+    }
 
     var body: some View {
         if let message = thread.latestMessage {
@@ -30,16 +41,16 @@ struct MailThreadRow: View {
                     .padding(.top, 5)
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 2) {
-                    HStack(alignment: .firstTextBaseline) {
+                    headerLayout {
                         Text(thread.mailbox == .sent || thread.mailbox == .outbox ? message.recipient : message.senderName)
-                            .font(.callout.weight(.semibold))
+                            .font(.system(size: pointSize, weight: .semibold))
                             .lineLimit(1)
-                        Spacer(minLength: 8)
+                        if pointSize < 20 { Spacer(minLength: 8) }
                         ZStack(alignment: .trailing) {
                             Text(message.date, format: Calendar.current.isDateInToday(message.date)
                                  ? .dateTime.hour().minute()
                                  : .dateTime.month(.abbreviated).day())
-                                .font(.subheadline)
+                                .font(.system(size: 11 * textScale))
                                 .foregroundStyle(.secondary)
                                 .opacity(isPending ? 0 : 1)
                             if isPending {
@@ -51,11 +62,11 @@ struct MailThreadRow: View {
                     }
                     HStack(spacing: 5) {
                         Text(thread.subject)
-                            .font(.callout.weight(thread.isUnread ? .medium : .regular))
+                            .font(.system(size: pointSize, weight: thread.isUnread ? .medium : .regular))
                             .lineLimit(1)
                         if thread.messages.count > 1 {
                             Text(thread.messages.count, format: .number)
-                                .font(.caption.monospacedDigit())
+                                .font(.system(size: 10 * textScale).monospacedDigit())
                                 .foregroundStyle(.secondary)
                                 .padding(.horizontal, 6)
                                 .padding(.vertical, 1)
@@ -67,15 +78,15 @@ struct MailThreadRow: View {
                         if thread.isStarred {
                             // Stays orange on the selection highlight, like Mimestream.
                             Image(systemName: "star.fill")
-                                .font(.callout)
+                                .font(.system(size: pointSize))
                                 .foregroundStyle(.orange)
                         }
                     }
                     Text(thread.preview)
-                        .font(.callout)
+                        .font(.system(size: pointSize))
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
-                    AttachmentChip(attachments: message.attachments)
+                    AttachmentChip(attachments: message.attachments, textScale: textScale)
                         .padding(.top, 2)
                 }
             }

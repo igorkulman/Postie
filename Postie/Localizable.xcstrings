@@ -78,6 +78,12 @@
         }
       }
     },
+    "%lld pt" : {
+
+    },
+    "%lld pt (Default)" : {
+
+    },
     "& %lld more" : {
       "comment" : "After the first attachment's name in the message list"
     },
@@ -115,6 +121,9 @@
 
     },
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
+
+    },
+    "Adjusts senders, subjects, previews, and metadata. Message body text size is controlled separately in View > Text Size." : {
 
     },
     "All Mail" : {
@@ -417,6 +426,9 @@
     },
     "Message from %@" : {
       "comment" : "VoiceOver label of a message header; the sender follows"
+    },
+    "Message list text size" : {
+
     },
     "Messages that are waiting to be sent, or could not be, appear here." : {
 

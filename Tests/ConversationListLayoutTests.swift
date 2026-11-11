@@ -10,7 +10,10 @@ struct ConversationListLayoutTests {
     func insertedNotification() async throws {
         let mail = SelectionRegressionMail()
         let hub = try await mail.makeHub()
-        let host = NSHostingView(rootView: GmailInboxView(hub: hub))
+        let suiteName = "ConversationListLayoutTests.\(UUID().uuidString)"
+        let preferences = try #require(UserDefaults(suiteName: suiteName))
+        defer { preferences.removePersistentDomain(forName: suiteName) }
+        let host = NSHostingView(rootView: GmailInboxView(hub: hub).defaultAppStorage(preferences))
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1200, height: 600),
                               styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -51,6 +54,18 @@ struct ConversationListLayoutTests {
         await hub.setUnread(key, false)
         await finishRowLayout(host: host)
         try assertNotificationHeight(table: table, notification: notification)
+
+        // Changing the saved list preference must resize existing native rows, not just new ones.
+        let defaultHeight = table.rect(ofRow: 0).height
+        preferences.set(26, forKey: SettingsKey.conversationListTextSize)
+        try await waitForLayout(host: host) { table.rect(ofRow: 0).height > defaultHeight }
+        await finishRowLayout(host: host)
+        try assertNotificationHeight(table: table, notification: notification, textSize: 26)
+        let enlargedHeight = table.rect(ofRow: 0).height
+        preferences.set(13, forKey: SettingsKey.conversationListTextSize)
+        try await waitForLayout(host: host) { table.rect(ofRow: 0).height < enlargedHeight }
+        await finishRowLayout(host: host)
+        try assertNotificationHeight(table: table, notification: notification)
     }
 
     private func finishRowLayout(host: NSView) async {
@@ -81,9 +96,11 @@ struct ConversationListLayoutTests {
 
     private enum LayoutFailure: Error { case insertionDidNotFinish }
 
-    private func assertNotificationHeight(table: NSTableView, notification: GmailConversation) throws {
+    private func assertNotificationHeight(table: NSTableView, notification: GmailConversation,
+                                          textSize: Int = 13) throws {
         let cell = try #require(table.view(atColumn: 0, row: 0, makeIfNecessary: true))
-        let renderer = ImageRenderer(content: MailThreadRow(thread: notification.presentation(includingBodies: false)))
+        let renderer = ImageRenderer(content: MailThreadRow(thread: notification.presentation(includingBodies: false),
+                                                          textSize: textSize))
         renderer.proposedSize = ProposedViewSize(width: cell.bounds.width, height: nil)
         let natural = try #require(renderer.nsImage)
         let row = try #require(table.rowView(atRow: 0, makeIfNecessary: true))

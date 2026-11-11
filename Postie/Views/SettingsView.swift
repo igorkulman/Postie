@@ -3,6 +3,7 @@ import SwiftUI
 enum SettingsKey {
     static let showsDockBadge = "showsDockBadge"
     static let messageTextSize = "messageTextSize"
+    static let conversationListTextSize = "conversationListTextSize"
 }
 
 struct SettingsView: View {
@@ -141,14 +142,35 @@ private struct AccountRow: View {
 
 private struct GeneralSettings: View {
     @AppStorage(SettingsKey.showsDockBadge) private var showsDockBadge = true
+    @AppStorage(SettingsKey.conversationListTextSize) private var listTextSize = ConversationListTextSize.defaultSize
     @Environment(UpdaterModel.self) private var updater
 
     var body: some View {
         @Bindable var updater = updater
         Form {
+            Section {
+                Picker("Message list text size", selection: $listTextSize) {
+                    ForEach(ConversationListTextSize.range, id: \.self) { size in
+                        if size == ConversationListTextSize.defaultSize {
+                            Text("\(size) pt (Default)").tag(size)
+                        } else {
+                            Text("\(size) pt").tag(size)
+                        }
+                    }
+                }
+            } footer: {
+                Text("Adjusts senders, subjects, previews, and metadata. Message body text size is controlled separately in View > Text Size.")
+            }
             Toggle("Show unread count on the Dock icon", isOn: $showsDockBadge)
             Toggle("Check for updates automatically", isOn: $updater.checksAutomatically)
         }
         .formStyle(.grouped)
     }
+}
+
+#Preview("General settings") {
+    GeneralSettings()
+        .environment(UpdaterModel(startingUpdater: false))
+        .scenePadding()
+        .frame(width: 480, height: 290)
 }

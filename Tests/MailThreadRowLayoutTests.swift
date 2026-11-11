@@ -6,8 +6,8 @@ import Testing
 @Suite("Conversation row layout")
 @MainActor
 struct MailThreadRowLayoutTests {
-    @Test("A long notification keeps its subject and preview under a one-line height proposal")
-    func notificationResistsVerticalCompression() throws {
+    @Test("A long notification keeps its subject and preview at default and enlarged list sizes", arguments: [13, 20, 26])
+    func notificationResistsVerticalCompression(textSize: Int) throws {
         for width in [280.0, 330.0, 440.0] {
             let thread = MailThread(
                 id: "notification", subject: "tw-ios | Failed pipeline for fix/link-previews | 152f7722",
@@ -16,7 +16,7 @@ struct MailThreadRowLayoutTests {
                                        body: "Pipeline #95082 has failed! Project teamwire / tw-ios. Branch fix/link-previews. Commit 152f7722.")],
                 mailbox: .inbox
             )
-            let renderer = ImageRenderer(content: MailThreadRow(thread: thread))
+            let renderer = ImageRenderer(content: MailThreadRow(thread: thread, textSize: textSize))
             renderer.proposedSize = ProposedViewSize(width: width, height: nil)
             let natural = try #require(renderer.nsImage)
             // A compact table measurement must not squeeze away the row's subject or preview.
