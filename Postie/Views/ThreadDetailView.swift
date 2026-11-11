@@ -18,8 +18,8 @@ struct ThreadDetailView: View {
     }
 
     static func openingScrollPosition(for thread: MailThread) -> ScrollPosition {
-        // Keep the subject visible for a single email. Conversations open at the newest header,
-        // not at the bottom of its body, which may be many screens long.
+        // Conversations open at the newest message header, not at the bottom of its body,
+        // which may be many screens long. The conversation subject lives outside this scroll view.
         guard thread.messages.count > 1, let latest = thread.latestMessage else {
             return ScrollPosition(idType: String.self, edge: .top)
         }
@@ -27,85 +27,65 @@ struct ThreadDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text(thread.subject)
-                        .font(.title3.weight(.semibold))
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
-                    Spacer(minLength: 0)
-                    if openDraft != nil {
-                        Text("Drafts")
-                            .font(.caption)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-                    }
-                    Button(action: toggleStar) {
-                        Image(systemName: thread.isStarred ? "star.fill" : "star")
-                    }
-                    .buttonStyle(.borderless)
-                    .foregroundStyle(.secondary)
-                    .disabled(!canToggleStar)
-                    .help(canToggleStar
-                          ? (thread.isStarred ? String(localized: "Remove star") : String(localized: "Star conversation"))
-                          : String(localized: "Stars cannot be changed yet."))
-                    .accessibilityLabel(thread.isStarred ? String(localized: "Remove star") : String(localized: "Star conversation"))
-                }
+        VStack(spacing: 0) {
+            ConversationHeaderView(thread: thread, canToggleStar: canToggleStar,
+                                   isDraft: openDraft != nil, toggleStar: toggleStar)
+            Divider()
 
-                if let openDraft {
-                    HStack(spacing: 10) {
-                        Image(systemName: "doc.text")
-                            .foregroundStyle(.secondary)
-                        Text("This message is an unsent draft.")
-                        Spacer(minLength: 8)
-                        Button("Open Draft", action: openDraft)
-                            .controlSize(.small)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let openDraft {
+                        HStack(spacing: 10) {
+                            Image(systemName: "doc.text")
+                                .foregroundStyle(.secondary)
+                            Text("This message is an unsent draft.")
+                            Spacer(minLength: 8)
+                            Button("Open Draft", action: openDraft)
+                                .controlSize(.small)
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
                     }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-                }
 
-                ForEach(thread.messages) { message in
-                    VStack(alignment: .leading, spacing: 16) {
-                        MessageView(
-                            message: message, expandedInitially: message.id == thread.latestMessage?.id,
-                            minimumExpandedHeight: thread.messages.count > 1 && message.id == thread.latestMessage?.id
-                                ? max(0, viewportHeight - 20) : nil
-                        ) {
-                            // Expanding history is intentional navigation too.
-                            followsLatestLayout = false
-                            scrollPosition.isPositionedByUser = true
+                    ForEach(thread.messages) { message in
+                        VStack(alignment: .leading, spacing: 16) {
+                            MessageView(
+                                message: message, expandedInitially: message.id == thread.latestMessage?.id,
+                                minimumExpandedHeight: thread.messages.count > 1 && message.id == thread.latestMessage?.id
+                                    ? max(0, viewportHeight - 20) : nil
+                            ) {
+                                // Expanding history is intentional navigation too.
+                                followsLatestLayout = false
+                                scrollPosition.isPositionedByUser = true
+                            }
+                            if message.id != thread.latestMessage?.id {
+                                Divider()
+                            }
                         }
-                        if message.id != thread.latestMessage?.id {
-                            Divider()
-                        }
+                        .id(message.id)
                     }
-                    .id(message.id)
                 }
+                .scrollTargetLayout()
+                .onGeometryChange(for: CGSize.self) { $0.size } action: { _ in
+                    // Initial targets exist only after layout; HTML can resize again after that.
+                    guard followsLatestLayout, !scrollPosition.isPositionedByUser,
+                          thread.messages.count > 1, let latest = thread.latestMessage else { return }
+                    scrollPosition.scrollTo(id: latest.id, anchor: .top)
+                }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .topLeading)
             }
-            .scrollTargetLayout()
-            .onGeometryChange(for: CGSize.self) { $0.size } action: { _ in
-                // Initial targets exist only after layout; HTML can resize again after that.
-                guard followsLatestLayout, !scrollPosition.isPositionedByUser,
-                      thread.messages.count > 1, let latest = thread.latestMessage else { return }
-                scrollPosition.scrollTo(id: latest.id, anchor: .top)
+            // Stop following layout changes as soon as the user scrolls or expands history.
+            .scrollPosition($scrollPosition)
+            .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.height } action: { _, height in
+                viewportHeight = height
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        // Stop following layout changes as soon as the user scrolls or expands history.
-        .scrollPosition($scrollPosition)
-        .onScrollGeometryChange(for: CGFloat.self) { $0.containerSize.height } action: { _, height in
-            viewportHeight = height
-        }
-        .defaultScrollAnchor(.top, for: .sizeChanges)
-        .onChange(of: thread.id) { _, _ in
-            followsLatestLayout = true
-            scrollPosition = Self.openingScrollPosition(for: thread)
+            .defaultScrollAnchor(.top, for: .sizeChanges)
+            .onChange(of: thread.id) { _, _ in
+                followsLatestLayout = true
+                scrollPosition = Self.openingScrollPosition(for: thread)
+            }
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
@@ -234,7 +214,7 @@ private struct MessageView: View {
         .frame(width: 680, height: 260)
 }
 
-private func longConversationPreview(html: Bool = false) -> MailThread {
+private func longConversationPreview(html: Bool = false, subject: String = "Long conversation · newest message") -> MailThread {
     var messages = (1...20).map { index in
         MailMessage(id: "earlier-\(index)", senderName: "Earlier sender \(index)", senderEmail: "sender@example.com",
                     recipient: "alex@example.com", date: Date(timeIntervalSince1970: Double(index)),
@@ -248,7 +228,7 @@ private func longConversationPreview(html: Bool = false) -> MailThread {
         htmlBody: html ? "<h2>This is the newest message</h2>"
             + String(repeating: "<p>More of the latest HTML message.</p>", count: 60) : nil
     ))
-    return MailThread(id: "long-conversation", subject: "Long conversation · newest message", messages: messages, mailbox: .inbox)
+    return MailThread(id: "long-conversation", subject: subject, messages: messages, mailbox: .inbox)
 }
 
 #Preview("Latest message · Long conversation") {
@@ -256,6 +236,15 @@ private func longConversationPreview(html: Bool = false) -> MailThread {
     ThreadDetailView(thread: thread, toggleStar: {})
         .id(thread.id)
         .frame(width: 620, height: 640)
+}
+
+#Preview("Long subject · Compact") {
+    let thread = longConversationPreview(
+        subject: "Planning the next release: conversation headers, message navigation, and a few more details to review together before launch"
+    )
+    ThreadDetailView(thread: thread, toggleStar: {})
+        .id(thread.id)
+        .frame(width: 420, height: 640)
 }
 
 #Preview("Latest message · HTML compact dark") {
