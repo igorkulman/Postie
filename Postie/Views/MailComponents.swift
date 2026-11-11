@@ -16,6 +16,8 @@ struct SenderAvatar: View {
 
 struct MailThreadRow: View {
     let thread: MailThread
+    var isPending = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // .increased while the row sits on the accent-colored selection background.
     @Environment(\.backgroundProminence) private var prominence
 
@@ -33,11 +35,19 @@ struct MailThreadRow: View {
                             .font(.callout.weight(.semibold))
                             .lineLimit(1)
                         Spacer(minLength: 8)
-                        Text(message.date, format: Calendar.current.isDateInToday(message.date)
-                             ? .dateTime.hour().minute()
-                             : .dateTime.month(.abbreviated).day())
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                        ZStack(alignment: .trailing) {
+                            Text(message.date, format: Calendar.current.isDateInToday(message.date)
+                                 ? .dateTime.hour().minute()
+                                 : .dateTime.month(.abbreviated).day())
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                                .opacity(isPending ? 0 : 1)
+                            if isPending {
+                                ProgressView()
+                                    .controlSize(.mini)
+                                    .accessibilityHidden(true)
+                            }
+                        }
                     }
                     HStack(spacing: 5) {
                         Text(thread.subject)
@@ -65,8 +75,11 @@ struct MailThreadRow: View {
                 }
             }
             .padding(.vertical, 6)
+            .opacity(isPending ? 0.65 : 1)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: isPending)
             .accessibilityElement(children: .combine)
             .accessibilityLabel(accessibilityDescription(of: message))
+            .accessibilityValue(isPending ? String(localized: "Updating…") : "")
         }
     }
 

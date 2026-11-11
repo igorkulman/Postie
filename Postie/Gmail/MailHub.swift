@@ -105,6 +105,7 @@ final class MailHub {
     private(set) var searchScope: SearchScope = .allMail
     private var searchList = MergedList()
     private(set) var isSearching = false
+    private var isLoadingMoreSearchResults = false
     private(set) var searchError: String?
     private var searchVersion = 0
     private(set) var calendarResponses: [CalendarResponseKey: CalendarInvitation.Response] = [:]
@@ -328,6 +329,7 @@ final class MailHub {
         searchScope = scope
         searchError = nil
         isSearching = !query.isEmpty
+        isLoadingMoreSearchResults = false
         if query.isEmpty { searchList = MergedList(); searchTokens = [:] }
         searchVersion += 1
     }
@@ -342,6 +344,13 @@ final class MailHub {
         let folder: Mailbox? = searchScope == .folder ? mailbox : nil
         let targets = sessions.filter { $0.reader.canSearch && (!pageAfter || searchTokens[$0.id] != nil) }
         isSearching = true
+        isLoadingMoreSearchResults = pageAfter
+        defer {
+            if searchGeneration == generation {
+                isSearching = false
+                isLoadingMoreSearchResults = false
+            }
+        }
         searchError = nil
         var collected = pageAfter ? searchResults : []
         var failures: [String] = []
@@ -376,7 +385,6 @@ final class MailHub {
         guard searchGeneration == generation, !Task.isCancelled else { return }
         if pageAfter == false, targets.isEmpty { searchList = MergedList() }
         searchError = failures.first
-        isSearching = false
     }
 
     private func updateSearchResult(_ key: ConversationKey, _ change: (GmailConversation) -> GmailConversation) {
@@ -409,6 +417,7 @@ final class MailHub {
     var outboxCount: Int { outbox.items.count }
 
     var isLoadingMailbox: Bool { isSearchActive ? isSearching : sessions.contains { $0.reader.isLoadingMailbox } }
+    var isLoadingMore: Bool { isSearchActive ? isLoadingMoreSearchResults : sessions.contains { $0.reader.isLoadingMore } }
     var isRestoringCache: Bool { sessions.contains { $0.reader.isRestoringCache } }
     var showingCachedMail: Bool { !isSearchActive && sessions.contains { $0.reader.showingCachedMail } }
     var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : sessions.contains { $0.reader.nextPageToken != nil } }

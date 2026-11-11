@@ -1,6 +1,5 @@
 import Foundation
 import Observation
-import SwiftUI
 import os
 
 @MainActor
@@ -17,6 +16,7 @@ final class GmailReaderStore {
     private(set) var conversationsRevision = 0
     private(set) var nextPageToken: String?
     private(set) var isLoadingMailbox = false
+    private(set) var isLoadingMore = false
     private(set) var mailboxError: String?
     private(set) var mailboxVersion = 0
     private(set) var selectedConversation: GmailConversation?
@@ -101,6 +101,7 @@ final class GmailReaderStore {
         bodies = [:]
         nextPageToken = nil
         isLoadingMailbox = false
+        isLoadingMore = false
         isRestoringCache = false
         isLoadingConversation = false
         mailboxError = nil
@@ -381,15 +382,13 @@ final class GmailReaderStore {
         }
         guard folderGeneration == startedFolder else { return true }
         mailboxError = nil
-        // Animate so the row slides out and its neighbors close the gap, like Mail.
-        withAnimation(.easeInOut(duration: 0.25)) {
-            conversations.removeAll { $0.id == id }
-            if selectedConversation?.id == id { selectedConversation = nil }
-            bodies[id] = nil
-            mailboxVersion += 1
-            // Reconcile UI selection in the same transaction, not after the network refresh.
-            onRemoved()
-        }
+        conversations.removeAll { $0.id == id }
+        if selectedConversation?.id == id { selectedConversation = nil }
+        bodies[id] = nil
+        mailboxVersion += 1
+        // Reconcile UI selection immediately, not after the network refresh.
+        // The view owns animation so it can respect accessibility and navigation context.
+        onRemoved()
         // Reconcile the cache and unread badge with Gmail's history.
         await refresh()
         return true
@@ -433,8 +432,14 @@ final class GmailReaderStore {
         let currentMailbox = mailbox
         let pageToken = refreshing ? nil : nextPageToken
         isLoadingMailbox = true
+        isLoadingMore = !refreshing
         mailboxError = nil
-        defer { if folderGeneration == startedFolder { isLoadingMailbox = false } }
+        defer {
+            if folderGeneration == startedFolder {
+                isLoadingMailbox = false
+                isLoadingMore = false
+            }
+        }
         do {
             let checkpoint = try? await cache?.checkpoint()
             let page = try await api.mailbox(currentMailbox, pageToken: pageToken)

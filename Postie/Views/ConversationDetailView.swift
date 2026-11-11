@@ -3,48 +3,60 @@ import SwiftUI
 /// The detail column: the open conversation, or why there isn't one.
 struct ConversationDetailView: View {
     let model: InboxModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var hub: MailHub { model.hub }
 
     var body: some View {
         let key = model.selectedID
-        if let key, let conversation = hub.openConversation(for: key),
-           !(hub.isLoadingConversation(key) && !conversation.messages.allSatisfy(\.bodyLoaded)) {
-            VStack(spacing: 0) {
-                if let error = hub.conversationError(key) {
-                    GmailErrorBanner(message: error, retry: model.retrySelection)
-                    Divider()
+        ZStack {
+            if let key, let conversation = hub.openConversation(for: key),
+               !(hub.isLoadingConversation(key) && !conversation.messages.allSatisfy(\.bodyLoaded)) {
+                VStack(spacing: 0) {
+                    if let error = hub.conversationError(key) {
+                        GmailErrorBanner(message: error, retry: model.retrySelection)
+                        Divider()
+                    }
+                    if hub.mailbox == .outbox, !hub.isSearchActive {
+                        OutboxBanner(model: model, key: key)
+                        Divider()
+                    }
+                    GmailConversationView(
+                        conversation: conversation, mailbox: hub.mailbox, hub: hub, key: key,
+                        canToggleStar: hub.canModifyLabels(key),
+                        toggleStar: { model.toggleStar(MergedConversation(key: key, conversation: conversation)) },
+                        openDraft: hub.canEditDraft(key) ? { model.editDraft(key) } : nil
+                    )
+                    .id(key)
+                    // Fade the container, not the HTML layout or its scroll position.
+                    .transaction { $0.animation = nil }
+                    .environment(\.attachmentLoader, AttachmentLoader(hub: hub, accountID: key.accountID))
                 }
-                if hub.mailbox == .outbox, !hub.isSearchActive {
-                    OutboxBanner(model: model, key: key)
-                    Divider()
+            } else if hub.isLoadingConversation(key) {
+                MailActivityIndicator(title: String(localized: "Loading conversation…"))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if let error = hub.conversationError(key) {
+                ContentUnavailableView {
+                    Label("Could Not Load Conversation", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(error)
+                } actions: {
+                    Button("Try Again", action: model.retrySelection)
                 }
-                GmailConversationView(
-                    conversation: conversation, mailbox: hub.mailbox, hub: hub, key: key,
-                    canToggleStar: hub.canModifyLabels(key),
-                    toggleStar: { model.toggleStar(MergedConversation(key: key, conversation: conversation)) },
-                    openDraft: hub.canEditDraft(key) ? { model.editDraft(key) } : nil
-                )
-                .id(key)
-                .environment(\.attachmentLoader, AttachmentLoader(hub: hub, accountID: key.accountID))
+            } else {
+                ContentUnavailableView {
+                    Label("No Conversation Selected", systemImage: "envelope.open")
+                } description: {
+                    Text("Select a conversation to read it.")
+                }
             }
-        } else if hub.isLoadingConversation(key) {
-            ProgressView("Loading conversation…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else if let error = hub.conversationError(key) {
-            ContentUnavailableView {
-                Label("Could Not Load Conversation", systemImage: "exclamationmark.triangle")
-            } description: {
-                Text(error)
-            } actions: {
-                Button("Try Again", action: model.retrySelection)
-            }
-        } else {
-            ContentUnavailableView {
-                Label("No Conversation Selected", systemImage: "envelope.open")
-            } description: {
-                Text("Select a conversation to read it.")
-            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hub.isLoadingConversation(key))
+        // Rapid keyboard navigation should switch directly, not stack outgoing conversations.
+        .transaction(value: key) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 }

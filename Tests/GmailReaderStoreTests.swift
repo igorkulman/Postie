@@ -40,6 +40,48 @@ struct GmailReaderStoreTests {
         #expect(api.tokens == [nil, "next", "next"])
     }
 
+    @Test("Pagination has distinct activity, cleared on failure and folder replacement")
+    func paginationActivity() async throws {
+        let a = try GmailFixtures.conversation("a1", includeBody: false)
+        let api = ControlledAPI()
+        let store = GmailReaderStore(api: api)
+        let refresh = Task { await store.refresh() }
+        defer { refresh.cancel(); api.finishPendingRequests() }
+        try await api.waitForPage()
+        #expect(store.isLoadingMailbox && !store.isLoadingMore)
+        try api.finishPage(.success(GmailPage(conversations: [a], nextPageToken: "next")))
+        await refresh.value
+
+        let failedPage = Task { await store.loadMore() }
+        defer { failedPage.cancel() }
+        try await api.waitForPage()
+        #expect(store.isLoadingMailbox && store.isLoadingMore)
+        try api.finishPage(.failure(GmailError.http(503)))
+        await failedPage.value
+        #expect(!store.isLoadingMailbox && !store.isLoadingMore)
+        #expect(store.conversations.map(\.id) == ["a1"])
+
+        let oldPage = Task { await store.loadMore() }
+        defer { oldPage.cancel() }
+        try await api.waitForPage()
+        store.changeMailbox(.sent)
+        #expect(!store.isLoadingMailbox && !store.isLoadingMore)
+
+        let newRefresh = Task { await store.refresh() }
+        defer { newRefresh.cancel() }
+        // Release the old request only after the new folder has begun loading.
+        let oldRequest = api.page
+        api.page = nil
+        try await api.waitForPage()
+        oldRequest?.resume(returning: GmailPage(conversations: [a], nextPageToken: nil))
+        await oldPage.value
+        #expect(store.isLoadingMailbox && !store.isLoadingMore)
+        try api.finishPage(.success(GmailPage(conversations: [], nextPageToken: nil)))
+        await newRefresh.value
+        #expect(!store.isLoadingMailbox && !store.isLoadingMore)
+        #expect(store.conversations.isEmpty)
+    }
+
     @Test("Loading a body caches it and makes it searchable, leaving read state to the view")
     func bodyCache() async throws {
         let metadata = try GmailFixtures.conversation("a1", includeBody: false)

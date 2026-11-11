@@ -227,6 +227,41 @@ struct MailHubTests {
         #expect(hub.conversations.count == 3)
     }
 
+    @Test("Search pagination activity clears on cancellation without clearing a newer search")
+    func searchPaginationActivity() async throws {
+        let api = ControlledSearchAPI()
+        let hub = await makeHub(["a": api])
+        hub.setSearch("first", scope: .allMail)
+        let first = Task { await hub.performSearch() }
+        defer { first.cancel(); api.finishPendingSearch() }
+        try await api.waitForSearch()
+        #expect(hub.isLoadingMailbox && !hub.isLoadingMore)
+        api.finishSearch(GmailPage(conversations: [Self.conversation("result", at: 100)], nextPageToken: "next"))
+        await first.value
+
+        let more = Task { await hub.loadMore() }
+        defer { more.cancel() }
+        try await api.waitForSearch()
+        #expect(hub.isLoadingMailbox && hub.isLoadingMore)
+        #expect(api.pageTokens == [nil, "next"])
+
+        hub.setSearch("replacement", scope: .allMail)
+        #expect(hub.isLoadingMailbox && !hub.isLoadingMore)
+        more.cancel()
+        api.finishPendingSearch()
+        await more.value
+        // A stale pagination defer must not stop the replacement query's indicator.
+        #expect(hub.isLoadingMailbox && !hub.isLoadingMore)
+
+        let replacement = Task { await hub.performSearch() }
+        defer { replacement.cancel() }
+        try await api.waitForSearch()
+        replacement.cancel()
+        api.finishPendingSearch()
+        await replacement.value
+        #expect(!hub.isLoadingMailbox && !hub.isLoadingMore)
+    }
+
     @Test("Searching this folder limits the query to the current mailbox")
     func searchFolder() async {
         let a = HubAPI([Self.conversation("alza1", at: 100)])

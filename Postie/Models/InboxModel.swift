@@ -193,8 +193,10 @@ final class InboxModel {
         Task { await hub.setStarred(item.key, !item.conversation.isStarred) }
     }
 
+    func isRemoving(_ key: ConversationKey) -> Bool { selection.isRemoving(key) }
+
     var canRemoveSelection: Bool {
-        selectedID.map { !selection.isRemoving($0) } ?? false
+        selectedID.map { !isRemoving($0) } ?? false
     }
 
     func remove(_ key: ConversationKey, archiving: Bool) {

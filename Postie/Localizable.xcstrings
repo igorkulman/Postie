@@ -4,6 +4,9 @@
     "" : {
 
     },
+    "& %lld more" : {
+      "comment" : "After the first attachment's name in the message list"
+    },
     "%lld cached" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from the local cache",
       "extractionState" : "stale",
@@ -27,6 +30,9 @@
           }
         }
       }
+    },
+    "%lld conversations" : {
+
     },
     "%lld loaded" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from Gmail",
@@ -75,8 +81,8 @@
         }
       }
     },
-    "& %lld more" : {
-      "comment" : "After the first attachment's name in the message list"
+    "1 conversation" : {
+
     },
     "A newer invitation is available" : {
 
@@ -96,6 +102,9 @@
     "Add" : {
 
     },
+    "Add a Gmail account to read and send mail." : {
+
+    },
     "Add Account…" : {
 
     },
@@ -105,17 +114,17 @@
     "Add Link" : {
 
     },
-    "Add a Gmail account to read and send mail." : {
+    "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
 
     },
-    "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
+    "All day" : {
 
     },
     "All Mail" : {
 
     },
-    "All day" : {
-
+    "and %lld more" : {
+      "comment" : "VoiceOver: the number of attachments besides the first one"
     },
     "Archive" : {
       "comment" : "Mailbox name"
@@ -135,10 +144,10 @@
     "B" : {
 
     },
-    "BCC email addresses" : {
+    "Bcc" : {
 
     },
-    "Bcc" : {
+    "BCC email addresses" : {
 
     },
     "Bigger" : {
@@ -148,9 +157,6 @@
 
     },
     "Bulleted List" : {
-
-    },
-    "CC email addresses" : {
 
     },
     "Calendar access was not granted. Your mail still works normally." : {
@@ -174,13 +180,16 @@
     "Cc" : {
       "comment" : "Label of the carbon-copy field in the composer"
     },
+    "CC email addresses" : {
+
+    },
     "Cc: %@" : {
       "comment" : "Header line in an expanded message: the Cc recipients"
     },
-    "Check for Updates…" : {
+    "Check for updates automatically" : {
 
     },
-    "Check for updates automatically" : {
+    "Check for Updates…" : {
 
     },
     "Checking your Calendar response…" : {
@@ -306,10 +315,10 @@
     "Gmail returned a response that could not be read." : {
 
     },
-    "Google Calendar API is disabled for this app's Google Cloud project. Reconnecting will not fix this. Enable the API, then refresh your response." : {
+    "Google Calendar access was denied (HTTP 403). Check your Google Workspace policy or this app's configuration." : {
 
     },
-    "Google Calendar access was denied (HTTP 403). Check your Google Workspace policy or this app's configuration." : {
+    "Google Calendar API is disabled for this app's Google Cloud project. Reconnecting will not fix this. Enable the API, then refresh your response." : {
 
     },
     "Google Calendar could not complete the request (HTTP %lld). Try refreshing." : {
@@ -327,11 +336,11 @@
     "Guests (%lld)" : {
 
     },
-    "HTML email body" : {
-      "comment" : "Accessibility label for the web view showing a formatted email"
-    },
     "Hide quoted text" : {
       "comment" : "Tooltip of the button that collapses the quoted history of an email"
+    },
+    "HTML email body" : {
+      "comment" : "Accessibility label for the web view showing a formatted email"
     },
     "I" : {
 
@@ -348,9 +357,6 @@
     "Junk" : {
       "comment" : "Mailbox name"
     },
-    "Loading" : {
-      "comment" : "VoiceOver label of a progress spinner"
-    },
     "Loading conversation…" : {
 
     },
@@ -358,6 +364,9 @@
 
     },
     "Loading mail…" : {
+
+    },
+    "Loading more…" : {
 
     },
     "Mail changed while loading this page. Please try again." : {
@@ -408,14 +417,14 @@
     "Needs sign-in" : {
       "comment" : "Shown next to an account whose Google access was revoked or expired"
     },
+    "New message" : {
+      "comment" : "Composer title"
+    },
     "New Message" : {
 
     },
     "New Message (⌘N)" : {
 
-    },
-    "New message" : {
-      "comment" : "Composer title"
     },
     "No Accounts" : {
 
@@ -478,9 +487,6 @@
 
     },
     "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access." : {
-
-    },
-    "RSVP is unavailable for this invitation from this account. Use the original email for more options." : {
 
     },
     "Read" : {
@@ -547,6 +553,9 @@
 
     },
     "Response from Google Calendar" : {
+
+    },
+    "RSVP is unavailable for this invitation from this account. Use the original email for more options." : {
 
     },
     "Save" : {
@@ -630,10 +639,10 @@
     "Text Size" : {
 
     },
-    "The Keychain could not be accessed (error %d)." : {
+    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
 
     },
-    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
+    "The Keychain could not be accessed (error %d)." : {
 
     },
     "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message." : {
@@ -720,6 +729,9 @@
     "Updated invitation" : {
 
     },
+    "Updating…" : {
+
+    },
     "Waiting to be sent" : {
 
     },
@@ -746,9 +758,6 @@
     },
     "Your response: %@" : {
 
-    },
-    "and %lld more" : {
-      "comment" : "VoiceOver: the number of attachments besides the first one"
     }
   },
   "version" : "1.0"

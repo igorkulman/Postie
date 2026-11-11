@@ -3,9 +3,23 @@ import SwiftUI
 /// The middle column: notices, the search header, the conversation list and its footer.
 struct ConversationListView: View {
     @Bindable var model: InboxModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var displayedContext: UpdateContext?
     var listIsFocused: FocusState<Bool>.Binding
 
     private var hub: MailHub { model.hub }
+
+    private struct UpdateContext: Equatable {
+        let mailbox: Mailbox
+        let query: String
+        let scope: SearchScope
+        let accounts: [String]
+    }
+
+    private var updateContext: UpdateContext {
+        UpdateContext(mailbox: hub.mailbox, query: hub.searchQuery, scope: hub.searchScope,
+                      accounts: hub.sessions.map(\.id))
+    }
 
     private var listSelection: Binding<ConversationKey?> {
         Binding(get: { model.selectedID }, set: { model.updateFromList($0) })
@@ -27,12 +41,13 @@ struct ConversationListView: View {
             // Keep the List (and its first responder) alive across loading and empty states.
             List(selection: listSelection) {
                 ForEach(hub.conversations) { item in
-                    MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox))
+                    MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox),
+                                  isPending: model.isRemoving(item.key))
                         .tag(item.key)
                         .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                         .listRowSeparator(.hidden)
                         .swipeActions(edge: .leading) {
-                            if hub.canModifyLabels(item.key) {
+                            if hub.canModifyLabels(item.key), !model.isRemoving(item.key) {
                                 Button { model.toggleRead(item) } label: {
                                     Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
                                           systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
@@ -45,12 +60,12 @@ struct ConversationListView: View {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
-                            if hub.canTrash(item.key) {
+                            if hub.canTrash(item.key), !model.isRemoving(item.key) {
                                 Button(role: .destructive) { model.remove(item.key, archiving: false) } label: {
                                     Label("Delete", systemImage: "trash")
                                 }
                             }
-                            if hub.canArchive(item.key) {
+                            if hub.canArchive(item.key), !model.isRemoving(item.key) {
                                 Button { model.remove(item.key, archiving: true) } label: {
                                     Label("Archive", systemImage: "archivebox")
                                 }
@@ -59,16 +74,21 @@ struct ConversationListView: View {
                         }
                         .onAppear { model.conversationAppeared(item.key) }
                 }
-                if hub.isLoadingMailbox, !hub.conversations.isEmpty {
-                    ProgressView().controlSize(.small)
-                        .frame(maxWidth: .infinity)
-                        .listRowSeparator(.hidden)
-                        .accessibilityLabel("Loading")
-                }
             }
             .listStyle(.inset)
             .focused(listIsFocused)
             .accessibilityIdentifier("conversationList")
+            // The first result batch belongs to a new context even if it arrives later.
+            // Don't slide an entire cached folder or replacement search into the list.
+            .transaction { transaction in
+                if displayedContext != updateContext {
+                    transaction.animation = nil
+                    transaction.disablesAnimations = true
+                }
+            }
+            .onChange(of: hub.conversationKeys, initial: true) {
+                if !hub.conversationKeys.isEmpty { displayedContext = updateContext }
+            }
             .onDeleteCommand {
                 guard let key = model.selectedID else { return }
                 if hub.canActOnOutboxItem(key) { model.deleteOutboxItem(key) }
@@ -77,6 +97,7 @@ struct ConversationListView: View {
             .contextMenu(forSelectionType: ConversationKey.self) { keys in
                 if let key = keys.first {
                     ConversationContextMenu(model: model, key: key)
+                        .disabled(model.isRemoving(key))
                 }
             } primaryAction: { keys in
                 // Double-click, or Return: a draft or a queued message opens for editing.
@@ -88,8 +109,23 @@ struct ConversationListView: View {
                     ListPlaceholder(isLoading: hub.isLoadingMailbox || hub.isRestoringCache,
                                     isSearching: hub.isSearchActive, mailbox: hub.mailbox)
                         .allowsHitTesting(false)
+                        .transition(.opacity)
                 }
             }
+            if !hub.conversations.isEmpty {
+                Divider()
+                MailboxStatusView(count: hub.loadedCount, isLoading: hub.isLoadingMailbox,
+                                  isLoadingMore: hub.isLoadingMore, isSearching: hub.isSearchActive)
+                    .transition(.opacity)
+            }
+        }
+        // Animate changes within a mailbox, never a wholesale folder/search/account replacement.
+        // Identity, List lifetime and keyboard focus remain unchanged.
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: hub.conversationKeys)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.16), value: hub.isLoadingMailbox)
+        .transaction(value: updateContext) { transaction in
+            transaction.animation = nil
+            transaction.disablesAnimations = true
         }
     }
 }
@@ -144,10 +180,10 @@ private struct ListPlaceholder: View {
 
     var body: some View {
         if isLoading, isSearching {
-            ProgressView("Searching…")
+            MailActivityIndicator(title: String(localized: "Searching…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isLoading {
-            ProgressView("Loading mail…")
+            MailActivityIndicator(title: String(localized: "Loading mail…"))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if isSearching {
             ContentUnavailableView {
