@@ -18,11 +18,26 @@ final class InboxModel {
     private(set) var listFocusRequest = 0
     private var selection = ConversationSelection<ConversationKey>()
 
+    private(set) var isReaderActive = false
+    @ObservationIgnored private var readerActivityRevision = 0
+    @ObservationIgnored private let autoReadDelay: @MainActor () async throws -> Void
     @ObservationIgnored private var selectionBeforeSearch: ConversationKey?
-    @ObservationIgnored private var autoReadID: ConversationKey?
+    @ObservationIgnored private var manualUnreadRevision: Int?
+    // Once a Gmail write begins it must survive view-task cancellation during its follow-up refresh.
+    @ObservationIgnored private var autoReadTasks: [ConversationKey: Task<Void, Never>] = [:]
 
-    init(hub: MailHub) {
+    init(hub: MailHub, autoReadDelay: @escaping @MainActor () async throws -> Void = {
+        try await Task.sleep(for: .seconds(1))
+    }) {
         self.hub = hub
+        self.autoReadDelay = autoReadDelay
+    }
+
+    /// Activity belongs to the reader window, not another Postie window such as the composer.
+    func setReaderActive(_ active: Bool) {
+        guard isReaderActive != active else { return }
+        isReaderActive = active
+        readerActivityRevision += 1
     }
 
     // MARK: Selection
@@ -70,8 +85,14 @@ final class InboxModel {
 
     /// Loads the selected conversation, then marks it read once it has stayed open for a moment.
     func openSelection() async {
-        await hub.select(selectedID)
-        await markOpenedConversationRead()
+        guard !Task.isCancelled else { return }
+        let key = selectedID
+        let revision = selection.revision
+        let activityRevision = readerActivityRevision
+        await hub.select(key)
+        guard let key, !Task.isCancelled, selectedID == key, selection.revision == revision,
+              isReaderActive, readerActivityRevision == activityRevision else { return }
+        await markOpenedConversationRead(key, revision: revision, activityRevision: activityRevision)
     }
 
     func retrySelection() {
@@ -79,13 +100,29 @@ final class InboxModel {
     }
 
     /// Marks the open conversation read after it has stayed open briefly, so skimming past mail doesn't change it.
-    private func markOpenedConversationRead() async {
-        guard let key = selectedID, hub.canModifyLabels(key), autoReadID != key else { return }
-        try? await Task.sleep(for: .seconds(1))
-        guard !Task.isCancelled, selectedID == key, hub.openConversation(for: key)?.isUnread == true else { return }
-        autoReadID = key
-        // Unstructured: the follow-up refresh must not be cancelled by a selection change.
-        Task { await hub.setUnread(key, false) }
+    private func markOpenedConversationRead(_ key: ConversationKey, revision: Int, activityRevision: Int) async {
+        guard isReaderActive, readerActivityRevision == activityRevision, hub.canModifyLabels(key),
+              manualUnreadRevision != revision, autoReadTasks[key] == nil,
+              let conversation = hub.openConversation(for: key), conversation.isUnread,
+              conversation.messages.allSatisfy(\.bodyLoaded) else { return }
+        do { try await autoReadDelay() }
+        catch { return }
+        guard !Task.isCancelled, isReaderActive, readerActivityRevision == activityRevision,
+              selectedID == key, selection.revision == revision,
+              manualUnreadRevision != revision, autoReadTasks[key] == nil,
+              hub.openConversation(for: key)?.isUnread == true else { return }
+
+        let task = Task {
+            // Recheck on entry: the window may deactivate before this unstructured task starts.
+            guard isReaderActive, readerActivityRevision == activityRevision,
+                  selectedID == key, selection.revision == revision, manualUnreadRevision != revision else { return }
+            await hub.setUnread(key, false)
+        }
+        autoReadTasks[key] = task
+        await task.value
+        autoReadTasks[key] = nil
+        // Recheck actual unread state next time: neither a failed attempt nor an earlier
+        // successful read should block a newly arrived unread reply in this conversation.
     }
 
     // MARK: Loading
@@ -97,6 +134,7 @@ final class InboxModel {
     /// Tries again after an error, for whatever failed: the folder, the search or both.
     func retry() {
         refresh()
+        if selectedID != nil { retrySelection() }
         if hub.isSearchActive { Task { await hub.performSearch() } }
     }
 
@@ -140,7 +178,15 @@ final class InboxModel {
     // MARK: Actions on a conversation
 
     func toggleRead(_ item: MergedConversation) {
-        Task { await hub.setUnread(item.key, !item.conversation.isUnread) }
+        let unread = !item.conversation.isUnread
+        // Explicit unread wins for this opening, including a countdown already in progress.
+        if unread, selectedID == item.key { manualUnreadRevision = selection.revision }
+        let pendingRead = autoReadTasks[item.key]
+        Task {
+            // Serialize against an automatic write already sent to Gmail so the user's choice wins.
+            if let pendingRead { _ = await pendingRead.value }
+            await hub.setUnread(item.key, unread)
+        }
     }
 
     func toggleStar(_ item: MergedConversation) {

@@ -69,7 +69,7 @@ struct MailHubTests {
         ])
     }
 
-    func makeHub(_ apis: [String: HubAPI], order: [String]? = nil, calendarAccess: Set<String> = []) async -> MailHub {
+    func makeHub(_ apis: [String: any GmailReading], order: [String]? = nil, calendarAccess: Set<String> = []) async -> MailHub {
         let ids = order ?? apis.keys.sorted()
         let stored = ids.enumerated().map { index, id in
             StoredAccount(
