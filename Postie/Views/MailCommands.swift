@@ -16,6 +16,8 @@ struct MailActions {
     var toggleFlag: (() -> Void)?
     var selectionIsUnread = false
     var selectionIsFlagged = false
+    var previousConversation: (() -> Void)?
+    var nextConversation: (() -> Void)?
 }
 
 extension FocusedValues {
@@ -77,6 +79,13 @@ struct MailCommands: Commands {
         }
 
         CommandMenu("Message") {
+            Button("Previous Conversation") { actions?.previousConversation?() }
+                .keyboardShortcut(.upArrow, modifiers: [.command, .option])
+                .disabled(actions?.previousConversation == nil)
+            Button("Next Conversation") { actions?.nextConversation?() }
+                .keyboardShortcut(.downArrow, modifiers: [.command, .option])
+                .disabled(actions?.nextConversation == nil)
+            Divider()
             Button("Edit Draft") { actions?.editDraft?() }
                 .keyboardShortcut("e", modifiers: .command)
                 .disabled(actions?.editDraft == nil)
@@ -126,6 +135,15 @@ struct MailToolbar: ToolbarContent {
             .disabled(actions.refresh == nil)
             .help("Get New Mail (⇧⌘N)")
         }
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button { actions.previousConversation?() } label: { Label("Previous Conversation", systemImage: "chevron.up") }
+                .disabled(actions.previousConversation == nil)
+                .help("Previous Conversation (⌥⌘↑)")
+            Button { actions.nextConversation?() } label: { Label("Next Conversation", systemImage: "chevron.down") }
+                .disabled(actions.nextConversation == nil)
+                .help("Next Conversation (⌥⌘↓)")
+        }
+        ToolbarSpacer(.fixed, placement: .primaryAction)
         ToolbarItemGroup(placement: .primaryAction) {
             Button { actions.archive?() } label: { Label("Archive", systemImage: "archivebox") }
                 .disabled(actions.archive == nil)

@@ -17,6 +17,7 @@ struct HTMLMessageBody: View {
                     .font(.system(size: CGFloat(MessageTextSize.clamped(messageTextSize))))
                     .lineSpacing(3)
                     .textSelection(.enabled)
+                    .frame(maxWidth: 680, alignment: .leading)
                 Text("Unable to display HTML. Showing plain text.")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -127,6 +128,12 @@ enum EmailHTMLPolicy {
     (() => {
         let lastHeight = -1;
         const root = document.documentElement;
+        // Simple correspondence gets a comfortable reading measure. Leave authored layouts,
+        // images, tables and code alone rather than squeezing newsletters or receipts.
+        const authoredLayout = 'style, table, img, pre, [width], [style*="width" i]';
+        if (!document.body.matches(authoredLayout) && !document.body.querySelector(authoredLayout)) {
+            document.body.style.maxWidth = '80ch';
+        }
         const report = () => {
             // The body's scrollHeight also counts content overflowing it, which its own rect misses.
             // Unlike the root's, it never grows to fill the viewport, so the view can still shrink.

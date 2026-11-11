@@ -16,6 +16,8 @@ final class InboxModel {
     private(set) var selectionRetry = 0
     /// Bumped when an explicit removal should hand keyboard focus back to the list.
     private(set) var listFocusRequest = 0
+    /// Explicit toolbar/menu navigation reveals its row without stealing focus from the reader.
+    private(set) var conversationNavigationRequest = 0
     private var selection = ConversationSelection<ConversationKey>()
 
     private(set) var isReaderActive = false
@@ -59,6 +61,12 @@ final class InboxModel {
 
     func reconcileSelection() {
         selection.reconcile(with: conversationKeys)
+    }
+
+    func navigateConversation(offset: Int) {
+        guard let key = selection.neighbor(offset: offset, visibleIDs: conversationKeys) else { return }
+        select(key)
+        conversationNavigationRequest += 1
     }
 
     func changeMailbox(_ mailbox: Mailbox) {
@@ -292,7 +300,11 @@ final class InboxModel {
             toggleRead: selected.map { item in { [self] in toggleRead(item) } },
             toggleFlag: selected.map { item in { [self] in toggleStar(item) } },
             selectionIsUnread: selected?.conversation.isUnread ?? false,
-            selectionIsFlagged: selected?.conversation.isStarred ?? false
+            selectionIsFlagged: selected?.conversation.isStarred ?? false,
+            previousConversation: selection.neighbor(offset: -1, visibleIDs: conversationKeys) == nil
+                ? nil : { [self] in navigateConversation(offset: -1) },
+            nextConversation: selection.neighbor(offset: 1, visibleIDs: conversationKeys) == nil
+                ? nil : { [self] in navigateConversation(offset: 1) }
         )
     }
 }

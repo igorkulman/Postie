@@ -144,6 +144,9 @@
     "BCC email addresses" : {
 
     },
+    "Back to latest" : {
+
+    },
     "Bcc" : {
 
     },
@@ -294,6 +297,16 @@
     "From" : {
       "comment" : "Label of the sender row in the composer"
     },
+    "From: %@ <%@>" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "From: %1$@ <%2$@>"
+          }
+        }
+      }
+    },
     "General" : {
 
     },
@@ -426,6 +439,12 @@
     "New message" : {
       "comment" : "Composer title"
     },
+    "Next Conversation" : {
+
+    },
+    "Next Conversation (⌥⌘↓)" : {
+
+    },
     "No Accounts" : {
 
     },
@@ -489,6 +508,12 @@
     "Postie needs permission to read and organize your Gmail. Sign in again and allow Gmail access." : {
 
     },
+    "Previous Conversation" : {
+
+    },
+    "Previous Conversation (⌥⌘↑)" : {
+
+    },
     "RSVP is unavailable for this invitation from this account. Use the original email for more options." : {
 
     },
@@ -499,6 +524,9 @@
 
     },
     "Recipient email address" : {
+
+    },
+    "Recipients not specified" : {
 
     },
     "Reconnect" : {
@@ -606,10 +634,19 @@
     "Sent" : {
       "comment" : "Mailbox name"
     },
+    "Show %lld earlier messages" : {
+
+    },
+    "Show 1 earlier message" : {
+
+    },
     "Show quoted text" : {
       "comment" : "Tooltip of the button that expands the quoted history of an email"
     },
     "Show unread count on the Dock icon" : {
+
+    },
+    "Shows full sender and recipient addresses" : {
 
     },
     "Sign in with Google" : {
@@ -761,6 +798,9 @@
     },
     "and %lld more" : {
       "comment" : "VoiceOver: the number of attachments besides the first one"
+    },
+    "me" : {
+
     }
   },
   "version" : "1.0"

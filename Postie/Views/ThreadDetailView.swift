@@ -5,15 +5,19 @@ struct ThreadDetailView: View {
     var canToggleStar = true
     let toggleStar: () -> Void
     var openDraft: (() -> Void)?
+    var accountEmail: String?
+    @State private var isShowingHistory = false
     @State private var scrollPosition: ScrollPosition
     @State private var viewportHeight: CGFloat = 0
     @State private var followsLatestLayout = true
 
-    init(thread: MailThread, canToggleStar: Bool = true, toggleStar: @escaping () -> Void, openDraft: (() -> Void)? = nil) {
+    init(thread: MailThread, canToggleStar: Bool = true, toggleStar: @escaping () -> Void, openDraft: (() -> Void)? = nil,
+         accountEmail: String? = nil) {
         self.thread = thread
         self.canToggleStar = canToggleStar
         self.toggleStar = toggleStar
         self.openDraft = openDraft
+        self.accountEmail = accountEmail
         _scrollPosition = State(initialValue: Self.openingScrollPosition(for: thread))
     }
 
@@ -29,7 +33,8 @@ struct ThreadDetailView: View {
     var body: some View {
         VStack(spacing: 0) {
             ConversationHeaderView(thread: thread, canToggleStar: canToggleStar,
-                                   isDraft: openDraft != nil, toggleStar: toggleStar)
+                                   isDraft: openDraft != nil, toggleStar: toggleStar,
+                                   isShowingHistory: isShowingHistory, navigateHistory: navigateHistory)
             Divider()
 
             ScrollView {
@@ -51,7 +56,7 @@ struct ThreadDetailView: View {
                     ForEach(thread.messages) { message in
                         VStack(alignment: .leading, spacing: 16) {
                             MessageView(
-                                message: message, expandedInitially: message.id == thread.latestMessage?.id,
+                                message: message, accountEmail: accountEmail, expandedInitially: message.id == thread.latestMessage?.id,
                                 minimumExpandedHeight: thread.messages.count > 1 && message.id == thread.latestMessage?.id
                                     ? max(0, viewportHeight - 20) : nil
                             ) {
@@ -84,90 +89,83 @@ struct ThreadDetailView: View {
             .defaultScrollAnchor(.top, for: .sizeChanges)
             .onChange(of: thread.id) { _, _ in
                 followsLatestLayout = true
+                isShowingHistory = false
                 scrollPosition = Self.openingScrollPosition(for: thread)
             }
         }
         .background(Color(nsColor: .textBackgroundColor))
     }
+
+    private func navigateHistory() {
+        guard let first = thread.messages.first, let latest = thread.latestMessage else { return }
+        isShowingHistory.toggle()
+        followsLatestLayout = !isShowingHistory
+        scrollPosition = ScrollPosition(id: isShowingHistory ? first.id : latest.id, anchor: .top)
+    }
 }
 
 private struct MessageView: View {
     let message: MailMessage
+    let accountEmail: String?
     let interact: () -> Void
     let minimumExpandedHeight: CGFloat?
     @State private var isExpanded: Bool
     @AppStorage(SettingsKey.messageTextSize) private var messageTextSize = MessageTextSize.defaultSize
 
-    init(message: MailMessage, expandedInitially: Bool, minimumExpandedHeight: CGFloat?,
+    init(message: MailMessage, accountEmail: String?, expandedInitially: Bool, minimumExpandedHeight: CGFloat?,
          interact: @escaping () -> Void) {
         self.message = message
+        self.accountEmail = accountEmail
         self.interact = interact
         self.minimumExpandedHeight = minimumExpandedHeight
         _isExpanded = State(initialValue: expandedInitially)
     }
 
-    private var recipientsSummary: String {
-        let to = String(localized: "To: \(message.recipient)")
-        guard !message.cc.isEmpty else { return to }
-        return to + " · " + String(localized: "Cc: \(message.cc)")
-    }
-
-    /// Only worth a line of its own when replies would go somewhere other than back to the sender.
-    private var replyToSummary: String? {
-        let replyTo = message.replyTo.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !replyTo.isEmpty, GmailText.sender(replyTo).email.caseInsensitiveCompare(message.senderEmail) != .orderedSame
-        else { return nil }
-        return String(localized: "Reply-To: \(replyTo)")
-    }
-
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Button {
-                interact()
-                isExpanded.toggle()
-            } label: {
-                HStack(alignment: .center, spacing: 10) {
-                    SenderAvatar(message: message, size: 32)
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 5) {
-                            Text(message.senderName)
-                                .fontWeight(.semibold)
-                                .foregroundStyle(.primary)
-                            if isExpanded {
-                                Text(verbatim: "<\(message.senderEmail)>")
+            HStack(alignment: .top, spacing: 10) {
+                SenderAvatar(message: message, size: 32)
+                VStack(alignment: .leading, spacing: 3) {
+                    Button {
+                        interact()
+                        isExpanded.toggle()
+                    } label: {
+                        HStack(alignment: .center, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(message.senderName)
+                                    .font(.callout.weight(.semibold))
+                                    .foregroundStyle(.primary)
+                                    .lineLimit(1)
+                                if !isExpanded {
+                                    Text(String(message.body.prefix(100)).replacingOccurrences(of: "\n", with: " "))
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(1)
+                                }
+                            }
+                            Spacer(minLength: 8)
+                            VStack(alignment: .trailing, spacing: 3) {
+                                Text(message.date, format: .dateTime.month(.abbreviated).day().hour().minute())
+                                    .font(.subheadline)
                                     .foregroundStyle(.secondary)
+                                Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
+                                    .font(.caption2.weight(.medium))
+                                    .foregroundStyle(.tertiary)
                             }
                         }
-                        .font(.callout)
-                        .lineLimit(1)
-                        Text(isExpanded ? recipientsSummary : String(message.body.prefix(100)).replacingOccurrences(of: "\n", with: " "))
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        if isExpanded, let replyToSummary {
-                            Text(replyToSummary)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
+                        .contentShape(Rectangle())
                     }
-                    Spacer(minLength: 8)
-                    VStack(alignment: .trailing, spacing: 3) {
-                        Text(message.date, format: .dateTime.month(.abbreviated).day().hour().minute())
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                            .font(.caption2.weight(.medium))
-                            .foregroundStyle(.tertiary)
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Message from \(message.senderName)")
+                    .accessibilityValue(isExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
+                    .accessibilityHint(isExpanded ? String(localized: "Collapses the message") : String(localized: "Expands the message"))
+                    .help(message.senderEmail)
+
+                    if isExpanded {
+                        MessageRecipientsView(message: message, accountEmail: accountEmail)
                     }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Message from \(message.senderName)")
-            .accessibilityValue(isExpanded ? String(localized: "Expanded") : String(localized: "Collapsed"))
-            .accessibilityHint(isExpanded ? String(localized: "Collapses the message") : String(localized: "Expands the message"))
-            .help(message.senderEmail)
 
             if isExpanded {
                 if !message.attachments.isEmpty {
@@ -185,8 +183,9 @@ private struct MessageView: View {
                     Text(message.body)
                         .font(.system(size: CGFloat(MessageTextSize.clamped(messageTextSize))))
                         .lineSpacing(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                         .textSelection(.enabled)
+                        .frame(maxWidth: 680, alignment: .leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
         }
@@ -233,7 +232,7 @@ private func longConversationPreview(html: Bool = false, subject: String = "Long
 
 #Preview("Latest message · Long conversation") {
     let thread = longConversationPreview()
-    ThreadDetailView(thread: thread, toggleStar: {})
+    ThreadDetailView(thread: thread, toggleStar: {}, accountEmail: "alex@example.com")
         .id(thread.id)
         .frame(width: 620, height: 640)
 }
@@ -253,5 +252,17 @@ private func longConversationPreview(html: Bool = false, subject: String = "Long
         .id(thread.id)
         .frame(width: 420, height: 640)
         .preferredColorScheme(.dark)
+}
+
+#Preview("Wide plain-text reading") {
+    let thread = MailThread(
+        id: "wide-reading", subject: "A comfortable reading width", messages: [
+            MailMessage(id: "wide-message", senderName: "Sophie Chen", senderEmail: "sophie@example.com",
+                        recipient: "Alex Example <alex@example.com>", date: .now,
+                        body: String(repeating: "Ordinary correspondence should be easy to follow without reading all the way across a wide window. ", count: 12))
+        ], mailbox: .inbox
+    )
+    ThreadDetailView(thread: thread, toggleStar: {}, accountEmail: "alex@example.com")
+        .frame(width: 1200, height: 600)
 }
 #endif

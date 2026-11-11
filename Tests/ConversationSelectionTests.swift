@@ -5,6 +5,20 @@ import Testing
 @Suite("Conversation selection policy")
 @MainActor
 struct ConversationSelectionTests {
+    @Test("Navigation uses the visible order without wrapping", arguments: [
+        ("middle", -1, ["new", "middle", "old"], "new"),
+        ("middle", 1, ["old", "middle", "new"], "new"),
+        ("new", -1, ["new", "old"], nil),
+        ("old", 1, ["new", "old"], nil),
+        ("missing", 1, ["new", "old"], nil),
+        ("new", 1, [], nil)
+    ])
+    func navigation(example: (String, Int, [String], String?)) {
+        var selection = ConversationSelection<String>()
+        selection.select(example.0)
+        #expect(selection.neighbor(offset: example.1, visibleIDs: example.2) == example.3)
+    }
+
     @Test("An empty List's redundant deselection does not consume initial cache selection")
     func initialListDeselects() {
         var selection = ConversationSelection<String>()

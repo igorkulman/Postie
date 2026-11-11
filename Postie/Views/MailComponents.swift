@@ -55,8 +55,13 @@ struct MailThreadRow: View {
                             .lineLimit(1)
                         if thread.messages.count > 1 {
                             Text(thread.messages.count, format: .number)
-                                .font(.caption)
+                                .font(.caption.monospacedDigit())
                                 .foregroundStyle(.secondary)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 1)
+                                .background(.quaternary, in: Capsule())
+                                .fixedSize()
+                                .help(String(localized: "\(thread.messages.count) messages"))
                         }
                         Spacer(minLength: 4)
                         if thread.isStarred {

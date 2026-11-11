@@ -48,6 +48,13 @@ struct ConversationSelection<ID: Hashable> {
         }
     }
 
+    /// Navigation follows the current visible order and never wraps or opens an arbitrary row.
+    func neighbor(offset: Int, visibleIDs: [ID]) -> ID? {
+        guard let selectedID, let index = visibleIDs.firstIndex(of: selectedID),
+              visibleIDs.indices.contains(index + offset) else { return nil }
+        return visibleIDs[index + offset]
+    }
+
     func isRemoving(_ id: ID) -> Bool { removals.values.contains { $0.id == id } }
 
     /// Each operation owns its snapshot; another removal cannot overwrite or clear it.

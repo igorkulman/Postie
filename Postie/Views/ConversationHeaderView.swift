@@ -6,6 +6,8 @@ struct ConversationHeaderView: View {
     let canToggleStar: Bool
     let isDraft: Bool
     let toggleStar: () -> Void
+    var isShowingHistory = false
+    var navigateHistory: (() -> Void)?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -21,9 +23,20 @@ struct ConversationHeaderView: View {
                     }
 
                 if thread.messages.count > 1 {
-                    Text("\(thread.messages.count) messages")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text("\(thread.messages.count) messages")
+                            .foregroundStyle(.secondary)
+                        if let navigateHistory {
+                            Button(action: navigateHistory) {
+                                Text(isShowingHistory
+                                     ? String(localized: "Back to latest")
+                                     : (thread.messages.count == 2 ? String(localized: "Show 1 earlier message")
+                                        : String(localized: "Show \(thread.messages.count - 1) earlier messages")))
+                            }
+                            .buttonStyle(.link)
+                        }
+                    }
+                    .font(.subheadline)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

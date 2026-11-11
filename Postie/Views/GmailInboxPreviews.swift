@@ -81,6 +81,13 @@ private struct GmailPreview: View {
         .frame(width: 960, height: 640)
 }
 
+// Disable entrance transitions so asynchronously loaded sample rows have a stable snapshot.
+#Preview("Reader · Navigation and badges") {
+    GmailPreview()
+        .transaction { $0.disablesAnimations = true }
+        .frame(width: 960, height: 640)
+}
+
 #Preview("Gmail Reader · Retry") {
     GmailPreview(failsBody: true)
         .frame(width: 960, height: 640)

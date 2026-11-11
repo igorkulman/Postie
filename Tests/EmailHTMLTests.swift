@@ -101,6 +101,37 @@ struct EmailHTMLTests {
         #expect(page.view.url?.absoluteString == "about:blank")
     }
 
+    @Test("Simple HTML wraps at a reading measure but stays within a narrow pane")
+    func readableWidth() async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        page.view.frame.size.width = 1200
+        _ = try await page.load("<div>" + String(repeating: "A readable paragraph of ordinary correspondence. ", count: 40) + "</div>")
+        let wide = try await page.inspect("return { width: document.body.getBoundingClientRect().width };")
+        let width = try #require(wide["width"] as? Double)
+        #expect(width < 800)
+        #expect(width > 300)
+
+        page.view.frame.size.width = 320
+        let narrow = try await page.inspect("return { width: document.body.getBoundingClientRect().width };")
+        #expect(try #require(narrow["width"] as? Double) <= 320)
+    }
+
+    @Test("Tables and authored widths keep their layout in wide panes", arguments: [
+        "<table style='width:100%'><tr><td>Wide receipt</td></tr></table>",
+        "<div style='width:100%'>Authored layout</div>",
+        "<style>.layout { width:100%; }</style><div class='layout'>Styled layout</div>",
+        "<pre>Wide code</pre>"
+    ])
+    func authoredReadingWidth(html: String) async throws {
+        let page = BrowserFixture()
+        defer { page.close() }
+        page.view.frame.size.width = 1200
+        _ = try await page.load(html)
+        let result = try await page.inspect("return { width: document.body.getBoundingClientRect().width };")
+        #expect(try #require(result["width"] as? Double) == 1200)
+    }
+
     @Test("Reading size scales nested and fixed-size text once, preserves images and quotes, and resets exactly")
     func readingTextSize() async throws {
         let page = BrowserFixture()

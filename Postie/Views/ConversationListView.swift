@@ -39,77 +39,82 @@ struct ConversationListView: View {
                 Divider()
             }
             // Keep the List (and its first responder) alive across loading and empty states.
-            List(selection: listSelection) {
-                ForEach(hub.conversations) { item in
-                    MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox),
-                                  isPending: model.isRemoving(item.key))
-                        .tag(item.key)
-                        .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
-                        .listRowSeparator(.hidden)
-                        .swipeActions(edge: .leading) {
-                            if hub.canModifyLabels(item.key), !model.isRemoving(item.key) {
-                                Button { model.toggleRead(item) } label: {
-                                    Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
-                                          systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
+            ScrollViewReader { proxy in
+                List(selection: listSelection) {
+                    ForEach(hub.conversations) { item in
+                        MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox),
+                                      isPending: model.isRemoving(item.key))
+                            .tag(item.key)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
+                            .listRowSeparator(.hidden)
+                            .swipeActions(edge: .leading) {
+                                if hub.canModifyLabels(item.key), !model.isRemoving(item.key) {
+                                    Button { model.toggleRead(item) } label: {
+                                        Label(item.conversation.isUnread ? String(localized: "Read") : String(localized: "Unread"),
+                                              systemImage: item.conversation.isUnread ? "envelope.open" : "envelope.badge")
+                                    }
                                 }
                             }
-                        }
-                        .swipeActions(edge: .trailing) {
-                            if hub.canActOnOutboxItem(item.key) {
-                                Button(role: .destructive) { model.deleteOutboxItem(item.key) } label: {
-                                    Label("Delete", systemImage: "trash")
+                            .swipeActions(edge: .trailing) {
+                                if hub.canActOnOutboxItem(item.key) {
+                                    Button(role: .destructive) { model.deleteOutboxItem(item.key) } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                if hub.canTrash(item.key), !model.isRemoving(item.key) {
+                                    Button(role: .destructive) { model.remove(item.key, archiving: false) } label: {
+                                        Label("Delete", systemImage: "trash")
+                                    }
+                                }
+                                if hub.canArchive(item.key), !model.isRemoving(item.key) {
+                                    Button { model.remove(item.key, archiving: true) } label: {
+                                        Label("Archive", systemImage: "archivebox")
+                                    }
+                                    .tint(.indigo)
                                 }
                             }
-                            if hub.canTrash(item.key), !model.isRemoving(item.key) {
-                                Button(role: .destructive) { model.remove(item.key, archiving: false) } label: {
-                                    Label("Delete", systemImage: "trash")
-                                }
-                            }
-                            if hub.canArchive(item.key), !model.isRemoving(item.key) {
-                                Button { model.remove(item.key, archiving: true) } label: {
-                                    Label("Archive", systemImage: "archivebox")
-                                }
-                                .tint(.indigo)
-                            }
-                        }
-                        .onAppear { model.conversationAppeared(item.key) }
+                            .onAppear { model.conversationAppeared(item.key) }
+                    }
                 }
-            }
-            .listStyle(.inset)
-            .focused(listIsFocused)
-            .accessibilityIdentifier("conversationList")
-            // The first result batch belongs to a new context even if it arrives later.
-            // Don't slide an entire cached folder or replacement search into the list.
-            .transaction { transaction in
-                if displayedContext != updateContext {
-                    transaction.animation = nil
-                    transaction.disablesAnimations = true
+                .listStyle(.inset)
+                .focused(listIsFocused)
+                .accessibilityIdentifier("conversationList")
+                // The first result batch belongs to a new context even if it arrives later.
+                // Don't slide an entire cached folder or replacement search into the list.
+                .transaction { transaction in
+                    if displayedContext != updateContext {
+                        transaction.animation = nil
+                        transaction.disablesAnimations = true
+                    }
                 }
-            }
-            .onChange(of: hub.conversationKeys, initial: true) {
-                if !hub.conversationKeys.isEmpty { displayedContext = updateContext }
-            }
-            .onDeleteCommand {
-                guard let key = model.selectedID else { return }
-                if hub.canActOnOutboxItem(key) { model.deleteOutboxItem(key) }
-                else if hub.canTrash(key) { model.remove(key, archiving: false) }
-            }
-            .contextMenu(forSelectionType: ConversationKey.self) { keys in
-                if let key = keys.first {
-                    ConversationContextMenu(model: model, key: key)
-                        .disabled(model.isRemoving(key))
+                .onChange(of: hub.conversationKeys, initial: true) {
+                    if !hub.conversationKeys.isEmpty { displayedContext = updateContext }
                 }
-            } primaryAction: { keys in
-                // Double-click, or Return: a draft or a queued message opens for editing.
-                guard let key = keys.first else { return }
-                if hub.canActOnOutboxItem(key) { model.editOutboxItem(key) } else { model.editDraft(key) }
-            }
-            .overlay {
-                if hub.conversations.isEmpty {
-                    ListPlaceholder(isLoading: hub.isLoadingMailbox || hub.isRestoringCache,
-                                    isSearching: hub.isSearchActive, mailbox: hub.mailbox)
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
+                .onDeleteCommand {
+                    guard let key = model.selectedID else { return }
+                    if hub.canActOnOutboxItem(key) { model.deleteOutboxItem(key) }
+                    else if hub.canTrash(key) { model.remove(key, archiving: false) }
+                }
+                .contextMenu(forSelectionType: ConversationKey.self) { keys in
+                    if let key = keys.first {
+                        ConversationContextMenu(model: model, key: key)
+                            .disabled(model.isRemoving(key))
+                    }
+                } primaryAction: { keys in
+                    // Double-click, or Return: a draft or a queued message opens for editing.
+                    guard let key = keys.first else { return }
+                    if hub.canActOnOutboxItem(key) { model.editOutboxItem(key) } else { model.editDraft(key) }
+                }
+                .overlay {
+                    if hub.conversations.isEmpty {
+                        ListPlaceholder(isLoading: hub.isLoadingMailbox || hub.isRestoringCache,
+                                        isSearching: hub.isSearchActive, mailbox: hub.mailbox)
+                            .allowsHitTesting(false)
+                            .transition(.opacity)
+                    }
+                }
+                .onChange(of: model.conversationNavigationRequest) {
+                    if let key = model.selectedID { proxy.scrollTo(key) }
                 }
             }
             if !hub.conversations.isEmpty {

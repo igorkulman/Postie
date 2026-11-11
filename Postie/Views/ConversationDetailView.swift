@@ -66,6 +66,7 @@ struct ConversationDetailView: View {
 private struct GmailConversationView: View {
     let conversation: GmailConversation
     let mailbox: Mailbox
+    let accountEmail: String?
     @State private var calendarModel: CalendarConversationModel
     let canToggleStar: Bool
     let toggleStar: () -> Void
@@ -75,6 +76,7 @@ private struct GmailConversationView: View {
          canToggleStar: Bool, toggleStar: @escaping () -> Void, openDraft: (() -> Void)?) {
         self.conversation = conversation
         self.mailbox = mailbox
+        self.accountEmail = hub.email(for: key.accountID)
         self.canToggleStar = canToggleStar
         self.toggleStar = toggleStar
         self.openDraft = openDraft
@@ -84,7 +86,7 @@ private struct GmailConversationView: View {
     var body: some View {
         ThreadDetailView(
             thread: conversation.presentation(includingBodies: true, mailbox: mailbox),
-            canToggleStar: canToggleStar, toggleStar: toggleStar, openDraft: openDraft
+            canToggleStar: canToggleStar, toggleStar: toggleStar, openDraft: openDraft, accountEmail: accountEmail
         )
         .environment(\.calendarModel, calendarModel)
         .task(id: calendarModel.loadRequest(for: conversation)) {
