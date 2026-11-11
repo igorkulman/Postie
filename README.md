@@ -14,13 +14,20 @@ subscriptions, AI features, or workspace bloat.
 - Multiple Gmail accounts, merged into one set of folders. Replies, forwards and
   archive/trash actions always go through the account the conversation belongs to
   and the default account for new messages can be chosen in Settings
-- Inbox, Drafts, Sent, Archive, Junk, and Trash
-- Conversation view with HTML email rendering
+- Inbox, Drafts, Outbox, Sent, Archive, Junk, and Trash
+- Conversation view with HTML email rendering, easy access to earlier replies,
+  expandable recipient addresses, and a subject that stays visible while scrolling
+- Previous/next conversation navigation from the toolbar or keyboard
+- Independent text sizing: 13–26 pt for the message list in Settings > General,
+  and HTML/plain-text message-body zoom in View > Text Size
 - Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
   underline, lists, links), with attachments and your Gmail signature
 - Drafts are saved in Gmail, so they show up in every Gmail client: closing a
   message you have written asks whether to keep it, and drafts can be edited
   later from the Drafts folder
+- Persistent Outbox: outgoing messages and attachments are saved on this Mac,
+  with background delivery and retries while Postie is running. Queued mail
+  survives quitting; failed messages can be retried, edited, or deleted
 - Archive, trash, star, and read/unread actions
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
@@ -41,8 +48,30 @@ subscriptions, AI features, or workspace bloat.
   reply, not that the organizer’s calendar processed it
 - Local SQLite cache for previously loaded mail
 - Incremental Gmail synchronization while the app is running
+- Mailbox loading, search, and pagination status, with progress indicators for
+  archive and trash actions
 - Native light and dark mode
 - Dock badge for unread Inbox mail
+- Automatic updates, with a manual Check for Updates… command in the Postie menu
+
+## Keyboard shortcuts
+
+| Action | Shortcut |
+| --- | --- |
+| New message | ⌘N |
+| Get new mail | ⇧⌘N |
+| Previous / next conversation | ⌥⌘↑ / ⌥⌘↓ |
+| Reply / reply all | ⌘R / ⇧⌘R |
+| Forward | ⇧⌘F |
+| Edit draft | ⌘E |
+| Mark as read / unread | ⇧⌘U |
+| Flag / unflag | ⇧⌘L |
+| Archive | ⌃⌘A |
+| Move to Trash | ⌘⌫ |
+| Bigger / smaller message-body text | ⌘+ / ⌘− |
+| Reset message-body text size | ⌘0 |
+
+Text-size shortcuts affect the message body, not the message list.
 
 ## Status
 
