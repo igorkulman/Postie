@@ -39,6 +39,7 @@ final class GmailReaderStore {
     @ObservationIgnored private let calendarReader: (any GoogleCalendarReading)?
     /// Google's contacts are not asked for again before this, so a failing request is not repeated every refresh.
     @ObservationIgnored private var nextContactsFetch = Date.distantPast
+    @ObservationIgnored private var consecutiveRefreshFailures = 0
     @ObservationIgnored private let cache: GmailCacheSession?
     @ObservationIgnored private let synchronizer: GmailSyncCoordinator?
     @ObservationIgnored private var restoredGeneration: Generation?
@@ -109,6 +110,7 @@ final class GmailReaderStore {
         selectedConversation = nil
         lastRefreshed = nil
         showingCachedMail = false
+        consecutiveRefreshFailures = 0
         mailboxVersion += 1
     }
 
@@ -145,7 +147,7 @@ final class GmailReaderStore {
         }
     }
 
-    func refresh() async {
+    func refresh(isUserInitiated: Bool = false) async {
         let startedFolder = folderGeneration
         await restoreCachedMailbox()
         guard isCurrent(startedFolder) else { return }
@@ -153,8 +155,8 @@ final class GmailReaderStore {
         async let unreadCount: Void = refreshUnreadCount(for: startedAccount)
         async let drafts: Void = refreshDraftCount(for: startedAccount)
         async let contacts: Void = refreshContacts(for: startedAccount)
-        if let synchronizer { await synchronize(using: synchronizer) }
-        else { await loadPage(refreshing: true) }
+        if let synchronizer { await synchronize(using: synchronizer, isUserInitiated: isUserInitiated) }
+        else { await loadPage(refreshing: true, isUserInitiated: isUserInitiated) }
         await unreadCount
         await drafts
         await contacts
@@ -188,7 +190,7 @@ final class GmailReaderStore {
 
     func refreshDraftCount() async { await refreshDraftCount(for: accountGeneration) }
 
-    private func synchronize(using synchronizer: GmailSyncCoordinator) async {
+    private func synchronize(using synchronizer: GmailSyncCoordinator, isUserInitiated: Bool) async {
         guard !isLoadingMailbox else { return }
         let startedFolder = folderGeneration
         let currentMailbox = mailbox
@@ -207,6 +209,7 @@ final class GmailReaderStore {
                 lastRefreshed = saved.fetchedAt
             }
             showingCachedMail = false
+            consecutiveRefreshFailures = 0
             cacheError = nil
             prefetchBodies()
             if changed {
@@ -217,10 +220,22 @@ final class GmailReaderStore {
                 mailboxVersion += 1
             }
         } catch {
-            guard isCurrent(startedFolder), !(error is CancellationError) else { return }
-            Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
-            mailboxError = error.localizedDescription
+            guard isCurrent(startedFolder), !MailNetworkFailure.isCancellation(error) else { return }
+            recordRefreshFailure(error, isUserInitiated: isUserInitiated)
         }
+    }
+
+    /// A missed automatic refresh must not replace usable mail with a transient error banner.
+    /// Repeated failures still surface, including for a previously fetched empty mailbox.
+    private func recordRefreshFailure(_ error: any Error, isUserInitiated: Bool) {
+        Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
+        let transient = MailNetworkFailure.isTransient(error)
+        consecutiveRefreshFailures = transient ? consecutiveRefreshFailures + 1 : 0
+        if transient, lastRefreshed != nil {
+            showingCachedMail = true
+            if !isUserInitiated, consecutiveRefreshFailures < 3 { return }
+        }
+        mailboxError = error.localizedDescription
     }
 
     var canArchive: Bool { mailbox == .inbox && mutator != nil }
@@ -426,7 +441,7 @@ final class GmailReaderStore {
         await loadPage(refreshing: false)
     }
 
-    private func loadPage(refreshing: Bool) async {
+    private func loadPage(refreshing: Bool, isUserInitiated: Bool = false) async {
         guard !isLoadingMailbox, mailbox != .outbox else { return }
         let startedFolder = folderGeneration
         let currentMailbox = mailbox
@@ -458,7 +473,10 @@ final class GmailReaderStore {
                     lastRefreshed = saved.fetchedAt
                     showingCachedMail = false
                     cacheError = nil
-                    if refreshing { mailboxVersion += 1 }
+                    if refreshing {
+                        consecutiveRefreshFailures = 0
+                        mailboxVersion += 1
+                    }
                     prefetchBodies()
                     return
                 } catch GmailCacheError.checkpointChanged {
@@ -482,10 +500,14 @@ final class GmailReaderStore {
             nextPageToken = next
             lastRefreshed = Date()
             showingCachedMail = false
+            if refreshing { consecutiveRefreshFailures = 0 }
         } catch {
-            guard isCurrent(startedFolder), !(error is CancellationError) else { return }
-            Log.sync.error("Loading the folder failed: \(error.localizedDescription)")
-            mailboxError = error.localizedDescription
+            guard isCurrent(startedFolder), !MailNetworkFailure.isCancellation(error) else { return }
+            if refreshing { recordRefreshFailure(error, isUserInitiated: isUserInitiated) }
+            else {
+                Log.sync.error("Loading the next page failed: \(error.localizedDescription)")
+                mailboxError = error.localizedDescription
+            }
         }
     }
 
@@ -545,7 +567,7 @@ final class GmailReaderStore {
             }
             selectedConversation = conversation
         } catch {
-            guard isCurrent(startedFolder, selection: startedSelection), !(error is CancellationError) else { return }
+            guard isCurrent(startedFolder, selection: startedSelection), !MailNetworkFailure.isCancellation(error) else { return }
             Log.api.error("Loading the conversation failed: \(error.localizedDescription)")
             // Keep cached bodies visible even when a newly added reply cannot be downloaded.
             conversationError = error.localizedDescription

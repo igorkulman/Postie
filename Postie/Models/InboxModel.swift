@@ -136,7 +136,7 @@ final class InboxModel {
     // MARK: Loading
 
     func refresh() {
-        Task { await hub.refresh() }
+        Task { await hub.refresh(isUserInitiated: true) }
     }
 
     /// Tries again after an error, for whatever failed: the folder, the search or both.

@@ -304,6 +304,38 @@ struct GmailSyncTests {
         #expect(try await cache.historyID() == "101")
     }
 
+    @Test("Cached history sync stays quiet for transient failures but reports a persistent outage")
+    func transientReaderSync() async throws {
+        let cache = try await session()
+        let full = try GmailFixtures.conversation("a1")
+        try await seed(cache, folders: [.inbox: GmailPage(conversations: [full], nextPageToken: "older")])
+        let api = SyncTestAPI()
+        api.histories = [
+            .failure(URLError(.timedOut)), .failure(URLError(.networkConnectionLost)), .failure(URLError(.timedOut)),
+            .success(syncHistory(ids: [], checkpoint: "101")), .failure(URLError(.timedOut))
+        ]
+        let reader = GmailReaderStore(api: api, cache: cache)
+        await reader.restoreCachedMailbox()
+        await reader.select("a1")
+        for _ in 0..<2 {
+            await reader.refresh()
+            #expect(reader.mailboxError == nil)
+            #expect(reader.showingCachedMail)
+        }
+        await reader.refresh()
+        #expect(reader.mailboxError != nil)
+        #expect(reader.conversations == [full])
+        #expect(reader.selectedConversation == full)
+        #expect(reader.nextPageToken == "older")
+        #expect(try await cache.historyID() == "100")
+        await reader.refresh()
+        #expect(reader.mailboxError == nil)
+        #expect(!reader.showingCachedMail)
+        #expect(try await cache.historyID() == "101")
+        await reader.refresh()
+        #expect(reader.mailboxError == nil)
+    }
+
     @Test("Reader refresh uses history instead of reloading a cached first page")
     func readerIntegration() async throws {
         let cache = try await session()

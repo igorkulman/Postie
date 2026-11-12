@@ -109,14 +109,14 @@ struct GmailMutationTests {
         #expect(store.conversations.map(\.id) == ["a2"])
     }
 
-    @Test("A rejected change keeps the row and reports the error")
+    @Test("A rejected or timed-out change keeps the row and reports the error", arguments: [false, true])
     @MainActor
-    func rejectedChange() async throws {
+    func rejectedChange(transient: Bool) async throws {
         let a = try GmailFixtures.conversation("a1", includeBody: false)
         let api = MutatingStubAPI([.success(GmailPage(conversations: [a], nextPageToken: nil))])
         let store = GmailReaderStore(api: api)
         await store.refresh()
-        api.failure = GmailError.http(403)
+        api.failure = transient ? URLError(.timedOut) : GmailError.http(403)
         #expect(await store.trash("a1") == false)
         #expect(store.conversations.map(\.id) == ["a1"])
         #expect(store.mailboxError != nil)

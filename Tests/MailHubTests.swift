@@ -90,6 +90,20 @@ struct MailHubTests {
         return hub
     }
 
+    @Test("Automatic refresh hides a temporary banner but an explicit retry still reports failure")
+    func refreshNotices() async throws {
+        let api = StubAPI([
+            .success(GmailPage(conversations: [Self.conversation("a1", at: 100)], nextPageToken: nil)),
+            .failure(URLError(.timedOut)), .failure(URLError(.timedOut))
+        ])
+        let hub = await makeHub(["a": api])
+        await hub.refresh()
+        #expect(hub.notices.isEmpty)
+        #expect(hub.conversations.map(\.key.threadID) == ["a1"])
+        await hub.refresh(isUserInitiated: true)
+        #expect(hub.notices.contains { $0.isError && $0.fix == .retry })
+    }
+
     @Test("Every account's folder is merged into one list, newest first")
     func merge() async {
         let hub = await makeHub([

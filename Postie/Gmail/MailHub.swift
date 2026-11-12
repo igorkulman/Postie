@@ -227,14 +227,14 @@ final class MailHub {
     }
 
     /// Shows what is saved for the current folder, then asks Gmail for anything new, for every account at once.
-    func refresh() async {
+    func refresh(isUserInitiated: Bool = false) async {
         outbox.kick()
         await withTaskGroup(of: Void.self) { group in
             for session in sessions {
                 let reader = session.reader
                 group.addTask {
                     await reader.restoreCachedMailbox()
-                    await reader.refresh()
+                    await reader.refresh(isUserInitiated: isUserInitiated)
                 }
             }
         }

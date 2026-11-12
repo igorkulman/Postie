@@ -64,6 +64,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     private let accessToken: @MainActor @Sendable () async throws -> String
     /// Waits between retries of a rate-limited request.
     private let retryDelays: [TimeInterval]
+    private let networkRetryDelays: [TimeInterval]
     // Gmail also limits concurrent requests per user, so only a few run at once.
     private let maximumInFlight = 4
     private var inFlight = 0
@@ -71,23 +72,39 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     private var waiting: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
 
     init(transport: any GmailTransport = GmailURLTransport(), retryDelays: [TimeInterval] = [2, 5, 12, 30],
+         networkRetryDelays: [TimeInterval] = [1],
          accessToken: @escaping @MainActor @Sendable () async throws -> String) {
         self.transport = transport
         self.retryDelays = retryDelays
+        self.networkRetryDelays = networkRetryDelays
         self.accessToken = accessToken
     }
 
     /// Sends the request, waiting and retrying when Gmail says to slow down. A request that stays
     /// rate-limited comes back as 429 so callers show one clear message.
-    private func send(_ request: URLRequest) async throws -> GmailHTTPResponse {
+    private func send(_ request: URLRequest, retryTransportErrors: Bool = false) async throws -> GmailHTTPResponse {
         var retries = retryDelays.makeIterator()
+        var networkRetries = networkRetryDelays.makeIterator()
         while true {
             try Task.checkCancellation()
             try await waitForCooldown()
             try await acquireSlot()
-            let result = await Result { try await transport.send(request) }
+            let result = await Result {
+                try Task.checkCancellation()
+                return try await transport.send(request)
+            }
             releaseSlot()
-            let response = try result.get()
+            let response: GmailHTTPResponse
+            do { response = try result.get() }
+            catch {
+                try Task.checkCancellation()
+                guard retryTransportErrors, MailNetworkFailure.isTransient(error), let delay = networkRetries.next() else { throw error }
+                Log.api.info("Temporary connection failure, retrying a repeatable request")
+                // Never hold a request slot while waiting. Sends and draft writes do not opt in:
+                // a missing response does not mean Gmail did not accept the original write.
+                try await Task.sleep(for: .seconds(delay))
+                continue
+            }
             let endpoint = request.url?.path ?? ""
             guard response.isRateLimited else {
                 if (200..<300).contains(response.statusCode) {
@@ -285,11 +302,11 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     func archive(threadID: String) async throws {
-        try await post(path: try threadPath(threadID) + "/modify", body: ["removeLabelIds": ["INBOX"]])
+        try await post(path: try threadPath(threadID) + "/modify", body: ["removeLabelIds": ["INBOX"]], retryTransportErrors: true)
     }
 
     func setLabel(_ label: String, on: Bool, threadID: String) async throws {
-        try await post(path: try threadPath(threadID) + "/modify", body: [on ? "addLabelIds" : "removeLabelIds": [label]])
+        try await post(path: try threadPath(threadID) + "/modify", body: [on ? "addLabelIds" : "removeLabelIds": [label]], retryTransportErrors: true)
     }
 
     func send(_ message: OutgoingMessage) async throws {
@@ -459,11 +476,12 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     func trash(threadID: String) async throws {
-        try await post(path: try threadPath(threadID) + "/trash", body: [:])
+        try await post(path: try threadPath(threadID) + "/trash", body: [:], retryTransportErrors: true)
     }
 
-    private func post(path: String, body: [String: [String]]) async throws {
-        try await post(path: path, json: body)
+    /// Only callers making a repeatable change may opt into connection recovery.
+    private func post(path: String, body: [String: [String]], retryTransportErrors: Bool = false) async throws {
+        _ = try await request("POST", path: path, json: body, retryTransportErrors: retryTransportErrors)
     }
 
     private func post(path: String, json body: [String: Any]) async throws {
@@ -471,7 +489,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
     }
 
     /// A write to Gmail. Returns the response body, which is empty for a delete.
-    private func request(_ method: String, path: String, json body: [String: Any]?) async throws -> Data {
+    private func request(_ method: String, path: String, json body: [String: Any]?, retryTransportErrors: Bool = false) async throws -> Data {
         try Task.checkCancellation()
         let token = try await accessToken()
         try Task.checkCancellation()
@@ -483,7 +501,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.httpBody = try JSONSerialization.data(withJSONObject: body)
         }
-        let response = try await send(request)
+        let response = try await send(request, retryTransportErrors: retryTransportErrors)
         guard (200..<300).contains(response.statusCode) else { throw GmailError.http(response.statusCode) }
         return response.data
     }
@@ -521,7 +539,7 @@ actor GmailAPI: GmailSyncReading, GmailSearching, GmailMutating, GmailSending, G
         request.httpMethod = "GET"
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        let response = try await send(request)
+        let response = try await send(request, retryTransportErrors: true)
         try Task.checkCancellation()
         guard (200..<300).contains(response.statusCode) else { throw httpError(response) }
         // Gmail answers 204 with no body for an empty list, such as the drafts of an account without any.
