@@ -108,6 +108,10 @@ final class MailHub {
     private var isLoadingMoreSearchResults = false
     private(set) var searchError: String?
     private var searchVersion = 0
+    /// Keep the underlying mail until Gmail accepts the action, so a failure only unhides it.
+    private var pendingRemovals: Set<ConversationKey> = []
+    @ObservationIgnored private var searchRemovalRevision = 0
+    @ObservationIgnored private var searchRemovals: [ConversationKey: Int] = [:]
     private(set) var calendarResponses: [CalendarResponseKey: CalendarInvitation.Response] = [:]
     private(set) var calendarRepliesInFlight: Set<CalendarResponseKey> = []
     @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, mailbox: Mailbox, list: MergedList)?
@@ -266,7 +270,11 @@ final class MailHub {
 
     /// What the list shows: search results while searching, else the folder's conversations from every account, newest first.
     /// Merging and sorting happen only when an account's conversations actually changed, however often the views read this.
-    var list: MergedList { isSearchActive ? searchList : folderList }
+    var list: MergedList {
+        let source = isSearchActive ? searchList : folderList
+        guard !pendingRemovals.isEmpty else { return source }
+        return MergedList(source.conversations.filter { !pendingRemovals.contains($0.key) })
+    }
     var conversations: [MergedConversation] { list.conversations }
     var conversationKeys: [ConversationKey] { list.keys }
     var searchResults: [MergedConversation] { searchList.conversations }
@@ -325,6 +333,7 @@ final class MailHub {
         let query = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard query != searchQuery || scope != searchScope else { return }
         searchGeneration.advance()
+        searchRemovals = [:]
         searchQuery = query
         searchScope = scope
         searchError = nil
@@ -341,6 +350,7 @@ final class MailHub {
         let query = searchQuery
         guard !query.isEmpty else { return }
         let generation = searchGeneration
+        let removalRevision = searchRemovalRevision
         let folder: Mailbox? = searchScope == .folder ? mailbox : nil
         let targets = sessions.filter { $0.reader.canSearch && (!pageAfter || searchTokens[$0.id] != nil) }
         isSearching = true
@@ -375,6 +385,8 @@ final class MailHub {
                         .map { MergedConversation(key: ConversationKey(accountID: id, threadID: $0.id), conversation: $0) }
                         .filter { !known.contains($0.key) }
                     collected.sort { $0.conversation.latestDate > $1.conversation.latestDate }
+                    // A response begun before an accepted action must not resurrect that row.
+                    collected.removeAll { (searchRemovals[$0.key] ?? 0) > removalRevision }
                     searchList = MergedList(collected)
                     searchVersion += 1
                 case .failure(let error):
@@ -540,11 +552,13 @@ final class MailHub {
     }
 
     func conversation(for key: ConversationKey) -> GmailConversation? {
-        searchResult(key) ?? folderList[key]?.conversation
+        guard !pendingRemovals.contains(key) else { return nil }
+        return searchResult(key) ?? folderList[key]?.conversation
     }
 
     /// The fully loaded conversation, once its owner has opened it.
     func openConversation(for key: ConversationKey?) -> GmailConversation? {
+        if let key, pendingRemovals.contains(key) { return nil }
         if mailbox == .outbox, !isSearchActive { return key.flatMap { folderList[$0]?.conversation } }
         guard let key, let selected = session(for: key.accountID)?.reader.selectedConversation,
               selected.id == key.threadID else { return nil }
@@ -571,7 +585,7 @@ final class MailHub {
     }
 
     func canArchive(_ key: ConversationKey?) -> Bool {
-        guard let key else { return false }
+        guard let key, !pendingRemovals.contains(key) else { return false }
         if isSearchActive {
             return searchResult(key)?.labelIDs.contains("INBOX") == true && canModifyLabels(key)
         }
@@ -579,7 +593,7 @@ final class MailHub {
     }
 
     func canTrash(_ key: ConversationKey?) -> Bool {
-        guard let key else { return false }
+        guard let key, !pendingRemovals.contains(key) else { return false }
         if isSearchActive {
             guard let labels = searchResult(key)?.labelIDs else { return false }
             return !labels.contains("TRASH") && canModifyLabels(key)
@@ -598,20 +612,32 @@ final class MailHub {
 
     @discardableResult
     func archive(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
-        let generation = searchGeneration
-        return await session(for: key.accountID)?.reader.archive(key.threadID, fromAnyFolder: isSearchActive) {
-            if self.searchGeneration == generation { self.removeSearchResult(key) }
-            onRemoved()
-        } ?? false
+        await remove(key, archiving: true, onRemoved: onRemoved)
     }
 
     @discardableResult
     func trash(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
+        await remove(key, archiving: false, onRemoved: onRemoved)
+    }
+
+    /// `onRemoved` means hidden optimistically, not accepted by Gmail. A false result unhides the mail.
+    private func remove(_ key: ConversationKey, archiving: Bool, onRemoved: () -> Void) async -> Bool {
+        guard archiving ? canArchive(key) : canTrash(key), let session = session(for: key.accountID) else { return false }
         let generation = searchGeneration
-        return await session(for: key.accountID)?.reader.trash(key.threadID, fromAnyFolder: isSearchActive) {
-            if self.searchGeneration == generation { self.removeSearchResult(key) }
-            onRemoved()
-        } ?? false
+        let fromSearch = isSearchActive
+        pendingRemovals.insert(key)
+        defer { pendingRemovals.remove(key) }
+        onRemoved()
+        let accepted = { [self] in
+            guard searchGeneration == generation else { return }
+            searchRemovalRevision += 1
+            searchRemovals[key] = searchRemovalRevision
+            removeSearchResult(key)
+        }
+        if archiving {
+            return await session.reader.archive(key.threadID, fromAnyFolder: fromSearch, onRemoved: accepted)
+        }
+        return await session.reader.trash(key.threadID, fromAnyFolder: fromSearch, onRemoved: accepted)
     }
 
     func setUnread(_ key: ConversationKey, _ unread: Bool) async {

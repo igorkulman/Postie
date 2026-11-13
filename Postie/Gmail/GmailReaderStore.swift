@@ -51,6 +51,8 @@ final class GmailReaderStore {
     @ObservationIgnored private var selectionGeneration = Generation()
     @ObservationIgnored private var accountGeneration = Generation()
     @ObservationIgnored private var unreadCountGeneration = Generation()
+    /// Mailbox reads begun before a successful removal may contain the old row.
+    @ObservationIgnored private var mailboxMutationGeneration = Generation()
 
     init(api: any GmailReading, mailbox: Mailbox = .inbox, cache: GmailCacheSession? = nil) {
         self.api = api
@@ -71,8 +73,10 @@ final class GmailReaderStore {
 
     /// Whether work started under these tokens still matters: the folder, the account's reader and the open
     /// conversation have not been reset since, and the task was not cancelled.
-    private func isCurrent(_ startedFolder: Generation, selection startedSelection: Generation? = nil) -> Bool {
+    private func isCurrent(_ startedFolder: Generation, selection startedSelection: Generation? = nil,
+                           mutation startedMutation: Generation? = nil) -> Bool {
         guard folderGeneration == startedFolder, !Task.isCancelled else { return false }
+        if let startedMutation, mailboxMutationGeneration != startedMutation { return false }
         return startedSelection.map { selectionGeneration == $0 } ?? true
     }
 
@@ -118,6 +122,7 @@ final class GmailReaderStore {
     // connection never prevents the previously loaded folder from appearing.
     func restoreCachedMailbox() async {
         guard let cache, restoredGeneration != folderGeneration, !isRestoringCache else { return }
+        let startedMutation = mailboxMutationGeneration
         let startedFolder = folderGeneration
         let startedAccount = accountGeneration
         let currentMailbox = mailbox
@@ -126,7 +131,7 @@ final class GmailReaderStore {
         do {
             let saved = try await cache.loadMailbox(currentMailbox)
             try Task.checkCancellation()
-            guard folderGeneration == startedFolder else { return }
+            guard isCurrent(startedFolder, mutation: startedMutation) else { return }
             if let saved {
                 conversations = saved.conversations
                 nextPageToken = saved.nextPageToken
@@ -193,15 +198,17 @@ final class GmailReaderStore {
     private func synchronize(using synchronizer: GmailSyncCoordinator, isUserInitiated: Bool) async {
         guard !isLoadingMailbox else { return }
         let startedFolder = folderGeneration
+        let startedMutation = mailboxMutationGeneration
         let currentMailbox = mailbox
         isLoadingMailbox = true
         mailboxError = nil
         defer { if folderGeneration == startedFolder { isLoadingMailbox = false } }
         do {
             try await synchronizer.synchronize(mailbox: currentMailbox)
+            guard isCurrent(startedFolder, mutation: startedMutation) else { return }
             let saved = try await cache?.loadMailbox(currentMailbox)
             try Task.checkCancellation()
-            guard folderGeneration == startedFolder else { return }
+            guard isCurrent(startedFolder, mutation: startedMutation) else { return }
             let changed = saved.map { $0.conversations != conversations } ?? false
             if let saved {
                 conversations = saved.conversations
@@ -396,6 +403,7 @@ final class GmailReaderStore {
             return false
         }
         guard folderGeneration == startedFolder else { return true }
+        mailboxMutationGeneration.advance()
         mailboxError = nil
         conversations.removeAll { $0.id == id }
         if selectedConversation?.id == id { selectedConversation = nil }
@@ -443,6 +451,7 @@ final class GmailReaderStore {
 
     private func loadPage(refreshing: Bool, isUserInitiated: Bool = false) async {
         guard !isLoadingMailbox, mailbox != .outbox else { return }
+        let startedMutation = mailboxMutationGeneration
         let startedFolder = folderGeneration
         let currentMailbox = mailbox
         let pageToken = refreshing ? nil : nextPageToken
@@ -459,7 +468,7 @@ final class GmailReaderStore {
             let checkpoint = try? await cache?.checkpoint()
             let page = try await api.mailbox(currentMailbox, pageToken: pageToken)
             try Task.checkCancellation()
-            guard folderGeneration == startedFolder else { return }
+            guard isCurrent(startedFolder, mutation: startedMutation) else { return }
             let next = page.nextPageToken == pageToken ? nil : page.nextPageToken
             if let cache {
                 do {
@@ -467,7 +476,7 @@ final class GmailReaderStore {
                         GmailPage(conversations: page.conversations, nextPageToken: next),
                         mailbox: currentMailbox, refreshing: refreshing, checkpoint: checkpoint
                     )
-                    guard isCurrent(startedFolder) else { return }
+                    guard isCurrent(startedFolder, mutation: startedMutation) else { return }
                     conversations = saved.conversations
                     nextPageToken = saved.nextPageToken
                     lastRefreshed = saved.fetchedAt
@@ -489,6 +498,7 @@ final class GmailReaderStore {
                     cacheError = String(localized: "Unable to save mail locally. Newly fetched mail may not be available offline.")
                 }
             }
+            guard isCurrent(startedFolder, mutation: startedMutation) else { return }
             if refreshing {
                 conversations = page.conversations
                 bodies = [:]

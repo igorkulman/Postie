@@ -70,7 +70,7 @@ struct GmailSelectionRegressionTests {
         #expect(hub.openConversation(for: selection.selectedID) == nil)
     }
 
-    @Test("Rejected Gmail archive preserves both the selected key and open detail")
+    @Test("Rejected Gmail archive unhides the conversation and its loaded detail")
     func rejectedArchive() async throws {
         let mail = SelectionRegressionMail()
         let hub = try await mail.makeHub()
@@ -85,7 +85,7 @@ struct GmailSelectionRegressionTests {
         var notified = false
         let archived = await hub.archive(current) { notified = true }
         selection.finishRemoval(token, removed: archived, visibleIDs: hub.conversations.map(\.key))
-        #expect(!archived && !notified)
+        #expect(!archived && notified)
         #expect(selection.selectedID == current)
         #expect(hub.openConversation(for: current) == original)
         #expect(hub.loadedCount == 2)

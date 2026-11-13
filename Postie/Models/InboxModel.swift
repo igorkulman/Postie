@@ -207,19 +207,31 @@ final class InboxModel {
         selectedID.map { !isRemoving($0) } ?? false
     }
 
-    func remove(_ key: ConversationKey, archiving: Bool) {
-        guard let token = selection.beginRemoval(of: key, visibleIDs: conversationKeys) else { return }
-        Task {
+    @discardableResult
+    func remove(_ key: ConversationKey, archiving: Bool) -> Task<Void, Never>? {
+        guard let token = selection.beginRemoval(of: key, visibleIDs: conversationKeys) else { return nil }
+        let mailbox = hub.mailbox
+        let query = hub.searchQuery
+        let scope = hub.searchScope
+        return Task {
+            var removalRevision: Int?
             let onRemoved = { [self] in
-                // An explicit selected-thread removal returns keyboard navigation to the list,
-                // including when it is empty. Background sync never steals search focus.
-                if selection.finishRemoval(token, removed: true, visibleIDs: conversationKeys), composer == nil {
-                    listFocusRequest += 1
+                // Advance selection immediately. Remember that opening so rollback cannot override
+                // a subsequent user choice, even if they leave and return to the same neighbor.
+                if selection.finishRemoval(token, removed: true, visibleIDs: conversationKeys) {
+                    removalRevision = selection.revision
+                    if composer == nil { listFocusRequest += 1 }
                 }
             }
-            if archiving { _ = await hub.archive(key, onRemoved: onRemoved) }
-            else { _ = await hub.trash(key, onRemoved: onRemoved) }
+            let accepted: Bool
+            if archiving { accepted = await hub.archive(key, onRemoved: onRemoved) }
+            else { accepted = await hub.trash(key, onRemoved: onRemoved) }
             selection.finishRemoval(token, removed: false, visibleIDs: conversationKeys)
+            if !accepted, removalRevision == selection.revision,
+               hub.mailbox == mailbox, hub.searchQuery == query, hub.searchScope == scope,
+               hub.list[key] != nil {
+                selection.select(key)
+            }
         }
     }
 

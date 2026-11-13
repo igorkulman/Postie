@@ -28,7 +28,8 @@ subscriptions, AI features, or workspace bloat.
 - Persistent Outbox: outgoing messages and attachments are saved on this Mac,
   with background delivery and retries while Postie is running. Queued mail
   survives quitting; failed messages can be retried, edited, or deleted
-- Archive, trash, star, and read/unread actions
+- Instant archive and Trash actions, with rollback if Gmail rejects the change
+- Star and read/unread actions
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
   Results are not stored in the local cache
@@ -163,7 +164,8 @@ credentials, network requests, or saved mailbox database.
 
 The Regression menu also simulates an external archive of **Thread to open**
 and a rejected next archive/trash. External disappearance clears selection
-without opening unrelated mail; rejection preserves the selected thread.
+without opening unrelated mail. Archive/Trash hides the conversation and advances
+selection immediately; rejection restores it without overriding subsequent navigation.
 
 The policy is identity-based: an explicit removal
 chooses the next surviving older neighbor from the visible order at action time,
