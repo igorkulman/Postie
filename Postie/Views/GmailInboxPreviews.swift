@@ -1,9 +1,11 @@
 #if DEBUG
 import SwiftUI
 
-private struct PreviewGmailAPI: GmailReading {
+private struct PreviewGmailAPI: GmailReading, GmailSending {
     let conversations: [Mailbox: [GmailConversation]]
     let failsBody: Bool
+
+    func send(_ message: OutgoingMessage) async throws {}
 
     func unreadInboxCount() async throws -> Int {
         (conversations[.inbox] ?? []).reduce(0) { total, conversation in
@@ -42,17 +44,25 @@ private func previewConversation(_ thread: MailThread) -> GmailConversation {
 }
 
 @MainActor
-private func makeGmailPreviewHub(mailbox: Mailbox = .inbox, failsBody: Bool = false) -> MailHub {
+private func makeGmailPreviewHub(mailbox: Mailbox = .inbox, failsBody: Bool = false, multipleAccounts: Bool = false) -> MailHub {
     let grouped = Dictionary(grouping: SampleMail.threads(), by: \.mailbox)
     let conversations = grouped.mapValues { $0.map(previewConversation) }
     let identity = GoogleIdentity(id: "preview", email: SampleAccount.email, name: SampleAccount.name)
     let credentials = GoogleCredentials(
         refreshToken: "", accessToken: "", expiresAt: .distantFuture, scopes: Set(GoogleOAuthClient.requiredScopes)
     )
-    let accounts = AccountStore(vault: MemoryAccountVault([StoredAccount(identity: identity, credentials: credentials, addedAt: Date())]))
+    var entries = [StoredAccount(identity: identity, credentials: credentials, addedAt: Date())]
+    if multipleAccounts {
+        entries.append(StoredAccount(identity: GoogleIdentity(id: "work-preview", email: "alex@work.example", name: "Alex · Work"),
+                                     credentials: credentials, addedAt: Date().addingTimeInterval(1)))
+    }
+    let accounts = AccountStore(vault: MemoryAccountVault(entries))
     accounts.restore()
-    let hub = MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false) { _ in
-        PreviewGmailAPI(conversations: conversations, failsBody: failsBody)
+    let hub = MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false) { id in
+        let mail = multipleAccounts ? conversations.mapValues { items in
+            items.enumerated().filter { $0.offset % 2 == (id == "preview" ? 0 : 1) }.map(\.element)
+        } : conversations
+        return PreviewGmailAPI(conversations: mail, failsBody: failsBody)
     }
     hub.changeMailbox(mailbox)
     return hub
@@ -61,8 +71,8 @@ private func makeGmailPreviewHub(mailbox: Mailbox = .inbox, failsBody: Bool = fa
 private struct GmailPreview: View {
     @State private var hub: MailHub
 
-    init(mailbox: Mailbox = .inbox, failsBody: Bool = false) {
-        _hub = State(initialValue: makeGmailPreviewHub(mailbox: mailbox, failsBody: failsBody))
+    init(mailbox: Mailbox = .inbox, failsBody: Bool = false, multipleAccounts: Bool = false) {
+        _hub = State(initialValue: makeGmailPreviewHub(mailbox: mailbox, failsBody: failsBody, multipleAccounts: multipleAccounts))
     }
 
     var body: some View {
@@ -102,5 +112,10 @@ private struct GmailPreview: View {
 #Preview("Gmail Outbox · Compact") {
     GmailPreview(mailbox: .outbox)
         .frame(width: 960, height: 640)
+}
+
+#Preview("Unified accounts") {
+    GmailPreview(multipleAccounts: true)
+        .frame(width: 1200, height: 820)
 }
 #endif

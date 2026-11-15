@@ -13,7 +13,8 @@ subscriptions, AI features, or workspace bloat.
 - Gmail integration using Google sign-in and the Gmail API
 - Multiple Gmail accounts, merged into one set of folders. Replies, forwards and
   archive/trash actions always go through the account the conversation belongs to
-  and the default account for new messages can be chosen in Settings
+  and the default account for new messages can be chosen in Settings. Account
+  addresses are shown in the conversation header when several accounts are connected
 - Inbox, Drafts, Outbox, Sent, Archive, Junk, and Trash
 - Conversation view with HTML email rendering, easy access to earlier replies,
   expandable recipient addresses, and a subject that stays visible while scrolling
@@ -22,13 +23,16 @@ subscriptions, AI features, or workspace bloat.
   and HTML/plain-text message-body zoom in View > Text Size
 - Compose, reply, reply all, and forward in a rich-text editor (bold, italic,
   underline, lists, links), with attachments and your Gmail signature
-- Drafts are saved in Gmail, so they show up in every Gmail client: closing a
-  message you have written asks whether to keep it, and drafts can be edited
-  later from the Drafts folder
+- Drafts save automatically while writing, with visible saving and retry status.
+  Closing a composer keeps its draft; discarding is an explicit, confirmed action.
+  Drafts sync to Gmail when possible. Unsynced work, including half-typed addresses
+  and attachment copies, is kept on this Mac and can be reopened from Drafts
 - Persistent Outbox: outgoing messages and attachments are saved on this Mac,
   with background delivery and retries while Postie is running. Queued mail
   survives quitting; failed messages can be retried, edited, or deleted
 - Instant archive and Trash actions, with rollback if Gmail rejects the change
+  and Undo for accepted archive/recoverable Trash actions
+- Native multiple selection (⌘-click / ⇧-click) for bulk archive, Trash, and read/unread actions
 - Star and read/unread actions
 - Search as you type across all accounts, powered by Gmail: search the current
   folder or All Mail, with Gmail operators such as `from:` and `has:attachment`.
@@ -69,6 +73,7 @@ subscriptions, AI features, or workspace bloat.
 | Flag / unflag | ⇧⌘L |
 | Archive | ⌃⌘A |
 | Move to Trash | ⌘⌫ |
+| Undo archive / recoverable Trash | ⌘Z |
 | Bigger / smaller message-body text | ⌘+ / ⌘− |
 | Reset message-body text size | ⌘0 |
 
@@ -117,6 +122,8 @@ calendar events, and can be declined without affecting mail
 Postie never permanently deletes mail. Trash is Gmail's normal, recoverable
 Trash. Sign-in credentials stay in your Mac's Keychain,
 and loaded mail and your contacts are cached in a local SQLite database on your Mac.
+Unsynced drafts and copies of their attachments are kept separately in Application
+Support until they sync, are queued for sending, or are explicitly discarded.
 
 The Gmail ones are restricted scopes and Postie has not been verified
 by Google, so the sign-in screen shows "Google hasn't verified this app". Choose

@@ -19,6 +19,9 @@ final class InboxModel {
     /// Explicit toolbar/menu navigation reveals its row without stealing focus from the reader.
     private(set) var conversationNavigationRequest = 0
     private var selection = ConversationSelection<ConversationKey>()
+    private var multipleSelection: Set<ConversationKey> = []
+    private(set) var removalNotice: MailRemovalUndo?
+    @ObservationIgnored weak var undoManager: UndoManager?
 
     private(set) var isReaderActive = false
     @ObservationIgnored private var readerActivityRevision = 0
@@ -48,19 +51,45 @@ final class InboxModel {
 
     /// The selected conversation, as long as it is still in the list.
     var selectedID: ConversationKey? {
-        selection.selectedID.flatMap { hub.list[$0] == nil ? nil : $0 }
+        multipleSelection.isEmpty ? selection.selectedID.flatMap { hub.list[$0] == nil ? nil : $0 } : nil
+    }
+
+    var selectedIDs: Set<ConversationKey> {
+        if !multipleSelection.isEmpty { return multipleSelection.intersection(conversationKeys) }
+        return Set(selectedID.map { [$0] } ?? [])
     }
 
     func select(_ key: ConversationKey?) {
+        multipleSelection = []
         selection.select(key)
     }
 
     func updateFromList(_ key: ConversationKey?) {
+        multipleSelection = []
         selection.updateFromList(key, visibleIDs: conversationKeys)
     }
 
+    func updateFromList(_ keys: Set<ConversationKey>) {
+        let visible = keys.intersection(conversationKeys)
+        if visible.count > 1 {
+            selection.select(nil)
+            multipleSelection = visible
+        } else {
+            updateFromList(visible.first)
+        }
+    }
+
     func reconcileSelection() {
-        selection.reconcile(with: conversationKeys)
+        if !multipleSelection.isEmpty {
+            multipleSelection.formIntersection(conversationKeys)
+            if multipleSelection.count <= 1 {
+                let survivor = multipleSelection.first
+                multipleSelection = []
+                selection.select(survivor)
+            }
+        } else {
+            selection.reconcile(with: conversationKeys)
+        }
     }
 
     func navigateConversation(offset: Int) {
@@ -71,6 +100,7 @@ final class InboxModel {
 
     func changeMailbox(_ mailbox: Mailbox) {
         guard mailbox != hub.mailbox else { return }
+        multipleSelection = []
         selection.reset()
         searchText = ""
         selectionBeforeSearch = nil
@@ -171,7 +201,8 @@ final class InboxModel {
         let willSearch = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         if !wasSearching, willSearch {
             // Save identity before changing which rows the hub exposes.
-            selectionBeforeSearch = selection.selectedID
+            selectionBeforeSearch = selectedID
+            multipleSelection = []
             selection.select(nil)
         }
         hub.setSearch(searchText, scope: searchScope)
@@ -186,7 +217,10 @@ final class InboxModel {
     // MARK: Actions on a conversation
 
     func toggleRead(_ item: MergedConversation) {
-        let unread = !item.conversation.isUnread
+        setRead(item, unread: !item.conversation.isUnread)
+    }
+
+    private func setRead(_ item: MergedConversation, unread: Bool) {
         // Explicit unread wins for this opening, including a countdown already in progress.
         if unread, selectedID == item.key { manualUnreadRevision = selection.revision }
         let pendingRead = autoReadTasks[item.key]
@@ -208,7 +242,10 @@ final class InboxModel {
     }
 
     @discardableResult
-    func remove(_ key: ConversationKey, archiving: Bool) -> Task<Void, Never>? {
+    func remove(_ key: ConversationKey, archiving: Bool, registersUndo: Bool = true,
+                onAccepted: ((MailRemovalReceipt) -> Void)? = nil) -> Task<Void, Never>? {
+        let receipt = hub.conversation(for: key).map { MailRemovalReceipt(key: key, archiving: archiving, labels: $0.labelIDs) }
+        let isReversible = archiving || hub.mailbox != .drafts || hub.isSearchActive
         guard let token = selection.beginRemoval(of: key, visibleIDs: conversationKeys) else { return nil }
         let mailbox = hub.mailbox
         let query = hub.searchQuery
@@ -227,12 +264,51 @@ final class InboxModel {
             if archiving { accepted = await hub.archive(key, onRemoved: onRemoved) }
             else { accepted = await hub.trash(key, onRemoved: onRemoved) }
             selection.finishRemoval(token, removed: false, visibleIDs: conversationKeys)
+            if accepted, isReversible, let receipt {
+                if registersUndo { registerRemovalUndo([receipt]) }
+                onAccepted?(receipt)
+            }
             if !accepted, removalRevision == selection.revision,
                hub.mailbox == mailbox, hub.searchQuery == query, hub.searchScope == scope,
                hub.list[key] != nil {
                 selection.select(key)
             }
         }
+    }
+
+    private func registerRemovalUndo(_ receipts: [MailRemovalReceipt]) {
+        guard !receipts.isEmpty else { return }
+        let operation = MailRemovalUndo(receipts: receipts, hub: hub)
+        removalNotice = operation
+        operation.register(with: undoManager)
+    }
+
+    func dismissRemovalNotice() { removalNotice = nil }
+
+    /// Capture targets before starting: later selection changes must not retarget a batch.
+    @discardableResult
+    func remove(_ keys: Set<ConversationKey>, archiving: Bool) -> Task<Void, Never> {
+        let ordered = conversationKeys.filter { keys.contains($0) }
+        if selectedIDs.count > 1, !keys.isDisjoint(with: selectedIDs) { select(ordered.last) }
+        var receipts: [MailRemovalReceipt] = []
+        let operations = ordered.compactMap { key in
+            remove(key, archiving: archiving, registersUndo: false) { receipts.append($0) }
+        }
+        return Task {
+            for operation in operations { await operation.value }
+            registerRemovalUndo(receipts)
+        }
+    }
+
+    func markRead(_ keys: Set<ConversationKey>, unread: Bool) {
+        for key in keys {
+            guard hub.canModifyLabels(key), let item = hub.list[key] else { continue }
+            setRead(item, unread: unread)
+        }
+    }
+
+    func markFlagged(_ keys: Set<ConversationKey>, flagged: Bool) {
+        for key in keys where hub.canModifyLabels(key) { Task { await hub.setStarred(key, flagged) } }
     }
 
     // MARK: Composing
@@ -295,24 +371,28 @@ final class InboxModel {
     var mailActions: MailActions {
         let selectedID = selectedID
         let openConversation = openConversation
-        let selected = selected
+        let items = selectedIDs.compactMap { hub.list[$0] }
+        let keys = Set(items.map(\.key))
+        let canModify = !keys.isEmpty && keys.allSatisfy { hub.canModifyLabels($0) && !isRemoving($0) }
+        let anyUnread = items.contains { $0.conversation.isUnread }
+        let anyUnflagged = items.contains { !$0.conversation.isStarred }
         return MailActions(
             currentMailbox: hub.mailbox,
             selectMailbox: { [self] in changeMailbox($0) },
             newMessage: canCompose ? { [self] in newMessage() } : nil,
             refresh: hub.isLoadingMailbox || hub.mailbox == .outbox ? nil : { [self] in refresh() },
-            archive: canRemoveSelection && hub.canArchive(selectedID)
-                ? { [self] in selectedID.map { remove($0, archiving: true) } } : nil,
-            trash: canRemoveSelection && hub.canTrash(selectedID)
-                ? { [self] in selectedID.map { remove($0, archiving: false) } } : nil,
+            archive: !keys.isEmpty && keys.allSatisfy({ hub.canArchive($0) && !isRemoving($0) })
+                ? { [self] in remove(keys, archiving: true) } : nil,
+            trash: !keys.isEmpty && keys.allSatisfy({ hub.canTrash($0) && !isRemoving($0) })
+                ? { [self] in remove(keys, archiving: false) } : nil,
             editDraft: selectedID.flatMap { key in hub.canEditDraft(key) ? { [self] in editDraft(key) } : nil },
             reply: openConversation == nil ? nil : { [self] in respond(.reply) },
             replyAll: openConversation == nil ? nil : { [self] in respond(.replyAll) },
             forward: openConversation.map { $0.messages.allSatisfy(\.bodyLoaded) } == true ? { [self] in respond(.forward) } : nil,
-            toggleRead: selected.map { item in { [self] in toggleRead(item) } },
-            toggleFlag: selected.map { item in { [self] in toggleStar(item) } },
-            selectionIsUnread: selected?.conversation.isUnread ?? false,
-            selectionIsFlagged: selected?.conversation.isStarred ?? false,
+            toggleRead: canModify ? { [self] in markRead(keys, unread: !anyUnread) } : nil,
+            toggleFlag: canModify ? { [self] in markFlagged(keys, flagged: anyUnflagged) } : nil,
+            selectionIsUnread: anyUnread,
+            selectionIsFlagged: !items.isEmpty && !anyUnflagged,
             previousConversation: selection.neighbor(offset: -1, visibleIDs: conversationKeys) == nil
                 ? nil : { [self] in navigateConversation(offset: -1) },
             nextConversation: selection.neighbor(offset: 1, visibleIDs: conversationKeys) == nil

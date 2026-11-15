@@ -34,7 +34,7 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         )
         let accounts = AccountStore(vault: MemoryAccountVault([account]))
         accounts.restore()
-        let hub = MailHub(accounts: accounts, syncsInBackground: false, cache: cache) { _ in self }
+        let hub = MailHub(accounts: accounts, persistsMail: false, syncsInBackground: false, cache: cache) { _ in self }
         await hub.prepare()
         await hub.reconcile()
         return hub
@@ -111,6 +111,10 @@ final class SelectionRegressionMail: GmailSyncReading, GmailMutating, GmailSearc
         try checkRemoval()
         mail[threadID] = mail[threadID]?.setting("INBOX", to: false).setting("TRASH", to: true)
         record(threadID)
+    }
+
+    @MainActor func untrash(threadID: String) async throws {
+        try await setLabel("TRASH", on: false, threadID: threadID)
     }
 
     @MainActor func setLabel(_ label: String, on: Bool, threadID: String) async throws {

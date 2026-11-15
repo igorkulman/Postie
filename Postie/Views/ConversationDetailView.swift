@@ -10,7 +10,23 @@ struct ConversationDetailView: View {
     var body: some View {
         let key = model.selectedID
         ZStack {
-            if let key, let conversation = hub.openConversation(for: key),
+            if model.selectedIDs.count > 1 {
+                ContentUnavailableView {
+                    Label("\(model.selectedIDs.count) conversations selected", systemImage: "envelope.stack")
+                } description: {
+                    Text("Choose an action to apply to the selected conversations.")
+                } actions: {
+                    let actions = model.mailActions
+                    HStack {
+                        Button("Archive", systemImage: "archivebox") { actions.archive?() }
+                            .disabled(actions.archive == nil)
+                        Button("Move to Trash", systemImage: "trash") { actions.trash?() }
+                            .disabled(actions.trash == nil)
+                        Button("Mark as Read", systemImage: "envelope.open") { model.markRead(model.selectedIDs, unread: false) }
+                            .disabled(actions.toggleRead == nil)
+                    }
+                }
+            } else if let key, let conversation = hub.openConversation(for: key),
                !(hub.isLoadingConversation(key) && !conversation.messages.allSatisfy(\.bodyLoaded)) {
                 VStack(spacing: 0) {
                     if let error = hub.conversationError(key) {
@@ -71,6 +87,7 @@ private struct GmailConversationView: View {
     let canToggleStar: Bool
     let toggleStar: () -> Void
     let openDraft: (() -> Void)?
+    let showsAccountContext: Bool
 
     init(conversation: GmailConversation, mailbox: Mailbox, hub: MailHub, key: ConversationKey,
          canToggleStar: Bool, toggleStar: @escaping () -> Void, openDraft: (() -> Void)?) {
@@ -80,13 +97,15 @@ private struct GmailConversationView: View {
         self.canToggleStar = canToggleStar
         self.toggleStar = toggleStar
         self.openDraft = openDraft
+        self.showsAccountContext = hub.hasMultipleAccounts
         _calendarModel = State(initialValue: CalendarConversationModel(hub: hub, key: key))
     }
 
     var body: some View {
         ThreadDetailView(
             thread: conversation.presentation(includingBodies: true, mailbox: mailbox),
-            canToggleStar: canToggleStar, toggleStar: toggleStar, openDraft: openDraft, accountEmail: accountEmail
+            canToggleStar: canToggleStar, toggleStar: toggleStar, openDraft: openDraft, accountEmail: accountEmail,
+            showsAccountContext: showsAccountContext
         )
         .environment(\.calendarModel, calendarModel)
         .task(id: calendarModel.loadRequest(for: conversation)) {

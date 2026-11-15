@@ -9,6 +9,10 @@ struct ComposerView: View {
     @State private var session: DraftSession
     @State private var closeGuard = CloseGuard()
     @State private var asksToKeep = false
+    @State private var editorReady = false
+    @State private var signatureRequestID = UUID()
+    @State private var isClosing = false
+    private let recoversLocalDraft: Bool
     private let send: (ComposeDraft) async throws -> Void
     private let accounts: [SendingAccount]
     private let suggestContacts: ContactLookup
@@ -31,7 +35,8 @@ struct ComposerView: View {
         _original = State(initialValue: draft)
         _session = State(initialValue: DraftSession(storage: drafts, existing: draft.gmailDraftID.flatMap { id in
             draft.accountID.map { DraftRef(accountID: $0, draftID: id) }
-        }))
+        }, draftID: draft.id, accountID: draft.accountID))
+        self.recoversLocalDraft = drafts.isLocalRecovery(draft.id)
         _showsCc = State(initialValue: !draft.cc.isEmpty)
         _showsBcc = State(initialValue: !draft.bcc.isEmpty)
         self.send = send
@@ -60,11 +65,20 @@ struct ComposerView: View {
             Divider()
             editor
             if !draft.attachments.isEmpty { attachmentStrip }
+            DraftSaveStatus(session: session, draft: draft) { Task { await saveCurrentDraft() } }
             if sendError != nil { footer }
         }
         .frame(minWidth: 560, idealWidth: 720, minHeight: 440, idealHeight: 600)
         .navigationTitle(draft.subject.isEmpty ? draft.kind.title : draft.subject)
         .toolbar { windowToolbar }
+        .disabled(isSending || isClosing)
+        .task(id: editorReady && !isSending && !isClosing ? DraftSession.Snapshot(draft) : nil) {
+            guard editorReady, !isSending, !isClosing,
+                  hasChanges || recoversLocalDraft || session.hasStartedSaving, !session.isSaved(draft) else { return }
+            do { try await Task.sleep(for: .seconds(1)) } catch { return }
+            guard !Task.isCancelled else { return }
+            await saveCurrentDraft()
+        }
         .overlay { if isDropTarget { RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 3).padding(4).allowsHitTesting(false) } }
         .dropDestination(for: URL.self) { urls, _ in
             attach(urls.filter(\.isFileURL))
@@ -81,26 +95,33 @@ struct ComposerView: View {
         // The red button and ⌘W ask the same question as Esc.
         .onAppear {
             closeGuard.shouldClose = {
-                guard hasChanges, !isSending else { return true }
-                asksToKeep = true
+                guard !isSending, !isClosing else { return false }
+                guard hasChanges || recoversLocalDraft || session.hasStartedSaving else { return true }
+                saveAndClose()
                 return false
             }
         }
         .onDisappear { session.finish() }
         // Writing from another account means that account's signature.
         .onChange(of: draft.accountID) {
-            Task { await editorController.setSignature(await signature(draft.accountID)) }
+            Task { await addSignature() }
         }
         .onAppear {
             // The rich editor takes the cursor itself once it has loaded.
             if draft.recipient.isEmpty { focusedField = .recipient }
         }
-        .alert("Do you want to keep this draft message?", isPresented: $asksToKeep) {
-            Button("Save", action: saveAndClose)
-            Button("Don't Save", action: closeNow)
+        .alert("Discard this draft?", isPresented: $asksToKeep) {
+            Button("Discard Draft", role: .destructive) {
+                Task {
+                    isClosing = true
+                    await session.discard()
+                    if case .failed(let message) = session.state { sendError = message; isClosing = false }
+                    else { closeNow() }
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("You can choose to save this message as a draft, or delete this message immediately. You can't undo this action.")
+            Text("The draft will be deleted from this Mac and Gmail. This can’t be undone.")
         }
     }
 
@@ -112,6 +133,11 @@ struct ComposerView: View {
             Button { choosesFiles = true } label: { Label("Attach Files", systemImage: "paperclip") }
                 .help("Attach Files")
                 .disabled(isSending)
+        }
+        ToolbarItem(placement: .primaryAction) {
+            Button("Discard Draft", systemImage: "trash") { asksToKeep = true }
+                .help("Discard Draft")
+                .disabled(isSending || isClosing)
         }
         ToolbarItem(placement: .primaryAction) {
             SendButton(canSend: draft.canSend, isSending: isSending, action: sendMessage)
@@ -185,7 +211,10 @@ struct ComposerView: View {
                 apply(content, to: &draft)
                 apply(content, to: &original)
                 // A draft that already exists has its signature, and what was saved is what is on screen.
-                if draft.gmailDraftID == nil { Task { await addSignature() } } else { session.markSaved(draft) }
+                editorReady = true
+                if draft.gmailDraftID == nil, !recoversLocalDraft {
+                    Task { await addSignature() }
+                } else if !recoversLocalDraft { session.markSaved(draft) }
             },
             changed: { apply($0, to: &draft) },
             dropFiles: attach
@@ -194,10 +223,18 @@ struct ComposerView: View {
 
     /// Puts the account's Gmail signature in once the editor is ready. Adding it is not an edit the person made.
     private func addSignature() async {
-        await editorController.setSignature(await signature(draft.accountID))
-        if let content = await editorController.content() {
-            apply(content, to: &draft)
-            apply(content, to: &original)
+        let request = UUID()
+        let accountID = draft.accountID
+        signatureRequestID = request
+        let html = await signature(accountID)
+        guard signatureRequestID == request, draft.accountID == accountID, !isSending, !isClosing else { return }
+        if let update = await editorController.setSignature(html) {
+            var before = original
+            apply(update.before, to: &before)
+            let wasUntouched = before == original
+            apply(update.after, to: &draft)
+            // Only the signature changes the baseline. Text entered while Gmail was loading remains an edit.
+            if wasUntouched { apply(update.after, to: &original) }
         }
     }
 
@@ -256,7 +293,7 @@ struct ComposerView: View {
         for url in urls where !draft.attachments.contains(url) { draft.attachments.append(url) }
     }
 
-    /// Esc: closes right away unless something was written, then asks whether to keep it as a draft.
+    /// Closing keeps work as a draft; discarding is always explicit.
     private func requestClose() {
         if closeGuard.shouldClose() { closeNow() }
     }
@@ -266,14 +303,23 @@ struct ComposerView: View {
         dismiss()
     }
 
+    private func saveCurrentDraft(allowClosing: Bool = false) async {
+        guard !isSending, allowClosing || !isClosing, !Task.isCancelled else { return }
+        let content = await editorController.content()
+        guard !isSending, allowClosing || !isClosing, !Task.isCancelled else { return }
+        if let content { apply(content, to: &draft) }
+        await session.save(draft)
+    }
+
     private func saveAndClose() {
+        guard !isClosing else { return }
+        isClosing = true
         Task {
-            if let content = await editorController.content() { apply(content, to: &draft) }
-            await session.save(draft)
-            if case .failed(let message) = session.state {
-                sendError = message
-            } else {
-                closeNow()
+            await saveCurrentDraft(allowClosing: true)
+            if session.isSaved(draft) || session.isSavedLocally(draft) { closeNow() }
+            else {
+                if case .failed(let message) = session.state { sendError = message }
+                isClosing = false
             }
         }
     }
@@ -288,9 +334,11 @@ struct ComposerView: View {
                 // A message that is already a Gmail draft is sent as that draft, so no copy is left behind.
                 draft.gmailDraftID = await session.draftIDForSending(from: draft.accountID)
                 try await send(draft)
+                await session.removeLocalRecovery(for: draft.id)
                 session.finish()
                 closeNow()
             } catch {
+                session.resumeSaving()
                 sendError = error.localizedDescription
             }
             isSending = false

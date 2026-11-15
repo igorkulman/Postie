@@ -6,10 +6,18 @@ struct MailboxStatusView: View {
     let isLoading: Bool
     let isLoadingMore: Bool
     let isSearching: Bool
+    var hasMorePages = false
+    var showingSavedMail = false
+    var lastRefreshed: Date?
+    var isOutbox = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var activity: String? {
-        guard isLoading else { return nil }
+        guard isLoading else {
+            if isOutbox { return nil }
+            if showingSavedMail { return String(localized: "Showing saved mail") }
+            return lastRefreshed != nil && !isSearching ? String(localized: "Up to date") : nil
+        }
         if isLoadingMore { return String(localized: "Loading more…") }
         return isSearching ? String(localized: "Searching…") : String(localized: "Updating…")
     }
@@ -17,16 +25,20 @@ struct MailboxStatusView: View {
     var body: some View {
         HStack(spacing: 8) {
             Group {
-                if count == 1 { Text("1 conversation") }
+                if hasMorePages { Text("\(count) loaded") }
+                else if count == 1 { Text("1 conversation") }
                 else { Text("\(count) conversations") }
             }
             .lineLimit(1)
             Spacer(minLength: 4)
             ZStack(alignment: .trailing) {
                 if let activity {
-                    MailActivityIndicator(title: activity)
-                        .id(activity)
-                        .transition(.opacity)
+                    Group {
+                        if isLoading { MailActivityIndicator(title: activity) }
+                        else { Text(activity).lineLimit(1) }
+                    }
+                    .id(activity)
+                    .transition(.opacity)
                 }
             }
         }

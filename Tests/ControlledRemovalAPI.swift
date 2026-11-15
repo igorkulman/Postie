@@ -7,6 +7,9 @@ final class ControlledRemovalAPI: GmailSearching, GmailMutating {
     var page: GmailPage
     var holdsMailbox = false
     var holdsSearch = false
+    var holdsUntrash = false
+    private(set) var labelWrites: [(label: String, on: Bool, id: String)] = []
+    private var untrashRequest: CheckedContinuation<Void, Never>?
     private var removals: [String: CheckedContinuation<Void, Error>] = [:]
     private var mailboxRequest: CheckedContinuation<GmailPage, Error>?
     private var searchRequest: CheckedContinuation<GmailPage, Error>?
@@ -43,7 +46,32 @@ final class ControlledRemovalAPI: GmailSearching, GmailMutating {
     }
 
     func unreadInboxCount() async throws -> Int { 0 }
-    func setLabel(_ label: String, on: Bool, threadID: String) async throws {}
+    @MainActor
+    func setLabel(_ label: String, on: Bool, threadID: String) async throws {
+        labelWrites.append((label, on, threadID))
+        started.yield()
+    }
+    @MainActor
+    func untrash(threadID: String) async throws {
+        if holdsUntrash {
+            await withCheckedContinuation { untrashRequest = $0; started.yield() }
+        }
+    }
+
+    func waitForLabelWrites(_ count: Int) async {
+        var iterator = events.makeAsyncIterator()
+        while labelWrites.count < count { _ = await iterator.next() }
+    }
+
+    func waitForUntrash() async {
+        var iterator = events.makeAsyncIterator()
+        while untrashRequest == nil { _ = await iterator.next() }
+    }
+
+    func finishUntrash() {
+        untrashRequest?.resume()
+        untrashRequest = nil
+    }
     func archive(threadID: String) async throws { try await remove(threadID) }
     func trash(threadID: String) async throws { try await remove(threadID) }
 

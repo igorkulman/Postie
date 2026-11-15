@@ -29,6 +29,7 @@ actor HubAPI: GmailSearching, GmailMutating, GmailSending, GoogleCalendarReading
     func unreadInboxCount() async throws -> Int { mail.filter(\.isUnread).count }
     func archive(threadID: String) async throws { archived.append(threadID); mail.removeAll { $0.id == threadID } }
     func trash(threadID: String) async throws { trashed.append(threadID); mail.removeAll { $0.id == threadID } }
+    func untrash(threadID: String) async throws {}
     func setLabel(_ label: String, on: Bool, threadID: String) async throws {}
     func setCalendarResult(_ result: Result<GoogleCalendarStatus?, GmailError>) { calendarResult = result }
     func calendarStatus(for invitation: CalendarInvitation) async throws -> GoogleCalendarStatus? {

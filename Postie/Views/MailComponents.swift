@@ -18,6 +18,8 @@ struct MailThreadRow: View {
     let thread: MailThread
     var isPending = false
     var textSize = ConversationListTextSize.defaultSize
+    /// Account context for VoiceOver, without an extra visible line in the row.
+    var accountEmail: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // .increased while the row sits on the accent-colored selection background.
     @Environment(\.backgroundProminence) private var prominence
@@ -43,7 +45,7 @@ struct MailThreadRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     headerLayout {
                         Text(thread.mailbox == .sent || thread.mailbox == .outbox ? message.recipient : message.senderName)
-                            .font(.system(size: pointSize, weight: .semibold))
+                            .font(.system(size: pointSize, weight: thread.isUnread ? .semibold : .regular))
                             .lineLimit(1)
                         if pointSize < 20 { Spacer(minLength: 8) }
                         ZStack(alignment: .trailing) {
@@ -114,6 +116,7 @@ struct MailThreadRow: View {
         }
         parts.append(message.date.formatted(date: .abbreviated, time: .shortened))
         parts.append(thread.preview)
+        if let accountEmail { parts.append(String(localized: "Account: \(accountEmail)")) }
         if let first = message.attachments.first {
             parts.append(String(localized: "Attachment \(first.filename)"))
             if message.attachments.count > 1 {

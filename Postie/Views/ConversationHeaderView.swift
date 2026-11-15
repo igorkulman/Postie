@@ -8,6 +8,7 @@ struct ConversationHeaderView: View {
     let toggleStar: () -> Void
     var isShowingHistory = false
     var navigateHistory: (() -> Void)?
+    var accountEmail: String?
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
@@ -21,6 +22,15 @@ struct ConversationHeaderView: View {
                     .contextMenu {
                         Button("Copy Subject", systemImage: "doc.on.doc", action: copySubject)
                     }
+
+                if let accountEmail {
+                    Text("Account: \(accountEmail)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .help(accountEmail)
+                }
 
                 if thread.messages.count > 1 {
                     HStack(spacing: 8) {

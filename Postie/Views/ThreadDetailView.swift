@@ -6,18 +6,20 @@ struct ThreadDetailView: View {
     let toggleStar: () -> Void
     var openDraft: (() -> Void)?
     var accountEmail: String?
+    var showsAccountContext = false
     @State private var isShowingHistory = false
     @State private var scrollPosition: ScrollPosition
     @State private var viewportHeight: CGFloat = 0
     @State private var followsLatestLayout = true
 
     init(thread: MailThread, canToggleStar: Bool = true, toggleStar: @escaping () -> Void, openDraft: (() -> Void)? = nil,
-         accountEmail: String? = nil) {
+         accountEmail: String? = nil, showsAccountContext: Bool = false) {
         self.thread = thread
         self.canToggleStar = canToggleStar
         self.toggleStar = toggleStar
         self.openDraft = openDraft
         self.accountEmail = accountEmail
+        self.showsAccountContext = showsAccountContext
         _scrollPosition = State(initialValue: Self.openingScrollPosition(for: thread))
     }
 
@@ -34,7 +36,8 @@ struct ThreadDetailView: View {
         VStack(spacing: 0) {
             ConversationHeaderView(thread: thread, canToggleStar: canToggleStar,
                                    isDraft: openDraft != nil, toggleStar: toggleStar,
-                                   isShowingHistory: isShowingHistory, navigateHistory: navigateHistory)
+                                   isShowingHistory: isShowingHistory, navigateHistory: navigateHistory,
+                                   accountEmail: showsAccountContext ? accountEmail : nil)
             Divider()
 
             ScrollView {

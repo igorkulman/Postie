@@ -49,10 +49,14 @@ final class RichTextController {
     func focus() { run("focus()") }
 
     /// Puts the signature under what the person writes, above any quoted original. Nil or empty removes it.
-    func setSignature(_ html: String?) async {
-        _ = try? await webView?.callAsyncJavaScript(
-            "return postieEditor.setSignature(html)", arguments: ["html": html ?? ""], contentWorld: RichTextPolicy.world
-        )
+    @discardableResult
+    func setSignature(_ html: String?) async -> (before: EditorContent, after: EditorContent)? {
+        guard let result = try? await webView?.callAsyncJavaScript(
+            "return postieEditor.signatureSnapshot(html)", arguments: ["html": html ?? ""], contentWorld: RichTextPolicy.world
+        ) as? [String: Any],
+              let before = (result["before"] as? [String: Any]).flatMap(EditorContent.init),
+              let after = (result["after"] as? [String: Any]).flatMap(EditorContent.init) else { return nil }
+        return (before, after)
     }
 
     /// The editor as it is right now, without waiting for its next change notification.
@@ -481,6 +485,12 @@ enum RichTextPolicy {
                     document.execCommand('createLink', false, url);
                 }
                 changed();
+            },
+            // Capture both sides in one script turn, so delayed signature loading never marks typed work as untouched.
+            signatureSnapshot(html) {
+                const before = snapshot();
+                this.setSignature(html);
+                return { before, after: snapshot() };
             },
             // Gmail's markup for a signature, kept apart from what the person types. The signature is shown exactly as Gmail has it.
             setSignature(html) {

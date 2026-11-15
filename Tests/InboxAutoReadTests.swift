@@ -200,6 +200,7 @@ private final class AutoReadAPI: GmailReading, GmailMutating {
     }
     func archive(threadID: String) async throws {}
     func trash(threadID: String) async throws {}
+    func untrash(threadID: String) async throws {}
 
     @MainActor func setLabel(_ label: String, on: Bool, threadID: String) async throws {
         changes.append(Change(label: label, on: on, id: threadID))

@@ -99,6 +99,10 @@ final class MailHub {
     let accounts: AccountStore
     private(set) var sessions: [AccountSession] = []
     private(set) var mailbox: Mailbox = .inbox
+    private(set) var localDrafts: [ComposeDraft] = []
+    private(set) var queuedMessageNoticeID: UUID?
+    private var recoveryRevision = 0
+    @ObservationIgnored private let recoveryStore: DraftRecoveryStore
     private(set) var isPreparing: Bool
     private(set) var storageError: String?
     private(set) var searchQuery = ""
@@ -111,10 +115,11 @@ final class MailHub {
     /// Keep the underlying mail until Gmail accepts the action, so a failure only unhides it.
     private var pendingRemovals: Set<ConversationKey> = []
     @ObservationIgnored private var searchRemovalRevision = 0
+    @ObservationIgnored private var restorationQueue: Task<Void, Never>?
     @ObservationIgnored private var searchRemovals: [ConversationKey: Int] = [:]
     private(set) var calendarResponses: [CalendarResponseKey: CalendarInvitation.Response] = [:]
     private(set) var calendarRepliesInFlight: Set<CalendarResponseKey> = []
-    @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, mailbox: Mailbox, list: MergedList)?
+    @ObservationIgnored private var folderListCache: (revisions: [ReaderRevision], outboxRevision: Int, recoveryRevision: Int, mailbox: Mailbox, list: MergedList)?
     @ObservationIgnored private var searchTokens: [String: String] = [:]
     @ObservationIgnored private var searchGeneration = Generation()
     /// Drafts being edited, so opening one again brings its window forward.
@@ -131,12 +136,14 @@ final class MailHub {
 
     /// `makeAPI` supplies local mail; `cache` lets regression mode/tests use SQLite without opening the real database.
     init(accounts: AccountStore, persistsMail: Bool = true, syncsInBackground: Bool = true,
-         cache: GmailCache? = nil, outboxStore: OutboxStore? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
+         cache: GmailCache? = nil, outboxStore: OutboxStore? = nil, recoveryStore: DraftRecoveryStore? = nil, makeAPI: (@MainActor (String) -> any GmailReading)? = nil) {
         self.accounts = accounts
         self.persistsMail = persistsMail
         self.syncsInBackground = syncsInBackground
         self.cache = cache
         self.makeAPI = makeAPI
+        self.recoveryStore = recoveryStore ?? DraftRecoveryStore(root: persistsMail ? nil
+            : URL.temporaryDirectory.appending(path: "PostieDraftRecovery-" + UUID().uuidString))
         isPreparing = persistsMail && cache == nil
         // Previews and tests must not touch the real outbox.
         let store = outboxStore ?? (persistsMail ? OutboxStore()
@@ -151,6 +158,16 @@ final class MailHub {
         defer { isPreparing = false }
         if persistsMail { outbox.startMonitoringNetwork() }
         await outbox.load()
+        do {
+            localDrafts = try await recoveryStore.all().map { entry in
+                var draft = try JSONDecoder().decode(ComposeDraft.self, from: entry.payload)
+                draft.attachments = entry.attachments
+                return draft
+            }
+            recoveryRevision += 1
+        } catch {
+            storageError = String(localized: "Unable to open locally saved drafts. Your recovery files have not been deleted.")
+        }
         guard persistsMail, cache == nil else { return }
         do {
             cache = try await GmailCache.open()
@@ -218,11 +235,16 @@ final class MailHub {
         sessions.removeAll { $0.id == id }
         calendarResponses = calendarResponses.filter { $0.key.accountID != id }
         await outbox.removeAll(accountID: id)
+        for draft in localDrafts where draft.accountID == id { try? await removeLocalDraft(draft.id) }
         accounts.remove(id)
         await AttachmentFiles.removeAll(accountID: id)
     }
 
     // MARK: Folders
+
+    var sidebarBadges: [Mailbox: Int] {
+        [.inbox: unreadInboxCount ?? 0, .drafts: draftCount + localDrafts.count, .outbox: outboxCount]
+    }
 
     func changeMailbox(_ mailbox: Mailbox) {
         guard self.mailbox != mailbox else { return }
@@ -282,10 +304,10 @@ final class MailHub {
     private var folderList: MergedList {
         let revisions = sessions.map { ReaderRevision(accountID: $0.id, revision: $0.reader.conversationsRevision) }
         let outboxRevision = mailbox == .outbox ? outbox.revision : 0
-        if let cache = folderListCache, cache.revisions == revisions, cache.outboxRevision == outboxRevision, cache.mailbox == mailbox {
+        if let cache = folderListCache, cache.revisions == revisions, cache.outboxRevision == outboxRevision, cache.recoveryRevision == recoveryRevision, cache.mailbox == mailbox {
             return cache.list
         }
-        let merged: [MergedConversation]
+        var merged: [MergedConversation]
         if mailbox == .outbox {
             merged = outbox.items.compactMap { item in
                 session(for: item.accountID).map { MergedConversation(key: ConversationKey(accountID: $0.id, threadID: item.id), conversation: outboxConversation(item, from: $0)) }
@@ -299,8 +321,22 @@ final class MailHub {
             }
             .sorted { $0.conversation.latestDate > $1.conversation.latestDate }
         }
+        if mailbox == .drafts {
+            merged += localDrafts.compactMap { draft in
+                guard let accountID = draft.accountID, session(for: accountID) != nil else { return nil }
+                let id = "local-draft:" + draft.id
+                let conversation = GmailConversation(id: id, subject: draft.subject.isEmpty ? String(localized: "(No subject)") : draft.subject, messages: [
+                    GmailMessage(id: id, senderName: email(for: accountID) ?? "", senderEmail: email(for: accountID) ?? "",
+                                 recipient: draft.recipient, cc: draft.cc, date: draft.updatedAt,
+                                 snippet: String(localized: "Saved on this Mac · Not synced to Gmail"), body: draft.body, htmlBody: draft.html,
+                                 labelIDs: ["DRAFT"])
+                ])
+                return MergedConversation(key: ConversationKey(accountID: accountID, threadID: id), conversation: conversation)
+            }
+            merged.sort { $0.conversation.latestDate > $1.conversation.latestDate }
+        }
         let list = MergedList(merged)
-        folderListCache = (revisions, outboxRevision, mailbox, list)
+        folderListCache = (revisions, outboxRevision, recoveryRevision, mailbox, list)
         return list
     }
 
@@ -428,11 +464,11 @@ final class MailHub {
     /// Messages waiting to be sent or that could not be, for the badge next to the Outbox folder.
     var outboxCount: Int { outbox.items.count }
 
-    var isLoadingMailbox: Bool { isSearchActive ? isSearching : sessions.contains { $0.reader.isLoadingMailbox } }
+    var isLoadingMailbox: Bool { isSearchActive ? isSearching : mailbox != .outbox && sessions.contains { $0.reader.isLoadingMailbox } }
     var isLoadingMore: Bool { isSearchActive ? isLoadingMoreSearchResults : sessions.contains { $0.reader.isLoadingMore } }
     var isRestoringCache: Bool { sessions.contains { $0.reader.isRestoringCache } }
     var showingCachedMail: Bool { !isSearchActive && sessions.contains { $0.reader.showingCachedMail } }
-    var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : sessions.contains { $0.reader.nextPageToken != nil } }
+    var hasMorePages: Bool { isSearchActive ? !searchTokens.isEmpty : mailbox != .outbox && sessions.contains { $0.reader.nextPageToken != nil } }
     var lastRefreshed: Date? { sessions.compactMap(\.reader.lastRefreshed).min() }
     var mailboxVersion: Int { sessions.reduce(searchVersion) { $0 + $1.reader.mailboxVersion } }
     var loadedCount: Int { list.conversations.count }
@@ -560,6 +596,7 @@ final class MailHub {
     func openConversation(for key: ConversationKey?) -> GmailConversation? {
         if let key, pendingRemovals.contains(key) { return nil }
         if mailbox == .outbox, !isSearchActive { return key.flatMap { folderList[$0]?.conversation } }
+        if let key, localDraft(for: key) != nil { return folderList[key]?.conversation }
         guard let key, let selected = session(for: key.accountID)?.reader.selectedConversation,
               selected.id == key.threadID else { return nil }
         return selected
@@ -574,6 +611,7 @@ final class MailHub {
     }
 
     func canModifyLabels(_ key: ConversationKey?) -> Bool {
+        if let key, localDraft(for: key) != nil { return false }
         if mailbox == .outbox, !isSearchActive { return false }
         return key.flatMap { session(for: $0.accountID)?.reader.canModifyLabels } ?? false
     }
@@ -594,6 +632,7 @@ final class MailHub {
 
     func canTrash(_ key: ConversationKey?) -> Bool {
         guard let key, !pendingRemovals.contains(key) else { return false }
+        if localDraft(for: key) != nil { return true }
         if isSearchActive {
             guard let labels = searchResult(key)?.labelIDs else { return false }
             return !labels.contains("TRASH") && canModifyLabels(key)
@@ -606,7 +645,7 @@ final class MailHub {
         let queued = mailbox == .outbox && !isSearchActive
         for session in sessions where queued || session.id != key?.accountID { await session.reader.select(nil) }
         // Queued mail is not in Gmail yet: there is nothing to load.
-        guard !queued, let key, let session = session(for: key.accountID) else { return }
+        guard !queued, let key, localDraft(for: key) == nil, let session = session(for: key.accountID) else { return }
         await session.reader.select(key.threadID)
     }
 
@@ -617,7 +656,11 @@ final class MailHub {
 
     @discardableResult
     func trash(_ key: ConversationKey, onRemoved: () -> Void = {}) async -> Bool {
-        await remove(key, archiving: false, onRemoved: onRemoved)
+        if let draft = localDraft(for: key) {
+            do { try await removeLocalDraft(draft.id); onRemoved(); return true }
+            catch { storageError = error.localizedDescription; return false }
+        }
+        return await remove(key, archiving: false, onRemoved: onRemoved)
     }
 
     /// `onRemoved` means hidden optimistically, not accepted by Gmail. A false result unhides the mail.
@@ -640,6 +683,31 @@ final class MailHub {
         return await session.reader.trash(key.threadID, fromAnyFolder: fromSearch, onRemoved: accepted)
     }
 
+    /// Enqueue synchronously from the Undo callback, so consecutive ⌘Z presses preserve invocation order.
+    func restoreRemovals(_ receipts: [MailRemovalReceipt]) -> Task<[(receipt: MailRemovalReceipt, error: String)], Never> {
+        let previous = restorationQueue
+        let operation = Task {
+            await previous?.value
+            var failures: [(receipt: MailRemovalReceipt, error: String)] = []
+            for receipt in receipts {
+                do { try await restoreRemoval(receipt) }
+                catch { failures.append((receipt, error.localizedDescription)) }
+            }
+            return failures
+        }
+        restorationQueue = Task { _ = await operation.value }
+        return operation
+    }
+
+    private func restoreRemoval(_ receipt: MailRemovalReceipt) async throws {
+        guard let session = session(for: receipt.key.accountID), !isDisconnected(receipt.key.accountID) else {
+            throw GmailError.signInRequired
+        }
+        try await session.reader.restoreRemoval(receipt)
+        // Search results need a fresh Gmail query, not an unconditional insertion into an arbitrary query.
+        if isSearchActive { await performSearch() }
+    }
+
     func setUnread(_ key: ConversationKey, _ unread: Bool) async {
         guard let reader = session(for: key.accountID)?.reader else { return }
         await reader.setUnread(key.threadID, unread)
@@ -657,7 +725,10 @@ final class MailHub {
     func send(_ draft: ComposeDraft) async throws {
         guard let id = draft.accountID ?? defaultSendingAccount?.id, session(for: id) != nil else { throw GmailError.signInRequired }
         try await outbox.enqueue(draft, accountID: id)
+        queuedMessageNoticeID = UUID()
     }
+
+    func dismissQueuedMessageNotice() { queuedMessageNoticeID = nil }
 
     private func canDeliver(for accountID: String) -> Bool {
         session(for: accountID) != nil && !isDisconnected(accountID)
@@ -729,8 +800,39 @@ final class MailHub {
             save: { [self] in try await saveDraft($0, replacing: $1) },
             delete: { [self] in try await deleteDraft($0) },
             claim: { [self] in openDrafts[$0] = OpenDraftWindow(window: $1) },
-            release: { [self] in openDrafts[$0] = nil }
+            release: { [self] in openDrafts[$0] = nil },
+            saveLocally: { [self] in try await saveLocalDraft($0) },
+            removeLocally: { [self] in try await removeLocalDraft($0) },
+            isLocalRecovery: { [self] id in localDrafts.contains { $0.id == id } },
+            claimLocal: { [self] id, accountID, window in
+                if let accountID { openDrafts[DraftRef(accountID: accountID, draftID: "local-draft:" + id)] = OpenDraftWindow(window: window) }
+            },
+            releaseLocal: { [self] id, accountID in
+                if let accountID { openDrafts[DraftRef(accountID: accountID, draftID: "local-draft:" + id)] = nil }
+            }
         )
+    }
+
+    func saveLocalDraft(_ draft: ComposeDraft) async throws {
+        var draft = draft
+        draft.accountID = draft.accountID ?? defaultSendingAccount?.id
+        draft.updatedAt = Date()
+        let entry = try await recoveryStore.save(id: draft.id, payload: JSONEncoder().encode(draft), attachments: draft.attachments)
+        draft.attachments = entry.attachments
+        localDrafts.removeAll { $0.id == draft.id }
+        localDrafts.append(draft)
+        recoveryRevision += 1
+    }
+
+    func removeLocalDraft(_ id: String) async throws {
+        try await recoveryStore.remove(id: id)
+        localDrafts.removeAll { $0.id == id }
+        recoveryRevision += 1
+    }
+
+    private func localDraft(for key: ConversationKey) -> ComposeDraft? {
+        guard !isSearchActive, mailbox == .drafts else { return nil }
+        return localDrafts.first { "local-draft:" + $0.id == key.threadID && $0.accountID == key.accountID }
     }
 
     private struct OpenDraftWindow {
@@ -766,6 +868,7 @@ final class MailHub {
 
     /// Whether the open conversation has a draft that can be edited.
     func canEditDraft(_ key: ConversationKey?) -> Bool {
+        if let key, localDraft(for: key) != nil { return true }
         guard let key, mailbox == .drafts, !isSearchActive, let reader = session(for: key.accountID)?.reader, reader.canDraft else { return false }
         return draftMessage(in: key) != nil
     }
@@ -776,6 +879,22 @@ final class MailHub {
 
     /// The draft of a conversation as a message ready to edit, or nil when its window is already open (and now in front).
     func openDraft(_ key: ConversationKey) async throws -> ComposeDraft? {
+        if var draft = localDraft(for: key) {
+            let localOwner = openDrafts.first { $0.key.draftID == key.threadID }?.value.window
+            let gmailOwner = draft.gmailDraftID.flatMap { openDrafts[DraftRef(accountID: key.accountID, draftID: $0)]?.window }
+            if let window = localOwner ?? gmailOwner { window.makeKeyAndOrderFront(nil); return nil }
+            // The recovery store can replace its files on each save. An open editor owns independent copies.
+            let folder = URL.cachesDirectory.appending(path: "Postie/DraftEdit/" + UUID().uuidString, directoryHint: .isDirectory)
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            draft.attachments = try draft.attachments.enumerated().map { index, source in
+                let directory = folder.appending(path: String(index), directoryHint: .isDirectory)
+                try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                let destination = directory.appending(path: source.lastPathComponent)
+                try FileManager.default.copyItem(at: source, to: destination)
+                return destination
+            }
+            return draft
+        }
         guard let message = draftMessage(in: key), let session = session(for: key.accountID) else { throw GmailError.http(404) }
         let content = try await session.reader.draftContent(forMessage: message.id)
         let ref = DraftRef(accountID: key.accountID, draftID: content.ref.id)

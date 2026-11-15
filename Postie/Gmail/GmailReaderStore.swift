@@ -15,7 +15,15 @@ final class GmailReaderStore {
     /// Changes whenever `conversations` does, so a merged view of several readers can tell when to rebuild.
     private(set) var conversationsRevision = 0
     private(set) var nextPageToken: String?
-    private(set) var isLoadingMailbox = false
+    private(set) var isLoadingMailbox = false {
+        didSet {
+            if !isLoadingMailbox {
+                let waiters = mailboxIdleWaiters
+                mailboxIdleWaiters = []
+                for waiter in waiters { waiter.resume() }
+            }
+        }
+    }
     private(set) var isLoadingMore = false
     private(set) var mailboxError: String?
     private(set) var mailboxVersion = 0
@@ -28,6 +36,7 @@ final class GmailReaderStore {
     private(set) var lastRefreshed: Date?
 
     @ObservationIgnored private let api: any GmailReading
+    @ObservationIgnored private var mailboxIdleWaiters: [CheckedContinuation<Void, Never>] = []
     // What the account's API can do, worked out once instead of casting on every call.
     @ObservationIgnored private let mutator: (any GmailMutating)?
     @ObservationIgnored private let searcher: (any GmailSearching)?
@@ -277,6 +286,25 @@ final class GmailReaderStore {
             }
         }
         return await mutate(id, onRemoved: onRemoved) { try await mutator.trash(threadID: id) }
+    }
+
+    /// Invert only the folder membership changed by our action; never overwrite read/star state.
+    func restoreRemoval(_ receipt: MailRemovalReceipt) async throws {
+        guard let mutator else { throw GmailError.permissionRequired }
+        let startedAccount = accountGeneration
+        mailboxMutationGeneration.advance()
+        if !receipt.archiving {
+            try await mutator.untrash(threadID: receipt.key.threadID)
+            try await mutator.setLabel("SPAM", on: receipt.labels.contains("SPAM"), threadID: receipt.key.threadID)
+        }
+        try await mutator.setLabel("INBOX", on: receipt.labels.contains("INBOX"), threadID: receipt.key.threadID)
+        mailboxMutationGeneration.advance()
+        // A refresh already in flight will discard its pre-mutation response. Wait for it, then fetch again.
+        while isLoadingMailbox {
+            await withCheckedContinuation { mailboxIdleWaiters.append($0) }
+        }
+        guard accountGeneration == startedAccount else { throw CancellationError() }
+        await refresh()
     }
 
     var canLoadAttachments: Bool { attachmentLoader != nil }

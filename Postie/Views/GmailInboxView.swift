@@ -7,6 +7,7 @@ struct GmailInboxView: View {
     @Environment(\.openWindow) private var openWindow
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.undoManager) private var undoManager
     @State private var screensAwake = true
     @State private var model: InboxModel
     @FocusState private var listIsFocused: Bool
@@ -44,7 +45,7 @@ struct GmailInboxView: View {
     var body: some View {
         let actions = model.mailActions
         NavigationSplitView {
-            MailboxSidebar(selection: mailboxSelection, badges: [.inbox: hub.unreadInboxCount ?? 0, .drafts: hub.draftCount, .outbox: hub.outboxCount])
+            MailboxSidebar(selection: mailboxSelection, badges: hub.sidebarBadges)
                 .navigationSplitViewColumnWidth(min: 160, ideal: 180, max: 240)
         } content: {
             ConversationListView(model: model, listIsFocused: $listIsFocused)
@@ -58,6 +59,20 @@ struct GmailInboxView: View {
         .searchFocused($searchIsFocused)
         .toolbar { MailToolbar(actions: actions) }
         .focusedSceneValue(\.mailActions, actions)
+        .onChange(of: undoManager, initial: true) { model.undoManager = undoManager }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            VStack(spacing: 0) {
+                if let notice = model.removalNotice {
+                    MailUndoNotice(operation: notice, dismiss: model.dismissRemovalNotice)
+                        .id(notice.id)
+                }
+                if let id = hub.queuedMessageNoticeID {
+                    MailQueuedNotice(showOutbox: { model.changeMailbox(.outbox); hub.dismissQueuedMessageNotice() },
+                                     dismiss: hub.dismissQueuedMessageNotice)
+                        .id(id)
+                }
+            }
+        }
         // Each message gets its own window, so the mailbox stays usable while writing.
         .onChange(of: model.composer) { _, draft in
             guard let draft else { return }

@@ -21,8 +21,8 @@ struct ConversationListView: View {
                       accounts: hub.sessions.map(\.id))
     }
 
-    private var listSelection: Binding<ConversationKey?> {
-        Binding(get: { model.selectedID }, set: { model.updateFromList($0) })
+    private var listSelection: Binding<Set<ConversationKey>> {
+        Binding(get: { model.selectedIDs }, set: { model.updateFromList($0) })
     }
 
     var body: some View {
@@ -43,7 +43,8 @@ struct ConversationListView: View {
                 List(selection: listSelection) {
                     ForEach(hub.conversations) { item in
                         MailThreadRow(thread: item.conversation.presentation(includingBodies: false, mailbox: hub.mailbox),
-                                      isPending: model.isRemoving(item.key), textSize: textSize)
+                                      isPending: model.isRemoving(item.key), textSize: textSize,
+                                      accountEmail: hub.hasMultipleAccounts ? hub.email(for: item.key.accountID) : nil)
                             .tag(item.key)
                             .listRowInsets(EdgeInsets(top: 0, leading: 8, bottom: 0, trailing: 8))
                             .listRowSeparator(.hidden)
@@ -86,18 +87,23 @@ struct ConversationListView: View {
                     transaction.disablesAnimations = true
                 }
                 .onDeleteCommand {
-                    guard let key = model.selectedID else { return }
-                    if hub.canActOnOutboxItem(key) { model.deleteOutboxItem(key) }
-                    else if hub.canTrash(key) { model.remove(key, archiving: false) }
+                    let keys = model.selectedIDs
+                    if !keys.isEmpty, keys.allSatisfy({ hub.canActOnOutboxItem($0) }) {
+                        for key in keys { model.deleteOutboxItem(key) }
+                    } else if !keys.isEmpty, keys.allSatisfy({ hub.canTrash($0) }) {
+                        model.remove(keys, archiving: false)
+                    }
                 }
                 .contextMenu(forSelectionType: ConversationKey.self) { keys in
-                    if let key = keys.first {
+                    if keys.count > 1 {
+                        BulkConversationContextMenu(model: model, keys: keys)
+                    } else if let key = keys.first {
                         ConversationContextMenu(model: model, key: key)
                             .disabled(model.isRemoving(key))
                     }
                 } primaryAction: { keys in
                     // Double-click, or Return: a draft or a queued message opens for editing.
-                    guard let key = keys.first else { return }
+                    guard keys.count == 1, let key = keys.first else { return }
                     if hub.canActOnOutboxItem(key) { model.editOutboxItem(key) } else { model.editDraft(key) }
                 }
                 .overlay {
@@ -115,7 +121,9 @@ struct ConversationListView: View {
             if !hub.conversations.isEmpty {
                 Divider()
                 MailboxStatusView(count: hub.loadedCount, isLoading: hub.isLoadingMailbox,
-                                  isLoadingMore: hub.isLoadingMore, isSearching: hub.isSearchActive)
+                                  isLoadingMore: hub.isLoadingMore, isSearching: hub.isSearchActive,
+                                  hasMorePages: hub.hasMorePages, showingSavedMail: hub.showingCachedMail,
+                                  lastRefreshed: hub.lastRefreshed, isOutbox: hub.mailbox == .outbox)
                     .transition(.opacity)
             }
         }
@@ -195,11 +203,25 @@ private struct ListPlaceholder: View {
             } description: {
                 Text("Messages that are waiting to be sent, or could not be, appear here.")
             }
+        } else if mailbox == .inbox {
+            ContentUnavailableView {
+                Label("You’re all caught up", systemImage: "checkmark.circle")
+            } description: {
+                Text("New conversations will appear here.")
+            }
         } else {
             ContentUnavailableView {
-                Label("No conversations", systemImage: mailbox.symbol)
+                Label(mailbox == .drafts ? String(localized: "No drafts")
+                      : mailbox == .sent ? String(localized: "No sent mail")
+                      : mailbox == .trash ? String(localized: "Trash is empty")
+                      : mailbox == .junk ? String(localized: "No junk mail")
+                      : String(localized: "No archived mail"), systemImage: mailbox.symbol)
             } description: {
-                Text("Refresh to check for new mail.")
+                Text(mailbox == .drafts ? String(localized: "Messages you’re writing are saved here.")
+                     : mailbox == .sent ? String(localized: "Messages you send appear here.")
+                     : mailbox == .trash ? String(localized: "Messages moved to Trash appear here.")
+                     : mailbox == .junk ? String(localized: "Mail marked as junk appears here.")
+                     : String(localized: "Archived conversations appear here."))
             }
         }
     }

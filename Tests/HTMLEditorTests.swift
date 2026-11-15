@@ -122,6 +122,20 @@ struct HTMLEditorTests {
         #expect(try await harness.snapshot().html.contains("gmail_signature") == false)
     }
 
+    @Test("Signature insertion captures existing typed content separately from the programmatic change")
+    func signatureSnapshot() async throws {
+        let harness = EditorHarness(html: "<div>Work already typed</div>")
+        await harness.waitUntilReady()
+        let value = try #require(try await harness.call("postieEditor.signatureSnapshot(html)", ["html": "Alex"]) as? [String: Any])
+        let before = try #require((value["before"] as? [String: Any]).flatMap(EditorContent.init))
+        let after = try #require((value["after"] as? [String: Any]).flatMap(EditorContent.init))
+        #expect(before.html == "<div>Work already typed</div>")
+        #expect(before.ownText == "Work already typed")
+        #expect(after.ownText == "Work already typed")
+        #expect(after.text.contains("Alex"))
+        #expect(!before.text.contains("Alex"))
+    }
+
     @Test("On a new message the signature leaves a line to type on above it")
     func signatureOnNewMessage() async throws {
         let harness = EditorHarness(html: "")

@@ -24,6 +24,8 @@ private final class MutatingStubAPI: GmailReading, GmailMutating {
     @MainActor
     func trash(threadID: String) async throws { try record("trash \(threadID)") }
     @MainActor
+    func untrash(threadID: String) async throws { try record("remove TRASH \(threadID)") }
+    @MainActor
     func setLabel(_ label: String, on: Bool, threadID: String) async throws {
         try record("\(on ? "add" : "remove") \(label) \(threadID)")
     }
@@ -62,6 +64,16 @@ struct GmailMutationTests {
         let request = try #require(await transport.requests.first)
         #expect(request.httpMethod == "POST")
         #expect(request.url?.path == "/gmail/v1/users/me/threads/a1/trash")
+    }
+
+    @Test("Undo Trash uses Gmail’s untrash endpoint, never a new message or a permanent delete")
+    func untrashRequest() async throws {
+        let transport = FixtureTransport()
+        let api = GmailAPI(transport: transport) { "fixture-token" }
+        try await api.untrash(threadID: "a1")
+        let request = try #require(await transport.requests.first)
+        #expect(request.httpMethod == "POST")
+        #expect(request.url?.path == "/gmail/v1/users/me/threads/a1/untrash")
     }
 
     @Test("Labels are added and removed through thread modify", arguments: [
@@ -152,5 +164,50 @@ struct GmailMutationTests {
         #expect(store.conversations.first?.isStarred == false)
         #expect(store.conversations.first?.isUnread == false)
         #expect(store.selectedConversation?.isUnread == false)
+    }
+
+    @Test("An accepted archive registers native Undo and restores only Inbox membership in the owning account")
+    @MainActor
+    func undoArchive() async throws {
+        let mail = MailHubTests.conversation("thread", at: 100, unread: true).setting("STARRED", to: true)
+        let a = MutatingStubAPI([.success(GmailPage(conversations: [mail], nextPageToken: nil))])
+        let b = MutatingStubAPI([.success(GmailPage(conversations: [mail], nextPageToken: nil)),
+                                 .success(GmailPage(conversations: [], nextPageToken: nil)),
+                                 .success(GmailPage(conversations: [mail], nextPageToken: nil))])
+        let hub = await MailHubTests().makeHub(["a": a, "b": b])
+        let model = InboxModel(hub: hub)
+        let manager = UndoManager()
+        model.undoManager = manager
+        manager.beginUndoGrouping()
+        await model.remove(ConversationKey(accountID: "b", threadID: "thread"), archiving: true)?.value
+        manager.endUndoGrouping()
+        #expect(manager.canUndo)
+        #expect(manager.undoActionName == "Archive")
+        let notice = try #require(model.removalNotice)
+        await notice.undo()?.value
+        #expect(notice.isUndone)
+        #expect(!notice.canUndo)
+        #expect(notice.undo() == nil)
+        #expect(a.calls.isEmpty)
+        #expect(b.calls == ["archive thread", "add INBOX thread"])
+        #expect(hub.conversationKeys.contains(ConversationKey(accountID: "b", threadID: "thread")))
+    }
+
+    @Test("Undo Trash preserves an archived message’s location, and failed inverses can be retried")
+    @MainActor
+    func undoTrashRetry() async throws {
+        let mail = MailHubTests.conversation("thread", at: 100).setting("INBOX", to: false)
+        let api = MutatingStubAPI([.success(GmailPage(conversations: [mail], nextPageToken: nil)),
+                                   .success(GmailPage(conversations: [mail], nextPageToken: nil))])
+        let hub = await MailHubTests().makeHub(["a": api])
+        let receipt = MailRemovalReceipt(key: ConversationKey(accountID: "a", threadID: "thread"), archiving: false, labels: ["SENT"])
+        let operation = MailRemovalUndo(receipts: [receipt], hub: hub)
+        api.failure = GmailError.http(403)
+        await operation.undo()?.value
+        #expect(operation.error != nil && operation.canUndo)
+        api.failure = nil
+        await operation.undo()?.value
+        #expect(operation.isUndone)
+        #expect(api.calls == ["remove TRASH thread", "remove SPAM thread", "remove INBOX thread"])
     }
 }

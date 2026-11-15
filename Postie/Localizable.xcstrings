@@ -4,6 +4,12 @@
     "" : {
 
     },
+    "(No subject)" : {
+
+    },
+    "& %lld more" : {
+      "comment" : "After the first attachment's name in the message list"
+    },
     "%lld cached" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from the local cache",
       "extractionState" : "stale",
@@ -31,9 +37,17 @@
     "%lld conversations" : {
 
     },
+    "%lld conversations archived" : {
+
+    },
+    "%lld conversations moved to Trash" : {
+
+    },
+    "%lld conversations selected" : {
+
+    },
     "%lld loaded" : {
       "comment" : "Conversation count in the list footer; the mail was loaded from Gmail",
-      "extractionState" : "stale",
       "localizations" : {
         "en" : {
           "variations" : {
@@ -84,9 +98,6 @@
     "%lld pt (Default)" : {
 
     },
-    "& %lld more" : {
-      "comment" : "After the first attachment's name in the message list"
-    },
     "1 conversation" : {
 
     },
@@ -99,13 +110,22 @@
     "Accepted" : {
 
     },
+    "Account: %@" : {
+
+    },
     "Accounts" : {
       "comment" : "Settings tab and list name"
+    },
+    "Action undone" : {
+
     },
     "Actual Size" : {
 
     },
     "Add" : {
+
+    },
+    "Add a Gmail account to read and send mail." : {
 
     },
     "Add Account…" : {
@@ -117,25 +137,28 @@
     "Add Link" : {
 
     },
-    "Add a Gmail account to read and send mail." : {
-
-    },
     "Add your OAuth client to Configuration/Google.local.xcconfig, then rebuild. See README for setup." : {
 
     },
     "Adjusts senders, subjects, previews, and metadata. Message body text size is controlled separately in View > Text Size." : {
 
     },
+    "All day" : {
+
+    },
     "All Mail" : {
 
     },
-    "All day" : {
-
+    "and %lld more" : {
+      "comment" : "VoiceOver: the number of attachments besides the first one"
     },
     "Archive" : {
       "comment" : "Mailbox name"
     },
     "Archive (⌃⌘A)" : {
+
+    },
+    "Archived conversations appear here." : {
 
     },
     "Attach Files" : {
@@ -150,13 +173,13 @@
     "B" : {
 
     },
-    "BCC email addresses" : {
-
-    },
     "Back to latest" : {
 
     },
     "Bcc" : {
+
+    },
+    "BCC email addresses" : {
 
     },
     "Bigger" : {
@@ -166,9 +189,6 @@
 
     },
     "Bulleted List" : {
-
-    },
-    "CC email addresses" : {
 
     },
     "Calendar access was not granted. Your mail still works normally." : {
@@ -192,16 +212,22 @@
     "Cc" : {
       "comment" : "Label of the carbon-copy field in the composer"
     },
+    "CC email addresses" : {
+
+    },
     "Cc: %@" : {
       "comment" : "Header line in an expanded message: the Cc recipients"
-    },
-    "Check for Updates…" : {
-
     },
     "Check for updates automatically" : {
 
     },
+    "Check for Updates…" : {
+
+    },
     "Checking your Calendar response…" : {
+
+    },
+    "Choose an action to apply to the selected conversations." : {
 
     },
     "Choose the same Google account to connect its calendar. No account was changed." : {
@@ -234,6 +260,12 @@
     "Contact suggestions" : {
 
     },
+    "Conversation archived" : {
+
+    },
+    "Conversation moved to Trash" : {
+
+    },
     "Copy" : {
 
     },
@@ -250,6 +282,15 @@
 
     },
     "Could not read your Calendar response. Check your connection, then try refreshing." : {
+
+    },
+    "Couldn’t save draft" : {
+
+    },
+    "Couldn’t save on this Mac or to Gmail: %@" : {
+
+    },
+    "Couldn’t undo: %@" : {
 
     },
     "Current response" : {
@@ -270,14 +311,20 @@
     "Delete" : {
 
     },
-    "Do you want to keep this draft message?" : {
+    "Discard Draft" : {
 
     },
-    "Don't Save" : {
+    "Discard this draft?" : {
+
+    },
+    "Dismiss" : {
 
     },
     "Drafts" : {
       "comment" : "Mailbox name"
+    },
+    "Drafts save automatically" : {
+
     },
     "Edit" : {
 
@@ -337,10 +384,10 @@
     "Gmail returned a response that could not be read." : {
 
     },
-    "Google Calendar API is disabled for this app's Google Cloud project. Reconnecting will not fix this. Enable the API, then refresh your response." : {
+    "Google Calendar access was denied (HTTP 403). Check your Google Workspace policy or this app's configuration." : {
 
     },
-    "Google Calendar access was denied (HTTP 403). Check your Google Workspace policy or this app's configuration." : {
+    "Google Calendar API is disabled for this app's Google Cloud project. Reconnecting will not fix this. Enable the API, then refresh your response." : {
 
     },
     "Google Calendar could not complete the request (HTTP %lld). Try refreshing." : {
@@ -358,11 +405,11 @@
     "Guests (%lld)" : {
 
     },
-    "HTML email body" : {
-      "comment" : "Accessibility label for the web view showing a formatted email"
-    },
     "Hide quoted text" : {
       "comment" : "Tooltip of the button that collapses the quoted history of an email"
+    },
+    "HTML email body" : {
+      "comment" : "Accessibility label for the web view showing a formatted email"
     },
     "I" : {
 
@@ -397,6 +444,9 @@
     "Mail from all your accounts appears together. You can add or remove accounts later in Settings." : {
 
     },
+    "Mail marked as junk appears here." : {
+
+    },
     "Mail saved on this Mac for offline reading will be removed. Nothing is deleted from Gmail." : {
 
     },
@@ -418,6 +468,9 @@
     "Maybe" : {
 
     },
+    "me" : {
+
+    },
     "Message" : {
       "comment" : "Menu title"
     },
@@ -430,7 +483,19 @@
     "Message list text size" : {
 
     },
+    "Message queued for sending" : {
+
+    },
+    "Messages moved to Trash appear here." : {
+
+    },
     "Messages that are waiting to be sent, or could not be, appear here." : {
+
+    },
+    "Messages you send appear here." : {
+
+    },
+    "Messages you’re writing are saved here." : {
 
     },
     "Move to Trash" : {
@@ -442,14 +507,17 @@
     "Needs sign-in" : {
       "comment" : "Shown next to an account whose Google access was revoked or expired"
     },
+    "New conversations will appear here." : {
+
+    },
+    "New message" : {
+      "comment" : "Composer title"
+    },
     "New Message" : {
 
     },
     "New Message (⌘N)" : {
 
-    },
-    "New message" : {
-      "comment" : "Composer title"
     },
     "Next Conversation" : {
 
@@ -460,16 +528,25 @@
     "No Accounts" : {
 
     },
+    "No archived mail" : {
+
+    },
     "No Conversation Selected" : {
 
     },
-    "No conversations" : {
+    "No drafts" : {
+
+    },
+    "No junk mail" : {
 
     },
     "No matching mail" : {
 
     },
     "No response found in your primary Google Calendar." : {
+
+    },
+    "No sent mail" : {
 
     },
     "Not responded" : {
@@ -526,9 +603,6 @@
     "Previous Conversation (⌥⌘↑)" : {
 
     },
-    "RSVP is unavailable for this invitation from this account. Use the original email for more options." : {
-
-    },
     "Read" : {
       "comment" : "Swipe action label: mark the conversation as read"
     },
@@ -551,9 +625,6 @@
 
     },
     "Refresh response" : {
-
-    },
-    "Refresh to check for new mail." : {
 
     },
     "Remove %@" : {
@@ -598,6 +669,15 @@
     "Response from Google Calendar" : {
 
     },
+    "Retry" : {
+
+    },
+    "Retry Undo" : {
+
+    },
+    "RSVP is unavailable for this invitation from this account. Use the original email for more options." : {
+
+    },
     "Save" : {
 
     },
@@ -605,6 +685,24 @@
 
     },
     "Save As…" : {
+
+    },
+    "Saved on this Mac · Complete recipient addresses to sync" : {
+
+    },
+    "Saved on this Mac · Gmail sync failed" : {
+
+    },
+    "Saved on this Mac · Not synced to Gmail" : {
+
+    },
+    "Saved on this Mac · Syncing…" : {
+
+    },
+    "Saved to Gmail" : {
+
+    },
+    "Saving…" : {
 
     },
     "Search" : {
@@ -652,10 +750,16 @@
     "Show 1 earlier message" : {
 
     },
+    "Show Outbox" : {
+
+    },
     "Show quoted text" : {
       "comment" : "Tooltip of the button that expands the quoted history of an email"
     },
     "Show unread count on the Dock icon" : {
+
+    },
+    "Showing saved mail" : {
 
     },
     "Shows full sender and recipient addresses" : {
@@ -688,10 +792,13 @@
     "Text Size" : {
 
     },
-    "The Keychain could not be accessed (error %d)." : {
+    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
 
     },
-    "The attachments are too large. Gmail allows about 18 MB of files in one message." : {
+    "The draft will be deleted from this Mac and Gmail. This can’t be undone." : {
+
+    },
+    "The Keychain could not be accessed (error %d)." : {
 
     },
     "The text body is unavailable in this reader. It may use an unsupported encoding or require an attachment download. Open Gmail to view the complete message." : {
@@ -724,6 +831,9 @@
     "Trash" : {
       "comment" : "Mailbox name"
     },
+    "Trash is empty" : {
+
+    },
     "Try Again" : {
 
     },
@@ -734,6 +844,9 @@
 
     },
     "Unable to display HTML. Showing plain text." : {
+
+    },
+    "Unable to open locally saved drafts. Your recovery files have not been deleted." : {
 
     },
     "Unable to open saved mail. You can connect Gmail, but new mail may not be saved locally." : {
@@ -763,6 +876,12 @@
     "Underline" : {
 
     },
+    "Undo" : {
+
+    },
+    "Undo %@ (⌘Z)" : {
+
+    },
     "Unflag" : {
 
     },
@@ -772,7 +891,13 @@
     "Unread" : {
       "comment" : "Swipe action label (mark as unread) and VoiceOver state of an unread conversation"
     },
+    "Unsaved changes" : {
+
+    },
     "Untitled event" : {
+
+    },
+    "Up to date" : {
 
     },
     "Updated invitation" : {
@@ -793,7 +918,7 @@
     "Welcome to Postie" : {
 
     },
-    "You can choose to save this message as a draft, or delete this message immediately. You can't undo this action." : {
+    "You’re all caught up" : {
 
     },
     "You're all set" : {
@@ -806,12 +931,6 @@
 
     },
     "Your response: %@" : {
-
-    },
-    "and %lld more" : {
-      "comment" : "VoiceOver: the number of attachments besides the first one"
-    },
-    "me" : {
 
     }
   },
