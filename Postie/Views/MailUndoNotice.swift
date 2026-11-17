@@ -4,30 +4,33 @@ struct MailUndoNotice: View {
     let operation: MailRemovalUndo
     let dismiss: () -> Void
 
+    // Errors stay until dismissed or retried, and a running restore is never cut short.
+    // Native Undo remains available after the notice disappears.
+    private var timeout: Duration? {
+        operation.error != nil || operation.isRestoring ? nil : .seconds(operation.isUndone ? 3 : 8)
+    }
+
     var body: some View {
-        HStack(spacing: 10) {
-            if operation.isRestoring { ProgressView().controlSize(.small) }
-            Text(operation.confirmation)
-                .lineLimit(2)
-            Spacer(minLength: 8)
+        MailStatusCard(message: operation.confirmation, timeout: timeout, dismiss: dismiss) {
+            if operation.isRestoring {
+                ProgressView().controlSize(.small)
+            } else {
+                Image(systemName: symbol).foregroundStyle(operation.error == nil ? Color.secondary : Color.orange)
+            }
+        } actions: {
             if !operation.isUndone {
                 Button(operation.error == nil ? "Undo" : "Retry Undo") { operation.undo() }
+                    .buttonStyle(.glassProminent)
+                    .controlSize(.large)
                     .disabled(!operation.canUndo)
                     .help("Undo \(operation.actionName) (⌘Z)")
             }
-            Button("Dismiss", systemImage: "xmark", action: dismiss)
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
         }
-        .font(.callout)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.bar)
-        .overlay(alignment: .top) { Divider() }
-        .task(id: operation.isUndone) {
-            // Errors stay until dismissed or retried. Native Undo remains available after the notice disappears.
-            do { try await Task.sleep(for: .seconds(operation.isUndone ? 3 : 8)) } catch { return }
-            if operation.error == nil, !operation.isRestoring { dismiss() }
-        }
+    }
+
+    private var symbol: String {
+        if operation.isUndone { return "arrow.uturn.backward" }
+        if operation.error != nil { return "exclamationmark.triangle.fill" }
+        return operation.archiving ? "archivebox.fill" : "trash.fill"
     }
 }

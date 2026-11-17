@@ -50,6 +50,13 @@ struct GmailInboxView: View {
         } content: {
             ConversationListView(model: model, listIsFocused: $listIsFocused)
                 .navigationSplitViewColumnWidth(min: 280, ideal: 330, max: 440)
+                .overlay(alignment: .bottom) {
+                    MailStatusTray(removal: model.removalNotice,
+                                   dismissRemoval: model.dismissRemovalNotice,
+                                   queuedNoticeID: hub.queuedMessageNoticeID,
+                                   showOutbox: { model.changeMailbox(.outbox); hub.dismissQueuedMessageNotice() },
+                                   dismissQueued: hub.dismissQueuedMessageNotice)
+                }
         } detail: {
             ConversationDetailView(model: model)
                 .navigationSplitViewColumnWidth(min: 420, ideal: 620)
@@ -60,19 +67,6 @@ struct GmailInboxView: View {
         .toolbar { MailToolbar(actions: actions) }
         .focusedSceneValue(\.mailActions, actions)
         .onChange(of: undoManager, initial: true) { model.undoManager = undoManager }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                if let notice = model.removalNotice {
-                    MailUndoNotice(operation: notice, dismiss: model.dismissRemovalNotice)
-                        .id(notice.id)
-                }
-                if let id = hub.queuedMessageNoticeID {
-                    MailQueuedNotice(showOutbox: { model.changeMailbox(.outbox); hub.dismissQueuedMessageNotice() },
-                                     dismiss: hub.dismissQueuedMessageNotice)
-                        .id(id)
-                }
-            }
-        }
         // Each message gets its own window, so the mailbox stays usable while writing.
         .onChange(of: model.composer) { _, draft in
             guard let draft else { return }
