@@ -141,6 +141,16 @@ Download the `.dmg` from the
 and drag Postie to your Applications folder. The app is signed with a Developer ID
 and notarized by Apple, and updates itself from then on. See [CHANGELOG.md](CHANGELOG.md) for what changed.
 
+Or install it with [Homebrew](https://brew.sh):
+
+```sh
+brew install --cask igorkulman/postie/postie
+```
+
+The cask is updated automatically for every release by a GitHub Actions workflow
+(`.github/workflows/homebrew.yml`). Postie still updates itself, so `brew upgrade`
+is optional.
+
 ## Requirements
 
 - macOS 26
