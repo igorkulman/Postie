@@ -1,0 +1,98 @@
+name: Publish Homebrew cask
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish, e.g. v0.6.0"
+        required: true
+
+concurrency:
+  group: homebrew
+  cancel-in-progress: false
+
+env:
+  TAP_REPO: igorkulman/Postie-homebrew
+
+jobs:
+  publish:
+    # Skip pre-releases and drafts when triggered by a release
+    if: github.event_name == 'workflow_dispatch' || (!github.event.release.prerelease && !github.event.release.draft)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve version
+        id: version
+        env:
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Download DMG and compute checksum
+        id: dmg
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "Postie-$VERSION.dmg"
+          echo "sha256=$(sha256sum "Postie-$VERSION.dmg" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+
+      - name: Check out tap
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.TAP_REPO }}
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+
+      - name: Write cask
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA256: ${{ steps.dmg.outputs.sha256 }}
+        run: |
+          mkdir -p tap/Casks
+          cat > tap/Casks/postie.rb <<EOF
+          cask "postie" do
+            version "$VERSION"
+            sha256 "$SHA256"
+
+            url "https://github.com/igorkulman/Postie/releases/download/v#{version}/Postie-#{version}.dmg"
+            name "Postie"
+            desc "Small native Gmail client"
+            homepage "https://postie.kulman.sk/"
+
+            livecheck do
+              url :url
+              strategy :github_latest
+            end
+
+            auto_updates true
+            depends_on macos: ">= :tahoe"
+
+            app "Postie.app"
+
+            zap trash: [
+              "~/Library/Application Support/Postie",
+              "~/Library/Caches/sk.kulman.Postie",
+              "~/Library/Preferences/sk.kulman.Postie.plist",
+            ]
+          end
+          EOF
+          cat tap/Casks/postie.rb
+
+      - name: Commit and push
+        working-directory: tap
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if git diff --quiet && [ -z "$(git status --porcelain)" ]; then
+            echo "Cask already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/postie.rb
+          git commit -m "postie $VERSION"
+          git push
