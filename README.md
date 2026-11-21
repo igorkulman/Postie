@@ -144,7 +144,8 @@ and notarized by Apple, and updates itself from then on. See [CHANGELOG.md](CHAN
 Or install it with [Homebrew](https://brew.sh):
 
 ```sh
-brew install --cask igorkulman/postie-homebrew/postie
+brew tap igorkulman/postie https://github.com/igorkulman/Postie-homebrew
+brew install --cask igorkulman/postie/postie
 ```
 
 The cask is updated automatically for every release by a GitHub Actions workflow
