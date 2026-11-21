@@ -8,8 +8,7 @@ All notable changes to Postie are documented here. The format is based on
 
 ### Added
 
-- Homebrew installation: `brew tap igorkulman/postie` then
-  `brew install --cask postie`.
+- Homebrew installation: `brew install --cask igorkulman/postie/postie`.
   A GitHub Actions workflow publishes the cask for each release.
 
 ## [0.5.0] - 2026-11-11
