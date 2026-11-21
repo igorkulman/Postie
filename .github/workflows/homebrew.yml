@@ -14,7 +14,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  TAP_REPO: igorkulman/Postie-homebrew
+  # Overridable with repository variables, so the workflow can be tested on a fork
+  SOURCE_REPO: ${{ vars.SOURCE_REPO || github.repository }}
+  TAP_REPO: ${{ vars.TAP_REPO || 'igorkulman/homebrew-postie' }}
 
 jobs:
   publish:
@@ -37,7 +39,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern "Postie-$VERSION.dmg"
+          gh release download "$TAG" --repo "$SOURCE_REPO" --pattern "Postie-$VERSION.dmg"
           echo "sha256=$(sha256sum "Postie-$VERSION.dmg" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
 
       - name: Check out tap
@@ -58,7 +60,7 @@ jobs:
             version "$VERSION"
             sha256 "$SHA256"
 
-            url "https://github.com/igorkulman/Postie/releases/download/v#{version}/Postie-#{version}.dmg"
+            url "https://github.com/$SOURCE_REPO/releases/download/v#{version}/Postie-#{version}.dmg"
             name "Postie"
             desc "Small native Gmail client"
             homepage "https://postie.kulman.sk/"
